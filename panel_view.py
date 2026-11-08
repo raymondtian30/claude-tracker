@@ -317,9 +317,16 @@ class Panel:
         else:
             self._show(retries_left=3)
 
+    def _go_home(self):
+        """Every opening starts on the first tab (Home)."""
+        if self.tabs and self.selected != self.tabs[0]["key"]:
+            self.selected = self.tabs[0]["key"]
+            self._draw()
+
     def _show(self, retries_left):
         from AppKit import NSApplication
 
+        self._go_home()
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
         if self.animation_seconds:
             self.popover.setContentSize_((WIDTH, FOLDED_HEIGHT))
