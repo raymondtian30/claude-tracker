@@ -120,7 +120,7 @@ This removes it from starting at login and deletes **Claude Tracker** from your 
 
 ## Version and credits
 
-Current version: **2.2.0**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `version.py` and is shown in Settings.
+Current version: **2.2.1**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `version.py` and is shown in Settings.
 
 - Original app by [BrodyKretz](https://github.com/BrodyKretz/claude-token-counter)
 - Redesign and new features (panel, stats tabs, cost estimate, fixes) by Raymond Tian ([raymondtian30](https://github.com/raymondtian30/claude-tracker))
