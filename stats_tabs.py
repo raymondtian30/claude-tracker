@@ -14,6 +14,7 @@ one of:
     ("segmented", label, [option, ...], selected_index, action)
     ("popup", label, [option, ...], selected_index, action)
     ("switch", label, is_on, action)
+    ("tags", [(text, is_on), ...])              small rounded labels; off ones crossed out
 Actions are strings the app handles in TokenCounterApp.handle_action.
 
 Kept free of AppKit so it can be unit-tested.
@@ -69,6 +70,8 @@ NOTE_WIDTH = 46  # characters that fit on one note line
 
 
 ALERT_WIDTH = 40  # characters per warning line (it's indented for its icon)
+TAG_LINE_CHARS = 48  # characters of tags that fit on one line
+TAG_SPACE = 4  # a tag's padding and the gap after it, in characters
 
 
 def note_lines(text):
@@ -497,22 +500,77 @@ def _alerts_card(state, windows):
     return {"title": "Notifications", "items": items}
 
 
-def _sessions_tab(view, sessions):
-    if sessions:
-        items = [
-            ("row", s["label"], "running" if s["tokens"] is None else format_count(s["tokens"]))
-            for s in sessions
-        ]
-    elif view["key"] == "all":
-        items = [("note", "No sessions running")]
-    else:
-        items = [("note", f"No {view['name']} sessions running")]
+def tag_lines(tags):
+    """Plugin tags split into lines that fit across a card."""
+    lines, line, used = [], [], 0
+    for text, on in tags:
+        cost = len(text) + TAG_SPACE
+        if line and used + cost > TAG_LINE_CHARS:
+            lines.append(line)
+            line, used = [], 0
+        line.append((text, on))
+        used += cost
+    if line:
+        lines.append(line)
+    return lines
+
+
+def format_ago(then, now):
+    """How long ago `then` was, as "5 min ago"."""
+    seconds = max(now - then, 0)
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{int(seconds // 60)} min ago"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)} hr ago"
+    days = int(seconds // 86400)
+    return f"{days} day{'' if days == 1 else 's'} ago"
+
+
+def _plural(count, word):
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+ACTIVITY_WORDS = [("skill", "skill"), ("agent", "agent"), ("tool", "tool call"), ("hook", "hook")]
+
+
+def _plugins_card(plugins, now):
+    items = []
+    for plugin in plugins:
+        items.append(("row", plugin["label"], _plural(plugin["sessions"], "session")))
+        latest = plugin["latest"]
+        if latest:
+            items.append(("note", f"{latest['text']} · {format_ago(latest['at'], now)}"))
+        else:
+            items.append(("note", "Enabled, not used yet"))
+        counts = [_plural(plugin["today"][kind], word)
+                  for kind, word in ACTIVITY_WORDS if plugin["today"].get(kind)]
+        if counts:
+            items.append(("note", "Today: " + ", ".join(counts)))
+    return {"title": f"Plugins ({len(plugins)} enabled)",
+            "items": items or [("note", "No plugins enabled")]}
+
+
+def _sessions_tab(view, sessions, plugins=None, now=None):
+    """Open sessions, each with tags for the plugins it runs, then (when
+    `plugins` is given: Claude Code's view or All AIs) what each plugin did."""
+    items = []
+    for s in sessions:
+        items.append(("row", s["label"], "running" if s["tokens"] is None else format_count(s["tokens"])))
+        items += [("tags", line) for line in tag_lines(s.get("plugins") or [])]
+    if not items:
+        name = "" if view["key"] == "all" else f"{view['name']} "
+        items = [("note", f"No {name}sessions running")]
+    cards = [{"title": f"Sessions ({len(sessions)})", "items": items}]
+    if plugins is not None:
+        cards.append(_plugins_card(plugins, time.time() if now is None else now))
     return {
         "key": "sessions",
         "title": "Active Sessions",
         "short": "Live",
         "icon": "terminal",
-        "cards": [{"title": f"Open now ({len(sessions)})", "items": items}],
+        "cards": cards,
     }
 
 
@@ -706,7 +764,7 @@ def leaderboard_enabled(state):
 
 
 def build_panel(view, state, sessions, friends, show_leaderboard, today=None, now=None,
-                projects_expanded=False):
+                projects_expanded=False, plugins=None):
     """The tabs shown in the tab bar, in order, for one tool's view (or the
     combined view)."""
     d = _Data(view, today or date.today(), state)
@@ -721,7 +779,7 @@ def build_panel(view, state, sessions, friends, show_leaderboard, today=None, no
     # A running session can't be tied to one provider, so provider views
     # have no Live tab.
     if view["key"] not in PROVIDER_NAMES:
-        tabs.append(_sessions_tab(view, sessions))
+        tabs.append(_sessions_tab(view, sessions, plugins, now))
     warning = _warning(d)
     if warning:
         for tab in tabs:

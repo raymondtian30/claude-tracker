@@ -48,7 +48,8 @@ def test_active_sessions_sums_tokens_per_matched_project_dir(tmp_path):
         projects_dir=projects_dir, cwds=["/Users/alice/work/thing"]
     )
 
-    assert sessions == [{"label": "/Users/alice/work/thing", "tokens": 30}]
+    assert sessions == [{"label": "/Users/alice/work/thing", "tokens": 30,
+                         "cwd": "/Users/alice/work/thing", "log": str(project / "session.jsonl")}]
 
 
 def test_active_sessions_ignores_cwds_with_no_project_dir(tmp_path):

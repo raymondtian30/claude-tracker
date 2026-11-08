@@ -33,6 +33,9 @@ from AppKit import (
     NSEventMaskKeyDown,
     NSEventMaskLeftMouseDown,
     NSEventMaskRightMouseDown,
+    NSFontAttributeName,
+    NSForegroundColorAttributeName,
+    NSStrikethroughStyleAttributeName,
     NSPopoverBehaviorApplicationDefined,
     NSPopUpButton,
     NSScreen,
@@ -48,7 +51,7 @@ from AppKit import (
     NSViewController,
     NSWindow,
 )
-from Foundation import NSObject
+from Foundation import NSAttributedString, NSObject
 
 from panel_speeds import ANIMATION_SPEEDS, DEFAULT_ANIMATION  # noqa: F401 (re-exported)
 from version import APP_NAME
@@ -70,6 +73,7 @@ HEIGHTS = {
     "popup": 30,
     "switch": 30,
     "alert": 17,
+    "tags": 22,
 }
 CARD_TITLE_HEIGHT = 24
 SCREEN_MARGIN = 40  # keep the panel this far from the bottom of the screen
@@ -819,6 +823,27 @@ class Panel:
             _label(item[1], NSMakeRect(x, y + 1, width, 14), size=11,
                    color=NSColor.secondaryLabelColor())
         )
+
+    def _draw_tags(self, item, x, y, width):
+        """A line of small rounded labels; an off one is faded and crossed out."""
+        tx = x
+        for text, on in item[1]:
+            color = NSColor.labelColor() if on else NSColor.tertiaryLabelColor()
+            attributes = {NSFontAttributeName: NSFont.systemFontOfSize_(11),
+                          NSForegroundColorAttributeName: color}
+            if not on:
+                attributes[NSStrikethroughStyleAttributeName] = 1
+            field = _label("", NSMakeRect(0, 0, 0, 0))
+            field.setAttributedStringValue_(
+                NSAttributedString.alloc().initWithString_attributes_(text, attributes))
+            text_width = min(field.fittingSize().width, x + width - tx - 14)
+            if text_width <= 0:
+                break
+            self._canvas.addSubview_(
+                _box(NSMakeRect(tx, y + 2, text_width + 14, 18), _faint(0.08 if on else 0.04), radius=9))
+            field.setFrame_(NSMakeRect(tx + 7, y + 3, text_width, 15))
+            self._canvas.addSubview_(field)
+            tx += text_width + 14 + 4
 
     def _draw_buttons(self, item, x, y, width):
         buttons = item[1]

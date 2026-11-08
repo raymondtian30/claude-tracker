@@ -39,6 +39,7 @@ from panel_speeds import (
     DEFAULT_APPEARANCE,
     animation_seconds,
 )
+from plugins import live_plugins
 from panel_view import Panel, SettingsWindow, apply_appearance, confirm_with_details
 from single_instance import acquire_lock, observe_show_requests, request_show_panel
 from stats_tabs import (
@@ -237,6 +238,16 @@ class TokenCounterApp(rumps.App):
             sessions += active_sessions() if key == "claude_code" else running_tool_sessions(key)
         return sessions
 
+    def _plugins_for(self, view, sessions):
+        """Plugin rows for the Live tab (tagging `sessions` with the plugins
+        each runs), or None where plugins don't apply: only Claude Code has
+        them."""
+        if view["key"] == "claude_code" or (
+            view["key"] == "all" and "claude_code" in self.state["enabled_tools"]
+        ):
+            return live_plugins(sessions)
+        return None
+
     def _update_title(self):
         view = self._current_view()
         mode = self.state["title_mode"]
@@ -271,11 +282,13 @@ class TokenCounterApp(rumps.App):
         view = self._current_view(detected)
         choices = view_choices(self.state, detected)
         friends = sorted_friends(load_friends(), by=self.state["leaderboard_view"])
+        sessions = self._sessions_for(view)
         self.panel.render(
             build_panel(
-                view, self.state, self._sessions_for(view), friends,
+                view, self.state, sessions, friends,
                 leaderboard_enabled(self.state) and view["key"] == "claude_code",
                 projects_expanded=self.projects_expanded,
+                plugins=self._plugins_for(view, sessions),
             ),
             f"Tracking since {format_long_date(self.state['first_seen_at'])}",
             tool_choices=choices,

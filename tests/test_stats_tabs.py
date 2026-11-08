@@ -1,7 +1,12 @@
 from datetime import date, datetime
 
 from stats_tabs import (
+    TAG_LINE_CHARS,
+    TAG_SPACE,
+    _sessions_tab,
     build_panel as _build_panel,
+    format_ago,
+    tag_lines,
     leaderboard_enabled,
     tool_choices,
     welcome_tab,
@@ -26,7 +31,7 @@ def build_panel(state, sessions, friends, today=None, view=None, show_leaderboar
 
 ITEM_LENGTHS = {
     "tiles": 2, "chart": 3, "bar": 4, "row": 3, "note": 2, "buttons": 2,
-    "segmented": 5, "popup": 5, "switch": 4, "alert": 3,
+    "segmented": 5, "popup": 5, "switch": 4, "alert": 3, "tags": 2,
 }
 
 
@@ -96,7 +101,7 @@ def test_build_panel_with_data():
     assert ("bar", "Older, no detail", "100 · 87%", 100 / 115) in items_of(tabs["breakdown"])
     assert ("bar", "Opus 5.5", "15 · 100%", 1.0) in items_of(tabs["models"])
     assert ("bar", "/x/proj", "15 · 100%", 1.0) in items_of(tabs["projects"])
-    assert tabs["sessions"]["cards"][0]["title"] == "Open now (1)"
+    assert tabs["sessions"]["cards"][0]["title"] == "Sessions (1)"
     assert ("bar", "1. Ann", "200", 1.0) in items_of(tabs["leaderboard"])
     assert ("bar", "2. Bo", "100", 0.5) in items_of(tabs["leaderboard"])
 
@@ -689,3 +694,61 @@ def test_settings_has_light_dark_auto_appearance():
     assert appearance({}) == ("segmented", "Mode", ["Auto", "Light", "Dark"], 0, "appearance")
     assert appearance({"appearance": "dark"})[3] == 2
     assert appearance({"appearance": "bogus"})[3] == 0
+
+
+def test_live_tab_shows_plugin_tags_and_plugin_activity():
+    sessions = [{"label": "~/proj", "tokens": 1500, "plugins": [("superpowers", True), ("caveman", False)]}]
+    plugin_rows = [
+        {"label": "superpowers", "sessions": 1, "latest": {"text": "Ran tdd skill", "at": 1000.0},
+         "today": {"skill": 2, "hook": 1}},
+        {"label": "caveman", "sessions": 0, "latest": None, "today": {}},
+    ]
+
+    tab = _sessions_tab(tool_view({}, "claude_code"), sessions, plugin_rows, now=1000.0 + 125)
+
+    assert_well_formed(tab)
+    sessions_card, plugins_card = tab["cards"]
+    assert sessions_card["title"] == "Sessions (1)"
+    assert sessions_card["items"] == [
+        ("row", "~/proj", "1.5K"),
+        ("tags", [("superpowers", True), ("caveman", False)]),
+    ]
+    assert plugins_card["title"] == "Plugins (2 enabled)"
+    assert plugins_card["items"] == [
+        ("row", "superpowers", "1 session"),
+        ("note", "Ran tdd skill · 2 min ago"),
+        ("note", "Today: 2 skills, 1 hook"),
+        ("row", "caveman", "0 sessions"),
+        ("note", "Enabled, not used yet"),
+    ]
+
+
+def test_live_tab_without_plugin_info_has_only_sessions():
+    tab = _sessions_tab(tool_view({}, "codex"), [{"label": "~/g", "tokens": None}], None, now=0)
+
+    assert [c["title"] for c in tab["cards"]] == ["Sessions (1)"]
+    assert tab["cards"][0]["items"] == [("row", "~/g", "running")]
+
+
+def test_live_tab_with_no_plugins_says_so():
+    tab = _sessions_tab(tool_view({}, "claude_code"), [], [], now=0)
+
+    assert tab["cards"][1] == {"title": "Plugins (0 enabled)", "items": [("note", "No plugins enabled")]}
+
+
+def test_tag_lines_wrap_long_plugin_lists():
+    tags = [(f"plugin-number-{i}", True) for i in range(6)]
+
+    lines = tag_lines(tags)
+
+    assert len(lines) > 1
+    assert [t for line in lines for t in line] == tags
+    assert all(sum(len(text) + TAG_SPACE for text, _ in line) <= TAG_LINE_CHARS for line in lines)
+
+
+def test_format_ago():
+    assert format_ago(100, 130) == "just now"
+    assert format_ago(0, 5 * 60) == "5 min ago"
+    assert format_ago(0, 3 * 3600) == "3 hr ago"
+    assert format_ago(0, 86400) == "1 day ago"
+    assert format_ago(0, 3 * 86400) == "3 days ago"
