@@ -56,7 +56,7 @@ def test_combined_sums_tools_and_groups_by_model():
 
     view = combined_view(state, ["claude_code", "opencode"])
 
-    assert view["key"] == "all" and view["name"] == "All tools"
+    assert view["key"] == "all" and view["name"] == "All AIs"
     assert view["grand_total"] == 108
     models = view["daily"]["2026-07-29"]["models"]
     assert models["claude-opus-5-5"]["input"] == 10

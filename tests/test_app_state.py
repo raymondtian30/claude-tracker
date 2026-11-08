@@ -26,7 +26,7 @@ def test_existing_install_keeps_preferences():
     for key, value in EXISTING.items():
         assert state[key] == value, key
     assert state["enabled_tools"] == ["claude_code"]
-    assert state["combine_tools"] is False
+    assert "combine_tools" not in state  # "All AIs" is picked in the panel now
     assert state["selected_tool"] == "claude_code"
     assert state["onboarding_done"] is True
 
@@ -41,13 +41,32 @@ def test_fresh_install_starts_with_no_tools():
 
 
 def test_init_is_idempotent_and_keeps_choices():
-    state = {"enabled_tools": ["codex"], "combine_tools": True, "selected_tool": "codex",
-             "onboarding_done": True}
+    state = {"enabled_tools": ["codex"], "selected_tool": "codex", "onboarding_done": True}
+
+    init_tool_state(state, fresh_install=False)
+    init_tool_state(state, fresh_install=False)
+
+    assert state == {"enabled_tools": ["codex"], "selected_tool": "codex", "onboarding_done": True}
+
+
+def test_combine_switch_that_was_on_becomes_all_ais_in_the_dropdown():
+    state = {"enabled_tools": ["claude_code", "codex"], "combine_tools": True,
+             "selected_tool": "codex", "onboarding_done": True}
 
     init_tool_state(state, fresh_install=False)
 
-    assert state == {"enabled_tools": ["codex"], "combine_tools": True, "selected_tool": "codex",
+    assert state == {"enabled_tools": ["claude_code", "codex"], "selected_tool": "all",
                      "onboarding_done": True}
+
+
+def test_combine_switch_that_was_off_changes_nothing():
+    state = {"enabled_tools": ["claude_code"], "combine_tools": False,
+             "selected_tool": "claude_code", "onboarding_done": True}
+
+    init_tool_state(state, fresh_install=False)
+
+    assert state["selected_tool"] == "claude_code"
+    assert "combine_tools" not in state
 
 
 def test_menu_bar_label_uses_tool_icon_or_coin():

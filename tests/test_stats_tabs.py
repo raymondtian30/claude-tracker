@@ -212,16 +212,15 @@ def test_leaderboard_only_when_requested():
 
 
 def test_settings_lists_detected_tools_only():
-    state = {"enabled_tools": ["claude_code"], "combine_tools": False}
+    state = {"enabled_tools": ["claude_code"]}
 
     tab = settings_tab(state, paused=False, interval_choices=[15], detected=["claude_code", "opencode"])
 
     tools_card = next(c for c in tab["cards"] if c["title"] == "AI tools")
-    tools = [i for i in tools_card["items"] if i[-1].startswith("tool:") or i[-1] == "combine_tools"]
+    tools = [i for i in tools_card["items"] if i[-1].startswith("tool:")]
     assert tools == [
         ("switch", "Claude Code", True, "tool:claude_code"),
         ("switch", "opencode", False, "tool:opencode"),
-        ("switch", "Combine all tools", False, "combine_tools"),
     ]
 
 
@@ -252,7 +251,7 @@ def test_tool_choices_are_enabled_tools_detected_or_with_history():
 
 
 def test_settings_keeps_enabled_tool_whose_data_disappeared():
-    state = {"enabled_tools": ["claude_code", "codex"], "combine_tools": False}
+    state = {"enabled_tools": ["claude_code", "codex"]}
 
     tab = settings_tab(state, paused=False, interval_choices=[15], detected=["claude_code"])
 
@@ -382,30 +381,30 @@ def test_long_notes_are_split_into_lines():
     assert " ".join(item[1] for item in lines) == text
 
 
-def test_view_choices_when_combined_offers_all_tools_and_providers():
+def test_dropdown_offers_all_ais_first_once_two_tools_are_on():
     from stats_tabs import view_choices
-    state = {"enabled_tools": ["claude_code"], "combine_tools": True}
+    state = {"enabled_tools": ["claude_code", "opencode"], "enabled_providers": ["kimi"]}
 
-    assert view_choices(state, ["claude_code"]) == []
-    state["enabled_providers"] = ["deepseek"]
-    assert view_choices(state, ["claude_code"]) == [("all", "All tools"), ("deepseek", "DeepSeek")]
+    assert view_choices(state, ["claude_code", "opencode"]) == [
+        ("all", "All AIs"), ("claude_code", "Claude Code"), ("opencode", "opencode"), ("kimi", "Kimi"),
+    ]
 
 
-def test_view_choices_per_tool_matches_tool_choices():
+def test_dropdown_has_no_all_ais_with_a_single_tool():
     from stats_tabs import view_choices
     state = {"enabled_tools": ["claude_code"], "enabled_providers": ["kimi"]}
 
     assert view_choices(state, ["claude_code"]) == tool_choices(state, ["claude_code"])
 
 
-def test_tools_and_providers_share_one_card_with_combine_last():
-    state = {"enabled_tools": ["claude_code"], "enabled_providers": ["kimi"], "combine_tools": False}
+def test_settings_only_picks_which_ais_are_used():
+    state = {"enabled_tools": ["claude_code"], "enabled_providers": ["kimi"]}
 
     tab = settings_tab(state, paused=False, interval_choices=[15], detected=["claude_code", "codex"])
 
     items = next(c for c in tab["cards"] if c["title"] == "AI tools")["items"]
     switches = [i[1] for i in items if i[0] == "switch"]
-    assert switches == ["Claude Code", "Codex", "OpenAI", "DeepSeek", "Kimi", "Combine all tools"]
+    assert switches == ["Claude Code", "Codex", "OpenAI", "DeepSeek", "Kimi"]
 
 
 # --- warnings when an AI's usage can't be seen ----------------------------

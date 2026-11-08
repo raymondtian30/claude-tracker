@@ -467,7 +467,6 @@ def _tools_card(state, detected):
     keys = [key for key, _ in TOOLS if key in detected or key in enabled]
     items = [("switch", TOOL_NAMES[key], key in enabled, f"tool:{key}") for key in keys]
     items += _provider_items(state)
-    items.append(("switch", "Combine all tools", state.get("combine_tools", False), "combine_tools"))
     return {"title": "AI tools", "items": items}
 
 
@@ -513,13 +512,14 @@ def tool_choices(state, detected):
 
 
 def view_choices(state, detected):
-    """[(key, name)] for the "Tracking" dropdown. With tools combined, it
-    offers the combined view plus any enabled providers."""
-    if not state.get("combine_tools"):
-        return tool_choices(state, detected)
-    providers = [(key, name) for key, name in PROVIDERS
-                 if key in state.get("enabled_providers", [])]
-    return [("all", "All tools")] + providers if providers else []
+    """[(key, name)] for the panel's "Tracking" dropdown: "All AIs" (every
+    tool picked in Settings added up) once two or more tools are on, then
+    each tool and provider."""
+    choices = tool_choices(state, detected)
+    tools = [key for key, _ in choices if key in TOOL_NAMES]
+    if len(tools) >= 2:
+        return [("all", "All AIs")] + choices
+    return choices
 
 
 def settings_tab(state, paused, interval_choices, detected):
