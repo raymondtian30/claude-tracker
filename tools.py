@@ -58,7 +58,7 @@ def combined_view(state, enabled):
     errors = [f"{v['name']}: {v['error']}" for v in views if v["error"]]
     return {
         "key": "all",
-        "name": "All tools",
+        "name": "All AIs",
         "daily": merge_daily([v["daily"] for v in views]),
         "grand_total": sum(v["grand_total"] for v in views),
         "error": errors[0] if errors else None,

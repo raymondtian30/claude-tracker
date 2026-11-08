@@ -70,7 +70,10 @@ def init_tool_state(state, fresh_install):
     already there. Existing installs keep tracking just Claude Code and skip
     the welcome picker; fresh installs track nothing until a tool is chosen."""
     state.setdefault("enabled_tools", [] if fresh_install else ["claude_code"])
-    state.setdefault("combine_tools", False)
+    # "Combine all tools" used to be a Settings switch; it's now "All AIs" in
+    # the panel's dropdown, so someone who had it on lands there.
+    if state.pop("combine_tools", False):
+        state["selected_tool"] = "all"
     state.setdefault(
         "selected_tool", state["enabled_tools"][0] if state["enabled_tools"] else "claude_code"
     )
@@ -179,7 +182,8 @@ class TokenCounterApp(rumps.App):
         if not choices:
             return combined_view(self.state, enabled)
         selected = self.state["selected_tool"]
-        key = selected if selected in choices else choices[0]
+        # Fall back to the first tool, not "All AIs", as before it existed.
+        key = selected if selected in choices else next(k for k in choices if k != "all")
         if key == "all":
             return combined_view(self.state, enabled)
         if key in PROVIDER_NAMES:
@@ -240,7 +244,7 @@ class TokenCounterApp(rumps.App):
             selected_tool=view["key"],
             welcome=None if self.state["onboarding_done"]
             else welcome_tab(detected, self.welcome_choice),
-            subtitle="All AI tools" if view["key"] == "all" else f"for {view['name']}",
+            subtitle="All AIs" if view["key"] == "all" else f"for {view['name']}",
             # Same rule as the menu bar: the AI's logo, the coin when combined.
             logo=icon_image(view["key"], HEADER_ICON_SIZE) if view["key"] != "all" else None,
         )
@@ -322,10 +326,6 @@ class TokenCounterApp(rumps.App):
             self.finish_welcome()
         elif action.startswith("tool:"):
             self.set_tool_enabled(action.split(":", 1)[1], value)
-        elif action == "combine_tools":
-            self.state["combine_tools"] = value
-            save_state(self.state, STATE_FILE)
-            self._update_title()
         self._render_panel()
 
     def finish_welcome(self):
