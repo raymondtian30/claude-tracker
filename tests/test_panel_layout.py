@@ -1,6 +1,14 @@
 from panel_view import SCREEN_MARGIN, panel_height
 
 
+def all_views(view):
+    """Every view inside `view`, nested ones too (tabs draw into their own)."""
+    found = []
+    for child in view.subviews():
+        found += [child] + all_views(child)
+    return found
+
+
 def test_short_content_uses_its_own_height():
     assert panel_height(500, screen_height=800) == 500
 
@@ -22,11 +30,11 @@ def test_tool_switcher_is_a_dropdown():
                  tool_choices=[("claude_code", "Claude Code"), ("codex", "Codex"), ("opencode", "opencode")],
                  selected_tool="codex")
 
-    popups = [v for v in panel.root.subviews() if isinstance(v, NSPopUpButton)]
+    popups = [v for v in all_views(panel.root) if isinstance(v, NSPopUpButton)]
     assert len(popups) == 1
     assert list(popups[0].itemTitles()) == ["Claude Code", "Codex", "opencode"]
     assert popups[0].indexOfSelectedItem() == 1
-    assert not [v for v in panel.root.subviews() if isinstance(v, NSSegmentedControl)]
+    assert not [v for v in all_views(panel.root) if isinstance(v, NSSegmentedControl)]
 
 
 TAB = {"key": "overview", "title": "Overview", "short": "Home", "icon": "square.grid.2x2",
@@ -42,7 +50,7 @@ def test_settings_button_asks_the_app_to_open_the_settings_window():
     panel = Panel(on_action=lambda action, value: calls.append((action, value)))
     panel.render([TAB], "footer")
 
-    button = next(v for v in panel.root.subviews()
+    button = next(v for v in all_views(panel.root)
                   if isinstance(v, NSButton) and v.toolTip() == "Settings")
     panel._fire(button.tag(), None)
 
@@ -88,8 +96,8 @@ def test_header_shows_the_selected_ais_logo_instead_of_the_coin():
     panel = Panel(on_action=lambda action, value: None)
     panel.render([TAB], "footer", logo=logo)
 
-    images = [v.image() for v in panel.root.subviews() if isinstance(v, NSImageView)]
-    labels = [v.stringValue() for v in panel.root.subviews() if isinstance(v, NSTextField)]
+    images = [v.image() for v in all_views(panel.root) if isinstance(v, NSImageView)]
+    labels = [v.stringValue() for v in all_views(panel.root) if isinstance(v, NSTextField)]
     assert logo in images
     assert "🪙" not in labels
 
@@ -102,7 +110,7 @@ def test_header_keeps_the_coin_without_a_logo():
     panel = Panel(on_action=lambda action, value: None)
     panel.render([TAB], "footer")
 
-    assert "🪙" in [v.stringValue() for v in panel.root.subviews() if isinstance(v, NSTextField)]
+    assert "🪙" in [v.stringValue() for v in all_views(panel.root) if isinstance(v, NSTextField)]
 
 
 def test_clicking_the_menu_bar_icon_is_left_to_the_icon_to_toggle():
@@ -180,3 +188,34 @@ def test_opening_the_panel_goes_back_to_home():
     panel._go_home()
 
     assert panel.selected == "overview"
+
+
+def test_switching_tabs_reuses_each_tabs_views():
+    """A tab is built once per render; going back to it doesn't rebuild it."""
+    from panel_view import Panel
+
+    limits = {**TAB, "key": "limits", "title": "Usage Limits", "short": "Limits",
+              "cards": [{"title": "Plan limits", "items": [("note", "a"), ("note", "b")]}]}
+    panel = Panel(on_action=lambda action, value: None)
+    panel.render([TAB, limits], "footer")
+    home = panel._shown_tab_view
+
+    panel._select_tab(1, fade=False)
+    limits_view = panel._shown_tab_view
+    panel._select_tab(0, fade=False)
+
+    assert panel._shown_tab_view is home
+    assert limits_view is not home and limits_view.superview() is None
+    assert home.superview() is panel.root and home.alphaValue() == 1.0
+
+
+def test_new_data_rebuilds_the_tabs():
+    from panel_view import Panel
+
+    panel = Panel(on_action=lambda action, value: None)
+    panel.render([TAB], "footer")
+    before = panel._shown_tab_view
+
+    panel.render([TAB], "footer")
+
+    assert panel._shown_tab_view is not before
