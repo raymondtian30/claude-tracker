@@ -90,6 +90,16 @@ def fold_height(progress, full_height, unfolding):
     return round(FOLDED_HEIGHT + (full_height - FOLDED_HEIGHT) * share)
 
 
+def apply_appearance(key):
+    """Light or dark for the whole app (panel, Settings, dialogs); "auto"
+    follows macOS, switching with it."""
+    from AppKit import NSAppearance, NSApplication
+
+    names = {"light": "NSAppearanceNameAqua", "dark": "NSAppearanceNameDarkAqua"}
+    appearance = NSAppearance.appearanceNamed_(names[key]) if key in names else None
+    NSApplication.sharedApplication().setAppearance_(appearance)
+
+
 def confirm_with_details(title, message, details, ok, cancel):
     """A dialog with `details` in a scrolling box under `message`. True if
     the user clicks `ok`."""
