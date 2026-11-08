@@ -17,6 +17,7 @@ from AppKit import (
     NSBoxCustom,
     NSButton,
     NSColor,
+    NSControlSizeSmall,
     NSFont,
     NSFontWeightSemibold,
     NSGradient,
@@ -42,6 +43,7 @@ from AppKit import (
     NSScrollView,
     NSSegmentDistributionFillEqually,
     NSSegmentedControl,
+    NSSegmentSwitchTrackingSelectAny,
     NSSegmentSwitchTrackingSelectOne,
     NSSwitch,
     NSTextAlignmentCenter,
@@ -74,6 +76,7 @@ HEIGHTS = {
     "switch": 30,
     "alert": 17,
     "tags": 22,
+    "choices": 52,
 }
 CARD_TITLE_HEIGHT = 24
 SCREEN_MARGIN = 40  # keep the panel this far from the bottom of the screen
@@ -278,6 +281,10 @@ class _ActionTarget(NSObject):
 
     def segmentChanged_(self, sender):
         self.panel._fire(sender.tag(), sender.selectedSegment())
+
+    def segmentsChanged_(self, sender):
+        self.panel._fire(sender.tag(), [i for i in range(sender.segmentCount())
+                                        if sender.isSelectedForSegment_(i)])
 
     def popupChanged_(self, sender):
         self.panel._fire(sender.tag(), sender.indexOfSelectedItem())
@@ -872,6 +879,23 @@ class Panel:
         control.setSegmentDistribution_(NSSegmentDistributionFillEqually)
         control.setFrame_(NSMakeRect(control_x, y + 2, x + width - control_x, 24))
         control.setSelectedSegment_(selected)
+        control.setTag_(self._register(action))
+        self._canvas.addSubview_(control)
+
+    def _draw_choices(self, item, x, y, width):
+        """A label over a full-width row of buttons, any number of them on."""
+        _, label, options, selected, action = item
+        self._control_label(label, x, y, width)
+        control = NSSegmentedControl.segmentedControlWithLabels_trackingMode_target_action_(
+            options, NSSegmentSwitchTrackingSelectAny, self._target, "segmentsChanged:"
+        )
+        control.setSegmentDistribution_(NSSegmentDistributionFillEqually)
+        # Small, so seven percentages fit across a card without spilling over.
+        control.setControlSize_(NSControlSizeSmall)
+        control.setFont_(NSFont.systemFontOfSize_(NSFont.smallSystemFontSize()))
+        control.setFrame_(NSMakeRect(x, y + 27, width, 22))
+        for index in selected:
+            control.setSelected_forSegment_(True, index)
         control.setTag_(self._register(action))
         self._canvas.addSubview_(control)
 

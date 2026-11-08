@@ -90,19 +90,22 @@ def format_reset(resets_at, now):
     return reset.strftime("%b %-d")
 
 
-def alerts_to_send(levels, threshold, windows_on, above, now=None):
+def alerts_to_send(levels, thresholds, windows_on, above, now=None):
     """Which alerts to send now. `levels` are {"id", "name", "window",
-    "label", "percent", "resets_at"}; `above` lists the ids already alerted
-    and still over the threshold. Returns (messages, new `above`). A level
-    alerts once when it reaches the threshold, and again only after it has
-    dropped back below it (e.g. when its window resets)."""
+    "label", "percent", "resets_at"}; `thresholds` are the percents to alert
+    at; `above` lists "id@threshold" keys already alerted and still over that
+    threshold. Returns (messages, new `above`). A level alerts once when it
+    reaches each threshold, and again only after it has dropped back below it
+    (e.g. when its window resets). Passing several thresholds at once (75 and
+    90 on the way to 95) sends one alert, not one per threshold."""
     messages = []
     new_above = []
     for level in levels:
-        if level["window"] not in windows_on or level["percent"] < threshold:
+        if level["window"] not in windows_on:
             continue
-        new_above.append(level["id"])
-        if level["id"] in above:
+        keys = [f"{level['id']}@{t}" for t in sorted(thresholds) if level["percent"] >= t]
+        new_above += keys
+        if all(key in above for key in keys):
             continue
         message = f"{level['name']}: {level['label']} usage is at {level['percent']:.0f}%."
         if level.get("resets_at"):
@@ -111,6 +114,17 @@ def alerts_to_send(levels, threshold, windows_on, above, now=None):
             message += f" Resets {'at' if when[0].isdigit() else 'on'} {when}."
         messages.append(message)
     return messages, new_above
+
+
+def migrate_alert_state(state):
+    """Before several thresholds could be picked, state had one
+    "alert_threshold" and alerted ids without "@threshold": carry both over."""
+    if "alert_thresholds" not in state:
+        old = state.pop("alert_threshold", DEFAULT_ALERT_THRESHOLD)
+        state["alert_thresholds"] = [old]
+        state["alerts_above"] = [key if "@" in key else f"{key}@{old}"
+                                 for key in state.get("alerts_above", [])]
+    state.setdefault("alerts_above", [])
 
 
 def plan_levels(state, tool_keys, now):

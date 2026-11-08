@@ -15,6 +15,7 @@ one of:
     ("popup", label, [option, ...], selected_index, action)
     ("switch", label, is_on, action)
     ("tags", [(text, is_on), ...])              small rounded labels; off ones crossed out
+    ("choices", label, [option, ...], [selected_index, ...], action)  pick any number
 Actions are strings the app handles in TokenCounterApp.handle_action.
 
 Kept free of AppKit so it can be unit-tested.
@@ -486,13 +487,12 @@ def _limits_tab(d, now):
 
 def _alerts_card(state, windows):
     """When to be notified, for the limit `windows` this view has."""
-    threshold = state.get("alert_threshold", DEFAULT_ALERT_THRESHOLD)
+    thresholds = state.get("alert_thresholds", [DEFAULT_ALERT_THRESHOLD])
     windows_on = state.get("alert_windows", [w for w, _ in WINDOWS])
     items = [
         ("switch", "Notify me", state.get("alerts_enabled", True), "alerts_enabled"),
-        ("popup", "When usage reaches", [f"{t}%" for t in ALERT_THRESHOLDS],
-         ALERT_THRESHOLDS.index(threshold) if threshold in ALERT_THRESHOLDS
-         else ALERT_THRESHOLDS.index(DEFAULT_ALERT_THRESHOLD), "alert_threshold"),
+        ("choices", "When usage reaches", [f"{t}%" for t in ALERT_THRESHOLDS],
+         [i for i, t in enumerate(ALERT_THRESHOLDS) if t in thresholds], "alert_thresholds"),
     ]
     items += [("switch", f"{WINDOW_LABELS[window]} limit", window in windows_on,
                f"alert_window:{window}") for window in windows]

@@ -2,6 +2,7 @@ from datetime import datetime
 
 from limits import (
     alerts_to_send,
+    migrate_alert_state,
     claude_limits,
     codex_limits,
     limit_windows,
@@ -85,20 +86,60 @@ def level(id="codex:five_hour", window="five_hour", percent=80.0, resets_at=None
 
 
 def test_alert_once_when_crossing_the_threshold():
-    messages, above = alerts_to_send([level()], 75, ["five_hour"], [])
+    messages, above = alerts_to_send([level()], [75], ["five_hour"], [])
 
     assert messages == ["Codex: 5-hour usage is at 80%."]
-    assert above == ["codex:five_hour"]
+    assert above == ["codex:five_hour@75"]
 
-    messages, above = alerts_to_send([level(percent=90.0)], 75, ["five_hour"], above)
+    messages, above = alerts_to_send([level(percent=90.0)], [75], ["five_hour"], above)
     assert messages == []  # already told
 
-    messages, above = alerts_to_send([level(percent=10.0)], 75, ["five_hour"], above)
+    messages, above = alerts_to_send([level(percent=10.0)], [75], ["five_hour"], above)
     assert above == []  # dropped below (e.g. the window reset): ready to alert again
 
 
+def test_alert_again_at_each_higher_threshold():
+    messages, above = alerts_to_send([level(percent=76.0)], [75, 90], ["five_hour"], [])
+    assert messages == ["Codex: 5-hour usage is at 76%."]
+
+    messages, above = alerts_to_send([level(percent=85.0)], [75, 90], ["five_hour"], above)
+    assert messages == []
+
+    messages, above = alerts_to_send([level(percent=91.0)], [75, 90], ["five_hour"], above)
+    assert messages == ["Codex: 5-hour usage is at 91%."]
+    assert sorted(above) == ["codex:five_hour@75", "codex:five_hour@90"]
+
+    messages, above = alerts_to_send([level(percent=80.0)], [75, 90], ["five_hour"], above)
+    assert messages == [] and above == ["codex:five_hour@75"]  # 90 can alert again
+
+
+def test_jumping_past_several_thresholds_sends_one_alert():
+    messages, above = alerts_to_send([level(percent=95.0)], [75, 90], ["five_hour"], [])
+
+    assert messages == ["Codex: 5-hour usage is at 95%."]
+    assert sorted(above) == ["codex:five_hour@75", "codex:five_hour@90"]
+
+
+def test_migrate_alert_state_keeps_the_old_single_threshold():
+    state = {"alert_threshold": 80, "alerts_above": ["codex:five_hour"]}
+
+    migrate_alert_state(state)
+
+    assert state == {"alert_thresholds": [80], "alerts_above": ["codex:five_hour@80"]}
+
+
+def test_migrate_alert_state_defaults_and_leaves_new_state_alone():
+    state = {}
+    migrate_alert_state(state)
+    assert state == {"alert_thresholds": [75], "alerts_above": []}
+
+    state = {"alert_thresholds": [75, 90], "alerts_above": ["x@90"]}
+    migrate_alert_state(state)
+    assert state == {"alert_thresholds": [75, 90], "alerts_above": ["x@90"]}
+
+
 def test_alerts_only_for_chosen_windows():
-    messages, above = alerts_to_send([level(window="weekly")], 75, ["five_hour"], [])
+    messages, above = alerts_to_send([level(window="weekly")], [75], ["five_hour"], [])
 
     assert messages == [] and above == []
 
@@ -107,10 +148,10 @@ def test_alert_says_when_it_resets():
     today = datetime(2026, 11, 8, 15, 30).timestamp()
     later = datetime(2026, 11, 20, 18, 46).timestamp()
 
-    messages, _ = alerts_to_send([level(resets_at=today)], 75, ["five_hour"], [], now=NOW)
+    messages, _ = alerts_to_send([level(resets_at=today)], [75], ["five_hour"], [], now=NOW)
     assert messages == ["Codex: 5-hour usage is at 80%. Resets at 3:30 PM."]
 
-    messages, _ = alerts_to_send([level(resets_at=later)], 75, ["five_hour"], [], now=NOW)
+    messages, _ = alerts_to_send([level(resets_at=later)], [75], ["five_hour"], [], now=NOW)
     assert messages == ["Codex: 5-hour usage is at 80%. Resets on Nov 20."]
 
 
