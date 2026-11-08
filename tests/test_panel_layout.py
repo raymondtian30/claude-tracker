@@ -103,3 +103,19 @@ def test_header_keeps_the_coin_without_a_logo():
     panel.render([TAB], "footer", False)
 
     assert "🪙" in [v.stringValue() for v in panel.root.subviews() if isinstance(v, NSTextField)]
+
+
+def test_clicking_the_menu_bar_icon_is_left_to_the_icon_to_toggle():
+    """The icon's own click closes an open panel. If the outside-click
+    monitor closed it first, the icon's toggle would just reopen it."""
+    from types import SimpleNamespace
+
+    from panel_view import Panel
+
+    panel = Panel(on_action=lambda action, value: None)
+    status_window, settings_window = object(), object()
+    panel._button = SimpleNamespace(window=lambda: status_window)
+
+    assert not panel._click_closes(status_window)
+    assert not panel._click_closes(panel.root.window())
+    assert panel._click_closes(settings_window)
