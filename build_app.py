@@ -89,6 +89,8 @@ PYTHON="$(dirname "$0")/{INTERPRETER_NAME}"
 if ! "$PYTHON" -c "" 2>/dev/null; then
     PYTHON={q(python)}
 fi
+# The Python the bundle was built with, for rebuilding it after an update.
+export CLAUDE_TRACKER_PYTHON={q(python)}
 
 if [ "${{1:-}}" = "--foreground" ]; then
     # Started at login by the LaunchAgent, which tracks this process (and

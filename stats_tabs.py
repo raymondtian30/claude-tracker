@@ -612,7 +612,7 @@ def view_choices(state, detected):
     return choices
 
 
-def settings_tab(state, paused, interval_choices, detected):
+def settings_tab(state, paused, interval_choices, detected, update_status=None):
     modes = [key for key, _ in TITLE_MODES]
     mode = state.get("title_mode", "lifetime")
     interval = state.get("scan_interval_seconds", interval_choices[0])
@@ -663,9 +663,11 @@ def settings_tab(state, paused, interval_choices, detected):
                 "title": "About",
                 "items": [
                     ("row", "Version", __version__),
+                    *([("row", "Updates", update_status)] if update_status else []),
                     ("row", "Original app by", ORIGINAL_AUTHOR),
                     ("row", "Redesign & new features by", FORK_AUTHOR),
-                    ("buttons", [("View on GitHub", "arrow.up.right.square", "open_repo")]),
+                    ("buttons", [("Check for Updates", "arrow.down.circle", "check_updates"),
+                                 ("View on GitHub", "arrow.up.right.square", "open_repo")]),
                 ],
             },
         ],

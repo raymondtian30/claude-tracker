@@ -54,6 +54,14 @@ from limits import (
     alerts_to_send,
     levels_for_alerts,
 )
+from updater import (
+    UpdateError,
+    install_release,
+    is_newer,
+    latest_release,
+    rebuild_bundle,
+    restart_command,
+)
 from token_math import (
     backfill_daily,
     backfill_limits,
@@ -66,7 +74,7 @@ from tool_icons import icon_image, menu_bar_image
 from providers import PROVIDER_NAMES, PROVIDERS, provider_view, tools_to_scan
 from tools import TOOLS, combined_view, detect_tools, scan_tools, tool_view
 from usage_stats import total_in_range
-from version import APP_NAME, REPO_URL
+from version import APP_NAME, REPO_URL, __version__
 
 STATE_FILE = Path(__file__).resolve().parent / "state.json"
 LOCK_FILE = Path(__file__).resolve().parent / ".claude-tracker.lock"
@@ -135,6 +143,7 @@ class TokenCounterApp(rumps.App):
         init_provider_state(self.state)
         self._fetching = set()  # providers with an account fetch in flight
         self._fetching_claude = False
+        self.update_status = None  # shown in Settings > About while checking
         self.notifier = Notifier(APP_NAME, fallback=_fallback_notification)
         self.notifier.request_permission()
         self._fetched = []  # (provider, result) waiting to be saved on the main thread
@@ -167,6 +176,9 @@ class TokenCounterApp(rumps.App):
         save_state(self.state, STATE_FILE)
         self._fetch_accounts()
         self._fetch_claude_usage()
+        if self.state.pop("updated_to", None):
+            save_state(self.state, STATE_FILE)
+            self.notifier.send(f"Updated to {__version__}. Your settings are unchanged.")
 
         self.paused = False
         self.panel = Panel(on_action=self.handle_action)
@@ -267,7 +279,8 @@ class TokenCounterApp(rumps.App):
             logo=icon_image(view["key"], HEADER_ICON_SIZE) if view["key"] != "all" else None,
         )
         self.settings_window.render(
-            settings_tab(self.state, self.paused, SCAN_INTERVAL_CHOICES, detected)
+            settings_tab(self.state, self.paused, SCAN_INTERVAL_CHOICES, detected,
+                         update_status=self.update_status)
         )
 
     def handle_action(self, action, value):
@@ -343,6 +356,8 @@ class TokenCounterApp(rumps.App):
         elif action == "leaderboard_enabled":
             self.state["leaderboard_enabled"] = value
             save_state(self.state, STATE_FILE)
+        elif action == "check_updates":
+            self.check_for_updates()
         elif action == "open_repo":
             self.panel.close()
             webbrowser.open(REPO_URL)
@@ -622,6 +637,50 @@ class TokenCounterApp(rumps.App):
         self._check_alerts()
         self._render_panel()
 
+    def check_for_updates(self):
+        """Look for a newer release; if there is one, install it and restart."""
+        if self.update_status:
+            return  # already checking
+        self.update_status = "Checking…"
+        threading.Thread(target=self._update_now, daemon=True).start()
+
+    def _update_now(self):
+        """Runs on a background thread; the outcome is shown on the main thread."""
+        try:
+            tag = latest_release()
+            if not is_newer(tag):
+                outcome = ("current", tag)
+            else:
+                AppHelper.callAfter(self._show_update_status, f"Updating to {tag.lstrip('v')}…")
+                install_release(tag)
+                rebuild_bundle(_build_python(), _bundle_path().parent)
+                outcome = ("updated", tag)
+        except UpdateError as e:
+            outcome = ("error", str(e))
+        except Exception as e:  # keep the check from being stuck "in flight"
+            outcome = ("error", f"Unexpected problem ({type(e).__name__}).")
+        AppHelper.callAfter(self._finish_update, outcome)
+
+    def _show_update_status(self, status):
+        self.update_status = status
+        self._render_panel()
+
+    def _finish_update(self, outcome):
+        kind, detail = outcome
+        self.update_status = None
+        self._render_panel()
+        if kind == "updated":
+            self.state["updated_to"] = detail
+            save_state(self.state, STATE_FILE)
+            subprocess.Popen(["/bin/sh", "-c", restart_command(os.getpid(), _bundle_path(),
+                                                               _service_target())],
+                             start_new_session=True)
+            rumps.quit_application()
+        elif kind == "current":
+            rumps.alert("You're Up to Date", f"{APP_NAME} {__version__} is the newest version.")
+        else:
+            rumps.alert("Couldn't Update", detail)
+
     def send_test_alert(self):
         self.notifier.send_checked("Test alert: this is how usage alerts look.",
                                    on_blocked=self._notifications_blocked)
@@ -692,6 +751,22 @@ class TokenCounterApp(rumps.App):
             return
         self.state["start_at_login"] = enabled
         save_state(self.state, STATE_FILE)
+
+
+def _bundle_path():
+    """The "Claude Tracker.app" this is running from, or where install.sh
+    puts it when run as plain `python3 app.py`."""
+    from build_app import default_dest
+
+    executable = Path(sys.executable)
+    if executable.parent.name == "MacOS" and executable.parents[2].suffix == ".app":
+        return executable.parents[2]
+    return default_dest() / f"{APP_NAME}.app"
+
+
+def _build_python():
+    """The Python the bundle was built with (the launcher passes it on)."""
+    return os.environ.get("CLAUDE_TRACKER_PYTHON") or sys.executable
 
 
 def _fallback_notification(title, message):
