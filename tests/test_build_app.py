@@ -40,6 +40,11 @@ def test_build_puts_a_copy_of_pythons_interpreter_in_the_bundle(tmp_path):
         assert not interpreter.exists()
         return
     assert os.access(interpreter, os.X_OK)  # re-signed, so not byte-for-byte the same
+    signature = subprocess.run(["codesign", "-dv", str(interpreter)],
+                               capture_output=True, text=True).stderr
+    # macOS refuses notifications unless this matches the bundle's identifier.
+    assert f"Identifier={build_app.BUNDLE_ID}\n" in signature
+    assert subprocess.run(["codesign", "--verify", str(bundle)]).returncode == 0
     result = subprocess.run([str(interpreter), "-c", "from Foundation import NSBundle;"
                              "print(NSBundle.mainBundle().bundleIdentifier())"],
                             capture_output=True, text=True)
