@@ -14,12 +14,24 @@ def running_claude_cwds():
     return running_cwds("claude")
 
 
+# Tools that run as a Node script, so their process is "node": matched by
+# the script in the command line instead (tool key -> script name).
+NODE_SCRIPTS = {"gemini_cli": "gemini"}
+
+
 def running_cwds(name):
-    """Working directory of each running process whose executable is `name`."""
-    ps_output = subprocess.run(
-        ["ps", "-eo", "pid,comm"], capture_output=True, text=True, check=True
-    ).stdout
-    pids = pids_named(ps_output, name)
+    """Working directory of each running process whose executable is `name`
+    (or, for a Node-based tool in NODE_SCRIPTS, that runs its script)."""
+    if name in NODE_SCRIPTS:
+        ps_output = subprocess.run(
+            ["ps", "-eo", "pid,args"], capture_output=True, text=True, check=True
+        ).stdout
+        pids = pids_running_script(ps_output, NODE_SCRIPTS[name])
+    else:
+        ps_output = subprocess.run(
+            ["ps", "-eo", "pid,comm"], capture_output=True, text=True, check=True
+        ).stdout
+        pids = pids_named(ps_output, name)
 
     cwds = []
     for pid in pids:
@@ -52,6 +64,17 @@ def pids_named(ps_output, name):
         pid, comm = parts
         if os.path.basename(comm.strip()) == name:
             pids.append(pid.strip())
+    return pids
+
+
+def pids_running_script(ps_output, script):
+    """PIDs of `node <...>/script ...` processes in `ps -eo pid,args` output."""
+    pids = []
+    for line in ps_output.splitlines()[1:]:
+        parts = line.split()
+        if (len(parts) >= 3 and os.path.basename(parts[1]) == "node"
+                and os.path.basename(parts[2]) == script):
+            pids.append(parts[0])
     return pids
 
 

@@ -44,7 +44,7 @@ SOURCES = {
 
 APP_DIRS = [Path("/Applications"), Path.home() / "Applications"]
 
-MONOGRAMS = {"openai": "AI", "deepseek": "DS", "kimi": "K", "google": "G",
+MONOGRAMS = {"gemini_cli": "GC", "openai": "AI", "deepseek": "DS", "kimi": "K", "google": "G",
              "anthropic": "A", "xai": "X", "mistral": "M", "qwen": "Q",
              "zai": "Z", "minimax": "MM"}
 

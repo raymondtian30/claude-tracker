@@ -67,7 +67,7 @@ def test_provider_app_found_by_name(tmp_path):
 
 def test_providers_without_an_app_get_a_monogram():
     from tool_icons import MONOGRAMS
-    assert MONOGRAMS == {"openai": "AI", "deepseek": "DS", "kimi": "K", "google": "G",
+    assert MONOGRAMS == {"gemini_cli": "GC", "openai": "AI", "deepseek": "DS", "kimi": "K", "google": "G",
                          "anthropic": "A", "xai": "X", "mistral": "M", "qwen": "Q",
                          "zai": "Z", "minimax": "MM"}
     assert icon_source("deepseek", apps({}), [], app_dirs=[]) is None

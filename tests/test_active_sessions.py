@@ -151,3 +151,16 @@ def test_running_tool_sessions_skips_background_helpers_in_root(monkeypatch):
     assert active_sessions.running_tool_sessions("codex", home="/Users/me") == [
         {"label": "~/game", "tokens": None},
     ]
+
+
+def test_node_scripts_are_matched_by_their_command():
+    from active_sessions import pids_running_script
+
+    ps_output = """  PID ARGS
+  101 node /opt/homebrew/bin/gemini
+  102 /usr/local/bin/node /Users/me/.npm-global/bin/gemini --yolo
+  103 node /opt/homebrew/bin/other-tool
+  104 vim gemini
+"""
+
+    assert pids_running_script(ps_output, "gemini") == ["101", "102"]
