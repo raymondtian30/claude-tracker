@@ -212,14 +212,16 @@ def _fold_subfolders(totals):
     return folded
 
 
-def top_projects(daily, start, end, limit=3):
+def top_projects(daily, start, end, limit=None):
+    """(project, tokens) used between `start` and `end`, most first; all of
+    them unless `limit` is given."""
     totals = {}
     for bucket in _days_in_range(daily, start, end):
         for project, tokens in bucket["projects"].items():
             totals[project] = totals.get(project, 0) + tokens
     totals = _fold_subfolders(totals)
     rows = sorted(totals.items(), key=lambda r: r[1], reverse=True)
-    return rows[:limit]
+    return rows if limit is None else rows[:limit]
 
 
 def biggest_day(daily):

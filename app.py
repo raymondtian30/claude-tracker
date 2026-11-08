@@ -150,6 +150,7 @@ class TokenCounterApp(rumps.App):
         self._fetching = set()  # providers with an account fetch in flight
         self._fetching_claude = False
         self.update_status = None  # shown in Settings > About while checking
+        self.projects_expanded = False  # the Projects tab's "Show more"
         self.notifier = Notifier(APP_NAME, fallback=_fallback_notification)
         self.notifier.request_permission()
         self._fetched = []  # (provider, result) waiting to be saved on the main thread
@@ -274,6 +275,7 @@ class TokenCounterApp(rumps.App):
             build_panel(
                 view, self.state, self._sessions_for(view), friends,
                 leaderboard_enabled(self.state) and view["key"] == "claude_code",
+                projects_expanded=self.projects_expanded,
             ),
             f"Tracking since {format_long_date(self.state['first_seen_at'])}",
             tool_choices=choices,
@@ -364,6 +366,8 @@ class TokenCounterApp(rumps.App):
         elif action == "leaderboard_enabled":
             self.state["leaderboard_enabled"] = value
             save_state(self.state, STATE_FILE)
+        elif action == "projects_expand":
+            self.projects_expanded = not self.projects_expanded
         elif action == "check_updates":
             self.check_for_updates()
         elif action == "open_repo":

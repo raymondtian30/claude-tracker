@@ -340,19 +340,30 @@ def _models_tab(d):
     }
 
 
-def _projects_tab(d):
+PROJECTS_SHOWN = 5  # before "Show more"
+
+
+def _projects_tab(d, expanded):
+    """Every project from the last 7 days, most used first: the top 5, and
+    the rest behind "Show more"."""
     projects = top_projects(d.daily, d.week_start, d.today)
     week_total = sum(t for _, t in model_totals(d.week_models))
+    shown = projects if expanded else projects[:PROJECTS_SHOWN]
     if projects:
-        items = [_share_bar(name, tokens, week_total) for name, tokens in projects]
+        items = [_share_bar(name, tokens, week_total) for name, tokens in shown]
     else:
         items = [("note", "No usage in the last 7 days")]
+    hidden = len(projects) - PROJECTS_SHOWN
+    if hidden > 0:
+        button = (("Show less", "chevron.up") if expanded
+                  else (f"Show {hidden} more", "chevron.down"))
+        items.append(("buttons", [(*button, "projects_expand")]))
     return {
         "key": "projects",
         "title": "Projects",
         "short": "Projects",
         "icon": "folder",
-        "cards": [{"title": "Top projects · last 7 days", "items": items}],
+        "cards": [{"title": "Projects · last 7 days", "items": items}],
     }
 
 
@@ -694,7 +705,8 @@ def leaderboard_enabled(state):
     return state.get("leaderboard_enabled", bool(state.get("my_gist_id")))
 
 
-def build_panel(view, state, sessions, friends, show_leaderboard, today=None, now=None):
+def build_panel(view, state, sessions, friends, show_leaderboard, today=None, now=None,
+                projects_expanded=False):
     """The tabs shown in the tab bar, in order, for one tool's view (or the
     combined view)."""
     d = _Data(view, today or date.today(), state)
@@ -702,7 +714,7 @@ def build_panel(view, state, sessions, friends, show_leaderboard, today=None, no
         _overview_tab(d),
         _breakdown_tab(d),
         _models_tab(d),
-        _projects_tab(d),
+        _projects_tab(d, projects_expanded),
         _cost_tab(d),
         _limits_tab(d, now or time.time()),
     ]
