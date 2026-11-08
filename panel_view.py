@@ -89,6 +89,30 @@ def fold_height(progress, full_height, unfolding):
     return round(FOLDED_HEIGHT + (full_height - FOLDED_HEIGHT) * share)
 
 
+def confirm_with_details(title, message, details, ok, cancel):
+    """A dialog with `details` in a scrolling box under `message`. True if
+    the user clicks `ok`."""
+    from AppKit import NSAlert, NSAlertFirstButtonReturn, NSApplication, NSTextView
+
+    alert = NSAlert.alloc().init()
+    alert.setMessageText_(title)
+    alert.setInformativeText_(message)
+    alert.addButtonWithTitle_(ok)
+    alert.addButtonWithTitle_(cancel)
+    scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(0, 0, 380, 220))
+    scroll.setHasVerticalScroller_(True)
+    scroll.setBorderType_(2)  # NSBezelBorder
+    text = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, 380, 220))
+    text.setString_(details)
+    text.setEditable_(False)
+    text.setFont_(NSFont.systemFontOfSize_(12))
+    text.setTextContainerInset_((6, 6))
+    scroll.setDocumentView_(text)
+    alert.setAccessoryView_(scroll)
+    NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+    return alert.runModal() == NSAlertFirstButtonReturn
+
+
 def panel_height(content_height, screen_height):
     """How tall the panel is: its content, capped so it fits on screen
     (anything beyond scrolls)."""

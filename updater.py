@@ -1,4 +1,5 @@
-"""Check for Updates: install the newest GitHub release over this copy.
+"""Check for Updates: list the GitHub releases newer than this copy, and
+install the newest one over it if the user says so.
 
 The app runs straight from this git clone, so updating is a fast-forward
 to the release's tag, then rebuilding the app bundle. Settings and totals
@@ -19,7 +20,7 @@ from pathlib import Path
 from version import REPO_URL, __version__
 
 PROJECT_DIR = Path(__file__).resolve().parent
-LATEST_URL = "https://api.github.com/repos/raymondtian30/claude-tracker/releases/latest"
+RELEASES_URL = "https://api.github.com/repos/raymondtian30/claude-tracker/releases?per_page=30"
 UPDATE_BRANCHES = {"master", "main"}
 TAG_PATTERN = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 
@@ -48,16 +49,46 @@ def http_get_json(url):
         return json.loads(response.read().decode("utf-8"))
 
 
-def latest_release(get=http_get_json):
-    """The newest release's tag, e.g. 'v2.2.0'. Raises UpdateError if
-    GitHub can't be reached or answers oddly."""
+def newer_releases(get=http_get_json, current=__version__):
+    """Every published release newer than `current`, newest first, as
+    {"tag", "notes"}. Drafts and pre-releases are skipped. Raises
+    UpdateError if GitHub can't be reached or answers oddly."""
     try:
-        tag = get(LATEST_URL).get("tag_name")
+        listed = get(RELEASES_URL)
     except Exception as e:  # noqa: BLE001 -- offline, rate limited, bad JSON...
         raise UpdateError("Couldn't reach GitHub to check for updates.") from e
-    if not parse_version(tag):
-        raise UpdateError("GitHub's latest release doesn't have a version number.")
-    return tag
+    if not isinstance(listed, list):
+        raise UpdateError("GitHub sent an unexpected answer.")
+    releases = [
+        {"tag": r["tag_name"], "notes": (r.get("body") or "").strip()}
+        for r in listed
+        if isinstance(r, dict) and not r.get("draft") and not r.get("prerelease")
+        and is_newer(r.get("tag_name"), current)
+    ]
+    return sorted(releases, key=lambda r: parse_version(r["tag"]), reverse=True)
+
+
+def _plain(notes):
+    """Release notes (GitHub Markdown) as plain lines for a dialog."""
+    lines = []
+    for line in notes.splitlines():
+        line = line.strip().replace("**", "").replace("`", "")
+        if not line:
+            continue
+        if line.startswith("#"):
+            line = line.lstrip("#").strip()
+        elif line[:2] in ("- ", "* "):
+            line = "• " + line[2:]
+        lines.append(line)
+    return lines
+
+
+def describe_releases(releases):
+    """What's new in each of `releases`, newest first, for the update dialog."""
+    return "\n\n".join(
+        "\n".join([f"Version {r['tag'].lstrip('v')}"] + (_plain(r["notes"]) or ["No notes."]))
+        for r in releases
+    )
 
 
 def _git(run, project_dir, *args):

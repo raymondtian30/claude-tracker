@@ -33,7 +33,7 @@ from gist_sync import (
 from leaderboard import load_friends, save_friends, sorted_friends
 from notifications import SETTINGS_URL, Notifier
 from panel_speeds import ANIMATION_SPEEDS, DEFAULT_ANIMATION, animation_seconds
-from panel_view import Panel, SettingsWindow
+from panel_view import Panel, SettingsWindow, confirm_with_details
 from single_instance import acquire_lock, observe_show_requests, request_show_panel
 from stats_tabs import (
     DEFAULT_MENU_BAR_FONT_SIZE,
@@ -56,9 +56,9 @@ from limits import (
 )
 from updater import (
     UpdateError,
+    describe_releases,
     install_release,
-    is_newer,
-    latest_release,
+    newer_releases,
     rebuild_bundle,
     restart_command,
 )
@@ -634,23 +634,50 @@ class TokenCounterApp(rumps.App):
         self._render_panel()
 
     def check_for_updates(self):
-        """Look for a newer release; if there is one, install it and restart."""
+        """List the newer releases and ask whether to install the newest."""
         if self.update_status:
-            return  # already checking
-        self.update_status = "Checking…"
-        threading.Thread(target=self._update_now, daemon=True).start()
+            return  # already checking or updating
+        self._show_update_status("Checking…")
+        threading.Thread(target=self._find_updates, daemon=True).start()
 
-    def _update_now(self):
+    def _find_updates(self):
+        """Runs on a background thread; the answer is shown on the main thread."""
+        try:
+            outcome = ("found", newer_releases())
+        except UpdateError as e:
+            outcome = ("error", str(e))
+        except Exception as e:  # keep the check from being stuck "in flight"
+            outcome = ("error", f"Unexpected problem ({type(e).__name__}).")
+        AppHelper.callAfter(self._offer_updates, outcome)
+
+    def _offer_updates(self, outcome):
+        kind, releases = outcome
+        if kind == "error" or not releases:
+            self._finish_update(outcome if kind == "error" else ("current", None))
+            return
+        self.update_status = None
+        self._render_panel()
+        newest = releases[0]["tag"].lstrip("v")
+        count = len(releases)
+        self.panel.close()
+        wanted = confirm_with_details(
+            f"{count} Updates Available" if count > 1 else "Update Available",
+            f"{APP_NAME} {newest} is available (you have {__version__}). Updating keeps "
+            "your settings and totals, and restarts the app.",
+            describe_releases(releases), ok=f"Update to {newest}", cancel="Not Now",
+        )
+        if not wanted:
+            return
+        self._show_update_status(f"Updating to {newest}…")
+        threading.Thread(target=self._install_update, args=(releases[0]["tag"],),
+                         daemon=True).start()
+
+    def _install_update(self, tag):
         """Runs on a background thread; the outcome is shown on the main thread."""
         try:
-            tag = latest_release()
-            if not is_newer(tag):
-                outcome = ("current", tag)
-            else:
-                AppHelper.callAfter(self._show_update_status, f"Updating to {tag.lstrip('v')}…")
-                install_release(tag)
-                rebuild_bundle(_build_python(), _bundle_path().parent)
-                outcome = ("updated", tag)
+            install_release(tag)
+            rebuild_bundle(_build_python(), _bundle_path().parent)
+            outcome = ("updated", tag)
         except UpdateError as e:
             outcome = ("error", str(e))
         except Exception as e:  # keep the check from being stuck "in flight"
