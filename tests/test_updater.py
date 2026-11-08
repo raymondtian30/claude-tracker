@@ -132,7 +132,7 @@ def test_restart_waits_for_the_app_to_quit_then_starts_it():
 def test_about_has_check_for_updates():
     from stats_tabs import settings_tab
 
-    tab = settings_tab({}, paused=False, interval_choices=[15], detected=[],
+    tab = settings_tab({}, interval_choices=[15], detected=[],
                        update_status="Checking…")
 
     about = next(c for c in tab["cards"] if c["title"] == "About")["items"]

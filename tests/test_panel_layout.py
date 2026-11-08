@@ -18,7 +18,7 @@ def test_tool_switcher_is_a_dropdown():
            "cards": [{"title": None, "items": [("note", "hi")]}]}
     panel = Panel(on_action=lambda action, value: None)
 
-    panel.render([tab], "footer", False,
+    panel.render([tab], "footer",
                  tool_choices=[("claude_code", "Claude Code"), ("codex", "Codex"), ("opencode", "opencode")],
                  selected_tool="codex")
 
@@ -40,7 +40,7 @@ def test_settings_button_asks_the_app_to_open_the_settings_window():
 
     calls = []
     panel = Panel(on_action=lambda action, value: calls.append((action, value)))
-    panel.render([TAB], "footer", False)
+    panel.render([TAB], "footer")
 
     button = next(v for v in panel.root.subviews()
                   if isinstance(v, NSButton) and v.toolTip() == "Settings")
@@ -54,7 +54,7 @@ def test_popover_no_longer_shows_settings_inline():
     from panel_view import Panel
 
     panel = Panel(on_action=lambda action, value: None, selected_tab="settings")
-    panel.render([TAB], "footer", False)
+    panel.render([TAB], "footer")
 
     assert panel.selected == "overview"
 
@@ -86,7 +86,7 @@ def test_header_shows_the_selected_ais_logo_instead_of_the_coin():
 
     logo = NSImage.alloc().initWithSize_((16, 16))
     panel = Panel(on_action=lambda action, value: None)
-    panel.render([TAB], "footer", False, logo=logo)
+    panel.render([TAB], "footer", logo=logo)
 
     images = [v.image() for v in panel.root.subviews() if isinstance(v, NSImageView)]
     labels = [v.stringValue() for v in panel.root.subviews() if isinstance(v, NSTextField)]
@@ -100,7 +100,7 @@ def test_header_keeps_the_coin_without_a_logo():
     from panel_view import Panel
 
     panel = Panel(on_action=lambda action, value: None)
-    panel.render([TAB], "footer", False)
+    panel.render([TAB], "footer")
 
     assert "🪙" in [v.stringValue() for v in panel.root.subviews() if isinstance(v, NSTextField)]
 
@@ -173,7 +173,7 @@ def test_opening_the_panel_goes_back_to_home():
 
     limits = {**TAB, "key": "limits", "title": "Usage Limits", "short": "Limits"}
     panel = Panel(on_action=lambda action, value: None)
-    panel.render([TAB, limits], "footer", False)
+    panel.render([TAB, limits], "footer")
     panel._select_tab(1)
     assert panel.selected == "limits"
 

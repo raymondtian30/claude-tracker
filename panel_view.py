@@ -268,7 +268,6 @@ class Panel:
         self.selected = selected_tab
         self.tabs = []
         self.footer = ""
-        self.paused = False
         self._actions = []
         self._target = _ActionTarget.alloc().initWithPanel_(self)
 
@@ -471,7 +470,7 @@ class Panel:
 
     # -- rendering
 
-    def render(self, tabs, footer, paused, tool_choices=None, selected_tool=None,
+    def render(self, tabs, footer, tool_choices=None, selected_tool=None,
                welcome=None, subtitle="for Claude Code", logo=None):
         """`tool_choices` [(key, name)] adds a tool switcher when there are 2+;
         `welcome` (a tab) replaces everything with the first-run picker;
@@ -480,7 +479,6 @@ class Panel:
         self.tabs = tabs
         self.logo = logo
         self.footer = footer
-        self.paused = paused
         self.tool_choices = tool_choices or []
         self.selected_tool = selected_tool
         self.welcome = welcome
@@ -559,15 +557,6 @@ class Panel:
             _label(getattr(self, "subtitle", "for Claude Code"), NSMakeRect(PAD + 34, y + 17, 220, 15), size=11,
                    color=NSColor.secondaryLabelColor())
         )
-        if self.paused:
-            pill = _box(NSMakeRect(PAD + inner - 64, y + 6, 64, 20),
-                        NSColor.systemOrangeColor().colorWithAlphaComponent_(0.18), radius=10)
-            self.root.addSubview_(pill)
-            self.root.addSubview_(
-                _label("Paused", NSMakeRect(PAD + inner - 64, y + 8, 64, 16), size=11,
-                       weight=NSFontWeightSemibold, color=NSColor.systemOrangeColor(),
-                       align="center")
-            )
         return y + 42
 
     def _draw_tab_bar(self, y, inner):

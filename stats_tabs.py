@@ -612,7 +612,7 @@ def view_choices(state, detected):
     return choices
 
 
-def settings_tab(state, paused, interval_choices, detected, update_status=None):
+def settings_tab(state, interval_choices, detected, update_status=None):
     modes = [key for key, _ in TITLE_MODES]
     mode = state.get("title_mode", "lifetime")
     interval = state.get("scan_interval_seconds", interval_choices[0])
@@ -645,7 +645,6 @@ def settings_tab(state, paused, interval_choices, detected, update_status=None):
                     ("popup", "Scan every", [format_interval(s) for s in interval_choices],
                      interval_choices.index(interval) if interval in interval_choices else 0,
                      "scan_interval"),
-                    ("switch", "Pause scanning", paused, "pause"),
                 ],
             },
             {

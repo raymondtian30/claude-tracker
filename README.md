@@ -56,7 +56,7 @@ A panel opens with a row of tabs along the top. It always opens on **Overview**;
 - **Active Sessions** -- every Claude Code terminal you currently have open, and how many tokens each one has used
 - **Leaderboard (Beta)** -- hidden unless you turn it on in Settings; see below, this one's still a work in progress
 
-At the bottom: the date you started tracking, a **Settings** button that opens a separate Settings window (which AIs you use -- coding tools and providers; what the menu bar shows -- lifetime total, today's total, or just the icon -- and its text size; the panel's unfold/fold **Animation** -- Off, Fast, Normal or Slow; how often to scan; pause scanning; start at login; show the Leaderboard; version and credits) and **Quit**. Click anywhere outside the panel to close it.
+At the bottom: the date you started tracking, a **Settings** button that opens a separate Settings window (which AIs you use -- coding tools and providers; what the menu bar shows -- lifetime total, today's total, or just the icon -- and its text size; the panel's unfold/fold **Animation** -- Off, Fast, Normal or Slow; how often to scan; start at login; show the Leaderboard; version and credits) and **Quit**. Click anywhere outside the panel to close it.
 
 ### OpenAI, DeepSeek, Kimi and other AI companies
 
