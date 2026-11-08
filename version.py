@@ -7,7 +7,7 @@ original 1.x app.
 """
 
 APP_NAME = "Claude Tracker"
-__version__ = "2.3.0"
+__version__ = "2.3.1"
 
 ORIGINAL_AUTHOR = "BrodyKretz"
 FORK_AUTHOR = "Raymond Tian"
