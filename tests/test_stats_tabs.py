@@ -122,7 +122,6 @@ def test_leaderboard_buttons_after_setup():
 def test_settings_tab_reflects_state():
     tab = settings_tab(
         {"title_mode": "icon", "scan_interval_seconds": 60, "start_at_login": False},
-        paused=True,
         interval_choices=[5, 15, 30, 60, 300],
         detected=["claude_code"],
     )
@@ -132,7 +131,7 @@ def test_settings_tab_reflects_state():
     assert items[1] == ("popup", "Text size", ["10 pt", "11 pt", "12 pt", "13 pt", "14 pt"], 2,
                         "menu_bar_font_size")  # 12 pt by default
     assert next(i for i in items if i[-1] == "scan_interval")[3] == 3  # 60 seconds selected
-    assert ("switch", "Pause scanning", True, "pause") in items
+    assert not [i for i in items if i[-1] == "pause"]
     assert ("switch", "Start at login", False, "login") in items
 
 
@@ -150,7 +149,7 @@ def test_leaderboard_tab_hidden_unless_enabled():
 def test_settings_about_card_shows_version_and_credits():
     from version import __version__
 
-    tab = settings_tab({}, paused=False, interval_choices=[15], detected=["claude_code"])
+    tab = settings_tab({}, interval_choices=[15], detected=["claude_code"])
     about = next(c for c in tab["cards"] if c["title"] == "About")
     assert ("row", "Version", __version__) in about["items"]
     assert ("row", "Original app by", "BrodyKretz") in about["items"]
@@ -214,7 +213,7 @@ def test_leaderboard_only_when_requested():
 def test_settings_lists_detected_tools_only():
     state = {"enabled_tools": ["claude_code"]}
 
-    tab = settings_tab(state, paused=False, interval_choices=[15], detected=["claude_code", "opencode"])
+    tab = settings_tab(state, interval_choices=[15], detected=["claude_code", "opencode"])
 
     tools_card = next(c for c in tab["cards"] if c["title"] == "AI tools")
     tools = [i for i in tools_card["items"] if i[-1].startswith("tool:")]
@@ -253,7 +252,7 @@ def test_tool_choices_are_enabled_tools_detected_or_with_history():
 def test_settings_keeps_enabled_tool_whose_data_disappeared():
     state = {"enabled_tools": ["claude_code", "codex"]}
 
-    tab = settings_tab(state, paused=False, interval_choices=[15], detected=["claude_code"])
+    tab = settings_tab(state, interval_choices=[15], detected=["claude_code"])
 
     tools_card = next(c for c in tab["cards"] if c["title"] == "AI tools")
     assert ("switch", "Codex", True, "tool:codex") in tools_card["items"]
@@ -360,7 +359,7 @@ def test_settings_only_switches_providers_on_and_off():
     state = {"enabled_tools": [], "enabled_providers": ["openai", "kimi"],
              "provider_keys": ["kimi"]}
 
-    tab = settings_tab(state, paused=False, interval_choices=[15], detected=[])
+    tab = settings_tab(state, interval_choices=[15], detected=[])
 
     assert "AI providers" not in [c["title"] for c in tab["cards"]]
     items = next(c for c in tab["cards"] if c["title"] == "AI tools")["items"]
@@ -400,7 +399,7 @@ def test_dropdown_has_no_all_ais_with_a_single_tool():
 def test_settings_only_picks_which_ais_are_used():
     state = {"enabled_tools": ["claude_code"], "enabled_providers": ["kimi"]}
 
-    tab = settings_tab(state, paused=False, interval_choices=[15], detected=["claude_code", "codex"])
+    tab = settings_tab(state, interval_choices=[15], detected=["claude_code", "codex"])
 
     items = next(c for c in tab["cards"] if c["title"] == "AI tools")["items"]
     switches = [i[1] for i in items if i[0] == "switch"]
@@ -467,12 +466,12 @@ def test_no_warning_while_waiting_for_first_fetch():
 
 
 def test_settings_has_the_panel_animation_speed():
-    tab = settings_tab({}, paused=False, interval_choices=[15], detected=[])
+    tab = settings_tab({}, interval_choices=[15], detected=[])
     items = next(c for c in tab["cards"] if c["title"] == "Menu bar")["items"]
 
     assert ("popup", "Animation", ["Off", "Fast", "Normal", "Slow"], 2, "panel_animation") in items
 
-    tab = settings_tab({"panel_animation": "off"}, paused=False, interval_choices=[15], detected=[])
+    tab = settings_tab({"panel_animation": "off"}, interval_choices=[15], detected=[])
     items = next(c for c in tab["cards"] if c["title"] == "Menu bar")["items"]
     assert ("popup", "Animation", ["Off", "Fast", "Normal", "Slow"], 0, "panel_animation") in items
 
@@ -616,7 +615,7 @@ def test_limits_tab_has_no_notifications_card_without_plan_limits():
 
 def test_settings_has_the_percentages_from_anthropic_switch_when_tracking_claude():
     def general(state):
-        tab = settings_tab(state, paused=False, interval_choices=[15], detected=[])
+        tab = settings_tab(state, interval_choices=[15], detected=[])
         return next(c for c in tab["cards"] if c["title"] == "General")["items"]
 
     on = general({"enabled_tools": ["claude_code"]})
@@ -629,7 +628,7 @@ def test_settings_has_the_percentages_from_anthropic_switch_when_tracking_claude
 
 
 def test_settings_has_no_usage_alerts_card():
-    tab = settings_tab({}, paused=False, interval_choices=[15], detected=[])
+    tab = settings_tab({}, interval_choices=[15], detected=[])
 
     assert "Usage alerts" not in [c["title"] for c in tab["cards"]]
 

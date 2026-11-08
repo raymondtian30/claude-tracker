@@ -180,7 +180,6 @@ class TokenCounterApp(rumps.App):
             save_state(self.state, STATE_FILE)
             self.notifier.send(f"Updated to {__version__}. Your settings are unchanged.")
 
-        self.paused = False
         self.panel = Panel(on_action=self.handle_action)
         self.panel.animation_seconds = animation_seconds(self.state["panel_animation"])
         self.settings_window = SettingsWindow(on_action=self.handle_action)
@@ -269,7 +268,6 @@ class TokenCounterApp(rumps.App):
                 leaderboard_enabled(self.state) and view["key"] == "claude_code",
             ),
             f"Tracking since {format_long_date(self.state['first_seen_at'])}",
-            self.paused,
             tool_choices=choices,
             selected_tool=view["key"],
             welcome=None if self.state["onboarding_done"]
@@ -279,7 +277,7 @@ class TokenCounterApp(rumps.App):
             logo=icon_image(view["key"], HEADER_ICON_SIZE) if view["key"] != "all" else None,
         )
         self.settings_window.render(
-            settings_tab(self.state, self.paused, SCAN_INTERVAL_CHOICES, detected,
+            settings_tab(self.state, SCAN_INTERVAL_CHOICES, detected,
                          update_status=self.update_status)
         )
 
@@ -349,8 +347,6 @@ class TokenCounterApp(rumps.App):
             self._fetch_claude_usage()
         elif action == "scan_interval":
             self.set_scan_interval(SCAN_INTERVAL_CHOICES[value])
-        elif action == "pause":
-            self.set_paused(value)
         elif action == "login":
             self.set_start_at_login(value)
         elif action == "leaderboard_enabled":
@@ -721,13 +717,6 @@ class TokenCounterApp(rumps.App):
         self._update_title()
         self._maybe_run_daily_leaderboard_sync()
         self._render_panel()
-
-    def set_paused(self, paused):
-        self.paused = paused
-        if paused and self.timer.is_alive():
-            self.timer.stop()
-        elif not paused and not self.timer.is_alive():
-            self.timer.start()
 
     def set_scan_interval(self, seconds):
         self.state["scan_interval_seconds"] = seconds
