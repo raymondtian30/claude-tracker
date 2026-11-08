@@ -24,7 +24,11 @@ PRESENT_LIST = 1 << 3
 PRESENT_BANNER = 1 << 4
 STATUS_NOT_DETERMINED = 0  # UNAuthorizationStatus
 STATUS_DENIED = 1
-SETTINGS_URL = "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+ALERT_STYLE_NONE = 0  # UNAlertStyle: only Notification Center, nothing pops up
+ALERT_STYLE_BANNER = 1
+BUNDLE_ID = "com.raymondtian.claudetracker"  # build_app.BUNDLE_ID (not imported: AppKit)
+# Claude Tracker's own page in System Settings > Notifications.
+SETTINGS_URL = f"x-apple.systempreferences:com.apple.Notifications-Settings.extension?id={BUNDLE_ID}"
 
 _BOOL_ERROR_BLOCK = {"callable": {"retval": {"type": b"v"},
                                   "arguments": {0: {"type": b"^v"}, 1: {"type": b"Z"},
@@ -103,10 +107,12 @@ class Notifier:
         self.center.requestAuthorizationWithOptions_completionHandler_(
             OPTION_ALERT | OPTION_SOUND, answered)
 
-    def send_checked(self, message, on_blocked):
+    def send_checked(self, message, on_blocked, on_no_banners=None):
         """Send `message` if macOS allows it right now; otherwise call
-        `on_blocked()` on the main thread. For the test alert, where the
-        user should hear why nothing showed."""
+        `on_blocked()` on the main thread. If it's sent but the alert style
+        is None (it only goes to Notification Center), `on_no_banners()` is
+        called too. For the test alert, where the user should hear why
+        nothing popped up."""
         if self.center is None:
             self.fallback(self.title, message)
             return
@@ -124,6 +130,8 @@ class Notifier:
                     if granted else on_blocked())
             else:
                 self.send(message, on_error=blocked)
+                if on_no_banners and settings.alertStyle() == ALERT_STYLE_NONE:
+                    AppHelper.callAfter(on_no_banners)
 
         self.center.getNotificationSettingsWithCompletionHandler_(got_settings)
 

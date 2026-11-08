@@ -706,16 +706,27 @@ class TokenCounterApp(rumps.App):
 
     def send_test_alert(self):
         self.notifier.send_checked("Test alert: this is how usage alerts look.",
-                                   on_blocked=self._notifications_blocked)
+                                   on_blocked=self._notifications_blocked,
+                                   on_no_banners=self._banners_off)
 
     def _notifications_blocked(self):
-        self.panel.close()
-        answer = rumps.alert(
+        self._point_to_notification_settings(
             "Notifications Are Off",
             f"macOS isn't letting {APP_NAME} show notifications. Turn them on for "
             f"{APP_NAME} in System Settings > Notifications.",
-            ok="Open Settings", cancel="Not Now",
         )
+
+    def _banners_off(self):
+        self._point_to_notification_settings(
+            "Alerts Won't Pop Up",
+            f"The test alert was sent, but {APP_NAME}'s alert style is set to None, so macOS "
+            "puts alerts only in Notification Center. To see them on screen, choose Temporary "
+            f"or Persistent for {APP_NAME} in System Settings > Notifications.",
+        )
+
+    def _point_to_notification_settings(self, title, message):
+        self.panel.close()
+        answer = rumps.alert(title, message, ok="Open Settings", cancel="Not Now")
         if answer == 1:
             subprocess.run(["open", SETTINGS_URL], capture_output=True)
 
