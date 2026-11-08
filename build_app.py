@@ -211,6 +211,20 @@ def build_icns(dest):
         )
 
 
+def sign(bundle, interpreter=None):
+    """Sign the bundle ad hoc so its signature covers Info.plist.
+
+    The copied interpreter is the process that actually runs, and macOS
+    only lets it post notifications if its own signature carries the
+    bundle's identifier: it compares the two, and "Allow notifications" in
+    System Settings belongs to the bundle's. Signed with its default name
+    instead, it's refused (UNErrorDomain error 1) even when allowed."""
+    if interpreter:
+        subprocess.run(["codesign", "--force", "--sign", "-", "--identifier", BUNDLE_ID,
+                        str(interpreter)], capture_output=True)
+    subprocess.run(["codesign", "--force", "--sign", "-", str(bundle)], capture_output=True)
+
+
 def default_dest():
     system = Path("/Applications")
     if os.access(system, os.W_OK):
@@ -241,10 +255,7 @@ def build(dest_dir, python, project_dir=PROJECT_DIR, icon=True):
         shutil.copy2(interpreter, macos / INTERPRETER_NAME)
     if icon:
         build_icns(resources / f"{ICON_NAME}.icns")
-    # Sign it (ad hoc) so the signature covers Info.plist and macOS ties
-    # notification permission to the bundle's identifier.
-    subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(bundle)],
-                   capture_output=True)
+    sign(bundle, macos / INTERPRETER_NAME if interpreter else None)
 
     # Tell Finder/Launchpad about the new bundle and refresh its icon.
     lsregister = (
