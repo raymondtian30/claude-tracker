@@ -148,7 +148,6 @@ class TokenCounterApp(rumps.App):
         self.state.setdefault("last_leaderboard_sync_date", None)
         self.state.setdefault("title_mode", "lifetime")
         self.state.setdefault("menu_bar_font_size", DEFAULT_MENU_BAR_FONT_SIZE)
-        self.state.setdefault("panel_tab", "overview")
         self.state.setdefault("panel_animation", DEFAULT_ANIMATION)
         self.state.setdefault("alerts_enabled", True)
         self.state.setdefault("alert_threshold", DEFAULT_ALERT_THRESHOLD)
@@ -157,6 +156,7 @@ class TokenCounterApp(rumps.App):
         self.state.setdefault("claude_usage_enabled", True)
         self.state.pop("budgets", None)  # token budgets, since removed
         self.state.pop("stats_tab", None)  # from the earlier in-menu tabs
+        self.state.pop("panel_tab", None)  # the panel always opens on Home now
         if self.state["first_seen_at"] is None:
             self.state["first_seen_at"] = date.today().isoformat()
         # Backfill must run before the first refresh: it re-reads each file
@@ -169,11 +169,7 @@ class TokenCounterApp(rumps.App):
         self._fetch_claude_usage()
 
         self.paused = False
-        self.panel = Panel(
-            on_action=self.handle_action,
-            on_tab_change=self.set_panel_tab,
-            selected_tab=self.state["panel_tab"],
-        )
+        self.panel = Panel(on_action=self.handle_action)
         self.panel.animation_seconds = animation_seconds(self.state["panel_animation"])
         self.settings_window = SettingsWindow(on_action=self.handle_action)
         self._render_panel()
@@ -273,10 +269,6 @@ class TokenCounterApp(rumps.App):
         self.settings_window.render(
             settings_tab(self.state, self.paused, SCAN_INTERVAL_CHOICES, detected)
         )
-
-    def set_panel_tab(self, key):
-        self.state["panel_tab"] = key
-        save_state(self.state, STATE_FILE)
 
     def handle_action(self, action, value):
         """Called by the panel when a button, switch or picker is used."""

@@ -154,3 +154,17 @@ def test_progress_past_the_end_is_clamped():
 
     assert fold_height(1.7, 600, unfolding=True) == 600
     assert fold_height(-1, 600, unfolding=True) == fold_height(0, 600, unfolding=True)
+
+
+def test_opening_the_panel_goes_back_to_home():
+    from panel_view import Panel
+
+    limits = {**TAB, "key": "limits", "title": "Usage Limits", "short": "Limits"}
+    panel = Panel(on_action=lambda action, value: None)
+    panel.render([TAB, limits], "footer", False)
+    panel._select_tab(1)
+    assert panel.selected == "limits"
+
+    panel._go_home()
+
+    assert panel.selected == "overview"

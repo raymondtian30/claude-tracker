@@ -43,7 +43,7 @@ If step 1 fails because `rumps` isn't installed, the script installs it for you 
 
 The first time you open it, it asks which AI tools you use (Claude Code, Codex, opencode, Gemini CLI -- only the ones found on your Mac are listed) and tracks only those. If you track more than one, a dropdown at the top picks which tool you're looking at, and the menu bar and the top of the panel show that tool's icon (taken from its app or editor extension already on your Mac; the coin if none is found, and in the combined view); pick **All AIs** in that dropdown to see every tool you track added up, grouped by model.
 
-A panel opens with a row of tabs along the top. Click an icon to switch tabs:
+A panel opens with a row of tabs along the top. It always opens on **Overview**; click an icon to switch tabs:
 
 - **Overview** -- today's and lifetime totals, a chart of the last 14 days, and yesterday / last 7 days / this month / your biggest day
 - **Token Types** -- today's and lifetime tokens split into input, output, cache write and cache read, each with a bar showing its share
