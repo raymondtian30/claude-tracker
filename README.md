@@ -19,7 +19,7 @@ By default it never connects to the internet or sends your data anywhere. The on
   From these it reads only token counts, which model was used, when, and which project folder. It skips your prompts, code and replies, and never touches opencode's account or credential tables.
 - `launchctl`, macOS's own built-in tool, only to turn its "start at login" setting on or off
 
-**There are three exceptions.** One is on by default: if you track Claude Code, the app asks Anthropic for your plan's limit percentages (see [Usage limits and alerts](#usage-limits-and-alerts)); turn off **Percentages from Anthropic** in the Limits tab to stop it. Two are opt-in: an API key you add for an AI provider (see [OpenAI, DeepSeek, Kimi and other AI companies](#openai-deepseek-kimi-and-other-ai-companies)), and the Leaderboard (Beta) feature.
+**There are three exceptions.** One is on by default: if you track Claude Code, the app asks Anthropic for your plan's limit percentages (see [Usage limits and alerts](#usage-limits-and-alerts)); turn off **Percentages from Anthropic** in the Limits tab to stop it. Two are opt-in: an API key you add for an AI provider (see [OpenAI, DeepSeek, Kimi and other AI companies](#openai-deepseek-kimi-and-other-ai-companies)), and the Leaderboard (Beta) feature. Clicking **Check for Updates** also contacts GitHub, only when you click it (see [Updating](#quick-start)).
 
 **The Leaderboard (Beta) is entirely opt-in** -- its tab is hidden until you turn on **Show Leaderboard (Beta)** in Settings, and nothing below happens unless you then click "Set Up Leaderboard" yourself. See the [Leaderboard (Beta)](#leaderboard-beta) section for exactly what that does.
 
@@ -35,7 +35,9 @@ By default it never connects to the internet or sends your data anywhere. The on
 
 That's it. It now also starts automatically every time you log in, and **Claude Tracker** is in your Applications folder (Finder, Launchpad and Spotlight) if you ever quit it and want it back. Opening it while it's already running just opens its panel.
 
-The app in Applications is a small launcher that runs the code in this folder, so your totals stay in `state.json` here and a `git pull` updates the app. If you move this folder, run `./install.sh` again.
+The app in Applications is a small launcher that runs the code in this folder, so your totals stay in `state.json` here. If you move this folder, run `./install.sh` again.
+
+**Updating:** click **Check for Updates** under About in Settings. If GitHub has a newer release, the app downloads it into this folder (a `git` fast-forward to the release's tag), rebuilds itself and restarts. Your settings and totals live in `state.json` and `friends.json`, which updates never touch. It won't update a copy whose code you've changed or that's on a branch other than `master`, so your own work is never overwritten. This is the only time the app contacts GitHub besides the opt-in Leaderboard.
 
 If step 1 fails because `rumps` isn't installed, the script installs it for you automatically the first time (it needs Python 3 and `pip`, which come standard on macOS).
 
@@ -143,6 +145,7 @@ limits.py                    plan limits and when to send a usage alert
 claude_usage.py              Claude Code's limit percentages, from Anthropic
 notifications.py             macOS notifications (UNUserNotificationCenter)
 version.py                   app name, version number and credits
+updater.py                   Check for Updates: installs the newest GitHub release over this copy
 active_sessions.py           matches running `claude` processes to their sessions
 leaderboard.py               Leaderboard (Beta) -- local friends-list storage and sorting
 gist_sync.py                 Leaderboard (Beta) -- Keychain token storage + GitHub Gist API calls
