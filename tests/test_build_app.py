@@ -24,8 +24,30 @@ def test_build_creates_menu_bar_only_bundle(tmp_path):
     assert os.access(executable, os.X_OK)
     script = executable.read_text()
     assert f"cd '{project}'" in script
-    assert f"exec /usr/bin/python3 '{project / 'app.py'}'" in script
-    assert f"nohup /usr/bin/python3 '{project / 'app.py'}'" in script
+    assert f"""exec "$PYTHON" '{project / 'app.py'}'""" in script
+    assert f"""nohup "$PYTHON" '{project / 'app.py'}'""" in script
+    assert "PYTHON=/usr/bin/python3" in script  # if the bundled copy can't run
+
+
+def test_build_puts_a_copy_of_pythons_interpreter_in_the_bundle(tmp_path):
+    import sys
+
+    bundle = build_app.build(tmp_path, sys.executable, project_dir=tmp_path, icon=False)
+
+    interpreter = bundle / "Contents" / "MacOS" / build_app.INTERPRETER_NAME
+    expected = build_app.interpreter_binary(sys.executable)
+    if expected is None:  # not a framework build: nothing to copy
+        assert not interpreter.exists()
+        return
+    assert os.access(interpreter, os.X_OK)  # re-signed, so not byte-for-byte the same
+    result = subprocess.run([str(interpreter), "-c", "from Foundation import NSBundle;"
+                             "print(NSBundle.mainBundle().bundleIdentifier())"],
+                            capture_output=True, text=True)
+    assert result.stdout.strip() == build_app.BUNDLE_ID
+
+
+def test_interpreter_binary_is_none_for_a_python_that_cant_run(tmp_path):
+    assert build_app.interpreter_binary(str(tmp_path / "missing-python")) is None
 
 
 def _fake_project(tmp_path):

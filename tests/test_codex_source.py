@@ -153,3 +153,42 @@ def test_missing_sessions_dir_is_empty_not_error(tmp_path):
     scan_codex(state, tmp_path / "nope")
     assert codex_total(state) == 0
     assert state["error"] is None
+
+
+def limits_event(used, at=TS):
+    return {"timestamp": at, "type": "event_msg",
+            "payload": {"type": "token_count", "info": None,
+                        "rate_limits": {"primary": {"used_percent": used, "window_minutes": 300,
+                                                    "resets_at": 1795229213},
+                                        "secondary": None}}}
+
+
+def test_scan_keeps_the_newest_rate_limits(tmp_path):
+    from codex_source import codex_rate_limits
+
+    write(tmp_path / "a.jsonl", [meta(), limits_event(10.0, "2026-07-29T10:00:00.000Z"),
+                                 limits_event(20.0, "2026-07-29T11:00:00.000Z")])
+    write(tmp_path / "b.jsonl", [meta(), limits_event(83.0, "2026-07-29T12:00:00.000Z")])
+
+    state = scan_codex({}, tmp_path)
+
+    assert codex_rate_limits(state)["primary"]["used_percent"] == 83.0
+
+
+def test_no_rate_limits_recorded():
+    from codex_source import codex_rate_limits
+
+    assert codex_rate_limits({}) is None
+
+
+def test_files_saved_before_limits_were_tracked_are_read_again(tmp_path):
+    from codex_source import codex_rate_limits
+
+    path = tmp_path / "a.jsonl"
+    write(path, [meta(), limits_event(50.0)])
+    stat = path.stat()
+    state = {"files": {str(path): {"size": stat.st_size, "mtime": stat.st_mtime, "daily": {}}}}
+
+    scan_codex(state, tmp_path)
+
+    assert codex_rate_limits(state)["primary"]["used_percent"] == 50.0

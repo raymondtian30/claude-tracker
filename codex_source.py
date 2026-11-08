@@ -60,6 +60,24 @@ def read_codex_file(path):
     """This file's per-day buckets. Counts per-response usage records
     (de-duplicated by response id); files without any fall back to the growth
     of Codex's running total, ignoring repeats."""
+    return _read_codex(path)[0]
+
+
+def _latest_rate_limits(entries):
+    """{"at": timestamp, "rate_limits": {...}} from the newest token_count
+    event that carries Codex's plan limits, or None."""
+    latest = None
+    for entry in entries:
+        payload = entry.get("payload") or {}
+        if entry.get("type") == "event_msg" and payload.get("type") == "token_count" \
+                and payload.get("rate_limits") and entry.get("timestamp"):
+            if latest is None or entry["timestamp"] >= latest["at"]:
+                latest = {"at": entry["timestamp"], "rate_limits": payload["rate_limits"]}
+    return latest
+
+
+def _read_codex(path):
+    """(per-day buckets, latest rate limits) for one session file."""
     entries = list(_complete_lines(path))
     if entries and not any(e.get("type") in KNOWN_TYPES for e in entries):
         raise SourceFormatError(f"{Path(path).name} doesn't look like a Codex session log")
@@ -101,7 +119,7 @@ def read_codex_file(path):
 
         if sum(parts.values()):
             add_usage(daily, _local_date_of(timestamp), model, project_label(cwd), parts)
-    return daily
+    return daily, _latest_rate_limits(entries)
 
 
 def scan_codex(source_state, sessions_dir=CODEX_SESSIONS_DIR):
@@ -116,16 +134,28 @@ def scan_codex(source_state, sessions_dir=CODEX_SESSIONS_DIR):
         except FileNotFoundError:
             continue
         saved = files.get(key)
-        if saved and saved["size"] == stat.st_size and saved["mtime"] == stat.st_mtime:
+        # Files saved before rate limits were read ("limits" missing) are read
+        # once more for them.
+        if saved and saved["size"] == stat.st_size and saved["mtime"] == stat.st_mtime \
+                and "limits" in saved:
             continue
         try:
-            daily = read_codex_file(path)
+            daily, limits = _read_codex(path)
         except (SourceFormatError, OSError) as e:
             errors.append(str(e))
             continue
-        files[key] = {"size": stat.st_size, "mtime": stat.st_mtime, "daily": daily}
+        files[key] = {"size": stat.st_size, "mtime": stat.st_mtime, "daily": daily,
+                      "limits": limits}
     source_state["error"] = errors[0] if errors else None
     return source_state
+
+
+def codex_rate_limits(source_state):
+    """Codex's plan limits as last recorded in any session, or None."""
+    records = [f["limits"] for f in source_state.get("files", {}).values() if f.get("limits")]
+    if not records:
+        return None
+    return max(records, key=lambda r: r["at"])["rate_limits"]
 
 
 def codex_daily(source_state):

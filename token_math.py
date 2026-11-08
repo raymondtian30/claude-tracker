@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -17,14 +18,22 @@ def save_state(state, state_file):
     state_file.write_text(json.dumps(state))
 
 
-def sum_usage_since(path, offset, daily=None, stop_at=None):
+def _note_limit(entry, limit_hits):
+    """Remember when a Claude limit was reached: {limit type: reset time}."""
+    info = (entry.get("apiErrorParams") or {}).get("rate_limit_info") or {}
+    if info.get("status") == "rejected" and info.get("resetsAt"):
+        kind = info.get("rateLimitType") or "five_hour"
+        limit_hits[kind] = max(limit_hits.get(kind, 0), info["resetsAt"])
+
+
+def sum_usage_since(path, offset, daily=None, stop_at=None, limit_hits=None):
     """Sum token usage from an assistant-log jsonl file starting at a byte offset.
 
     Only consumes complete (newline-terminated) lines so a session file being
     actively written to never has a half-written JSON line parsed.
     If `daily` is given, each counted entry is also recorded into those
     per-day buckets (see usage_stats). If `stop_at` is given, reading stops
-    at that byte offset.
+    at that byte offset. `limit_hits` collects reached limits.
     Returns (tokens_found, new_offset).
     """
     with open(path, "rb") as f:
@@ -43,6 +52,8 @@ def sum_usage_since(path, offset, daily=None, stop_at=None):
             continue
         if entry.get("type") != "assistant":
             continue
+        if limit_hits is not None:
+            _note_limit(entry, limit_hits)
         usage = entry.get("message", {}).get("usage")
         if not usage:
             continue
@@ -66,6 +77,7 @@ def refresh_grand_total(state, projects_dir=CLAUDE_PROJECTS_DIR):
     """
     offsets = state["file_offsets"]
     daily = state.setdefault("daily", {})
+    limit_hits = state.setdefault("claude_limit_hits", {})
     current_files = {str(p) for p in projects_dir.rglob("*.jsonl")}
 
     for tracked_path in list(offsets):
@@ -74,10 +86,29 @@ def refresh_grand_total(state, projects_dir=CLAUDE_PROJECTS_DIR):
 
     for path_str in current_files:
         offset = offsets.get(path_str, 0)
-        tokens, new_offset = sum_usage_since(path_str, offset, daily)
+        tokens, new_offset = sum_usage_since(path_str, offset, daily, limit_hits=limit_hits)
         state["grand_total"] += tokens
         offsets[path_str] = new_offset
 
+    state.pop("claude_recent", None)  # from the 5-hour budgets, since removed
+    return state
+
+
+def backfill_limits(state, projects_dir=CLAUDE_PROJECTS_DIR, now=None):
+    """One-time read of the last week's logs (up to what's already counted)
+    for reached limits, so the Limits tab is right straight after updating."""
+    if state.get("limits_backfilled"):
+        return state
+    now = now or time.time()
+    limit_hits = state.setdefault("claude_limit_hits", {})
+    for path_str, offset in state.get("file_offsets", {}).items():
+        try:
+            if Path(path_str).stat().st_mtime < now - 8 * 24 * 3600:
+                continue
+            sum_usage_since(path_str, 0, stop_at=offset, limit_hits=limit_hits)
+        except FileNotFoundError:
+            continue
+    state["limits_backfilled"] = True
     return state
 
 

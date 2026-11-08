@@ -20,9 +20,19 @@ Kept free of AppKit so it can be unit-tested.
 """
 
 import textwrap
+import time
 from datetime import date, datetime, timedelta
 
 from accounts import KEY_HELP, WINDOW_DAYS
+from limits import (
+    ALERT_THRESHOLDS,
+    DEFAULT_ALERT_THRESHOLD,
+    WINDOW_LABELS,
+    WINDOWS,
+    format_reset,
+    limit_windows,
+    plan_levels,
+)
 from panel_speeds import ANIMATION_SPEEDS, DEFAULT_ANIMATION
 from pricing import estimate_cost, format_dollars
 from providers import PROVIDER_NAMES, PROVIDERS
@@ -402,6 +412,80 @@ def _cost_tab(d):
     }
 
 
+def _claude_limit_notes(state, levels, prefix):
+    """What to say under Claude Code's limits when there are no percentages."""
+    notes = []
+    if state.get("claude_usage_enabled", True):
+        usage = state.get("claude_usage") or {}
+        if usage.get("error"):
+            notes += note_lines(prefix + usage["error"])
+        elif not usage.get("limits"):
+            notes += note_lines(prefix + "Getting percentages from Anthropic…")
+    else:
+        text = "Claude Code only records a limit once it's reached."
+        if not levels:
+            text += " None is reached right now."
+        text += " Turn on Percentages from Anthropic in Settings to see how close you are."
+        notes += note_lines(prefix + text)
+    return notes
+
+
+def _limits_tab(d, now):
+    view, key = d.view, d.view["key"]
+    if key == "all":
+        tool_keys = d.state.get("enabled_tools", [])
+    elif key in TOOL_NAMES:
+        tool_keys = [key]
+    else:
+        tool_keys = []
+
+    plan = []
+    levels = plan_levels(d.state, tool_keys, now)
+    for tool in tool_keys:
+        prefix = f"{TOOL_NAMES[tool]}: " if key == "all" else ""
+        found = [level for level in levels if level["id"].startswith(f"{tool}:")]
+        for level in found:
+            label = f"{level['name']} {level['label']}" if key == "all" else level["label"]
+            if level["resets_at"]:
+                label += f" · resets {format_reset(level['resets_at'], now)}"
+            value = "Reached" if level.get("reached") else f"{level['percent']:.0f}%"
+            plan.append(("bar", label, value, min(level["percent"] / 100, 1.0)))
+        if tool == "claude_code":
+            plan += _claude_limit_notes(d.state, found, prefix)
+        elif tool == "codex" and not found:
+            plan += note_lines(prefix + "Codex hasn't recorded its plan limits yet.")
+    if not plan:
+        plan += note_lines(f"{view['name']} doesn't record plan limits on this Mac.")
+
+    cards = [{"title": "Plan limits", "items": plan}]
+    windows = limit_windows(d.state, tool_keys, now)
+    if windows:
+        cards.append(_alerts_card(d.state, windows))
+    return {
+        "key": "limits",
+        "title": "Usage Limits",
+        "short": "Limits",
+        "icon": "speedometer",
+        "cards": cards,
+    }
+
+
+def _alerts_card(state, windows):
+    """When to be notified, for the limit `windows` this view has."""
+    threshold = state.get("alert_threshold", DEFAULT_ALERT_THRESHOLD)
+    windows_on = state.get("alert_windows", [w for w, _ in WINDOWS])
+    items = [
+        ("switch", "Notify me", state.get("alerts_enabled", True), "alerts_enabled"),
+        ("popup", "When usage reaches", [f"{t}%" for t in ALERT_THRESHOLDS],
+         ALERT_THRESHOLDS.index(threshold) if threshold in ALERT_THRESHOLDS
+         else ALERT_THRESHOLDS.index(DEFAULT_ALERT_THRESHOLD), "alert_threshold"),
+    ]
+    items += [("switch", f"{WINDOW_LABELS[window]} limit", window in windows_on,
+               f"alert_window:{window}") for window in windows]
+    items.append(("buttons", [("Send Test Alert", "bell", "alert_test")]))
+    return {"title": "Notifications", "items": items}
+
+
 def _sessions_tab(view, sessions):
     if sessions:
         items = [
@@ -570,6 +654,9 @@ def settings_tab(state, paused, interval_choices, detected):
                     ("switch", "Start at login", state.get("start_at_login", True), "login"),
                     ("switch", "Show Leaderboard (Beta)", leaderboard_enabled(state),
                      "leaderboard_enabled"),
+                    *([("switch", "Percentages from Anthropic",
+                        state.get("claude_usage_enabled", True), "claude_usage_enabled")]
+                      if "claude_code" in state.get("enabled_tools", []) else []),
                 ],
             },
             {
@@ -596,7 +683,7 @@ def leaderboard_enabled(state):
     return state.get("leaderboard_enabled", bool(state.get("my_gist_id")))
 
 
-def build_panel(view, state, sessions, friends, show_leaderboard, today=None):
+def build_panel(view, state, sessions, friends, show_leaderboard, today=None, now=None):
     """The tabs shown in the tab bar, in order, for one tool's view (or the
     combined view)."""
     d = _Data(view, today or date.today(), state)
@@ -606,6 +693,7 @@ def build_panel(view, state, sessions, friends, show_leaderboard, today=None):
         _models_tab(d),
         _projects_tab(d),
         _cost_tab(d),
+        _limits_tab(d, now or time.time()),
     ]
     # A running session can't be tied to one provider, so provider views
     # have no Live tab.

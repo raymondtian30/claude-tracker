@@ -260,3 +260,31 @@ def test_backfill_skips_missing_files(tmp_path):
     backfill_daily(state)
 
     assert state["daily"] == {}
+
+
+def limit_hit(kind="five_hour", resets_at=1794123000, status="rejected"):
+    return {"type": "assistant", "timestamp": "2026-11-08T07:29:11.278Z",
+            "apiErrorParams": {"rate_limit_info": {"status": status, "resetsAt": resets_at,
+                                                   "rateLimitType": kind}}}
+
+
+def test_refresh_remembers_when_claude_limits_were_reached(tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    write_jsonl(project / "s.jsonl", [
+        limit_hit(resets_at=100), limit_hit(resets_at=300), limit_hit("seven_day", 500),
+        limit_hit(resets_at=999, status="allowed"),
+    ])
+    state = {"grand_total": 0, "file_offsets": {}}
+
+    refresh_grand_total(state, tmp_path)
+
+    assert state["claude_limit_hits"] == {"five_hour": 300, "seven_day": 500}
+
+
+def test_refresh_drops_the_old_5_hour_budget_replies(tmp_path):
+    state = {"grand_total": 0, "file_offsets": {}, "claude_recent": [[1, 1]]}
+
+    refresh_grand_total(state, tmp_path)
+
+    assert "claude_recent" not in state
