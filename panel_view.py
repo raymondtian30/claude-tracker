@@ -6,6 +6,7 @@ The whole view is rebuilt on each render, which keeps the code simple and
 is cheap at this size.
 """
 
+import functools
 import math
 import time
 
@@ -126,7 +127,10 @@ def _faint(alpha):
     return NSColor.labelColor().colorWithAlphaComponent_(alpha)
 
 
+@functools.lru_cache(maxsize=None)
 def _symbol(name, size=13, weight=0.0):
+    """An SF Symbol image. Cached: NSImages are immutable once made, and the
+    same few are drawn on every redraw."""
     image = NSImage.imageWithSystemSymbolName_accessibilityDescription_(name, None)
     if image is None:
         return None
@@ -170,6 +174,9 @@ def _box(frame, fill, border=None, radius=CORNER):
 class _FlippedView(NSView):
     def isFlipped(self):
         return True
+
+
+TAB_FADE_SECONDS = 0.15  # a newly picked tab fades in this fast
 
 
 class _BarView(NSView):
@@ -343,8 +350,7 @@ class Panel:
     def _go_home(self):
         """Every opening starts on the first tab (Home)."""
         if self.tabs and self.selected != self.tabs[0]["key"]:
-            self.selected = self.tabs[0]["key"]
-            self._draw()
+            self._select_tab(0, fade=False)  # it's closed: nothing to fade
 
     def _show(self, retries_left):
         from AppKit import NSApplication
@@ -476,14 +482,21 @@ class Panel:
 
     # -- events
 
-    def _select_tab(self, index):
+    def _select_tab(self, index, fade=True):
         keys = [t["key"] for t in self.tabs]
         if index >= len(keys):
+            return
+        if keys[index] == self.selected:
             return
         self.selected = keys[index]
         if self.on_tab_change:
             self.on_tab_change(self.selected)
-        self._draw()
+        if getattr(self, "_tab_views", None) is None or self.welcome:
+            self._draw()
+            return
+        # Only the tab bar's highlight and the content change: no redraw.
+        self._style_tab_bar()
+        self._show_tab(fade=fade)
 
     def _fire(self, tag, value):
         self.on_action(self._actions[tag], value)
@@ -514,12 +527,23 @@ class Panel:
     def _current_tab(self):
         return next(t for t in self.tabs if t["key"] == self.selected)
 
+    @property
+    def _canvas(self):
+        """The view controls are being drawn into: the panel itself, or a
+        tab's own content view while that's being built."""
+        return getattr(self, "_drawing_into", None) or self.root
+
     def _draw(self):
+        """Draw everything from scratch (new data). Each tab's content is
+        built into a view of its own the first time it's shown, and kept
+        until the next render, so switching tabs only swaps views."""
         if not self.tabs:
             return
         for view in list(self.root.subviews()):
             view.removeFromSuperview()
         self._actions = []
+        self._tab_views = {}  # tab key -> (view, height)
+        self._shown_tab_view = None
         inner = WIDTH - 2 * PAD
 
         y = PAD
@@ -535,26 +559,78 @@ class Panel:
                 PAD + 2, y - 4, inner - 4,
             )
             y += HEIGHTS["popup"] + 2
-        y = self._draw_tab_bar(y, inner) + 12
+        self._tab_bar_top = y
+        self._tab_bar = None
+        self._content_top = self._draw_tab_bar_view() + 12
+        self._show_tab(fade=False)
 
-        tab = self._current_tab()
-        for card in tab["cards"]:
-            y = self._draw_card(card, y, inner) + GAP
+    def _draw_tab_bar_view(self):
+        """(Re)draw the tab bar, in a view of its own so a tab switch can
+        replace it alone. Returns where the content starts."""
+        if self._tab_bar is not None:
+            self._tab_bar.removeFromSuperview()
+        top = self._tab_bar_top
+        self._tab_bar = _FlippedView.alloc().initWithFrame_(NSMakeRect(0, top, WIDTH, 46))
+        self._drawing_into = self._tab_bar
+        try:
+            bottom = self._draw_tab_bar(0, WIDTH - 2 * PAD)
+        finally:
+            self._drawing_into = None
+        self.root.addSubview_(self._tab_bar)
+        return top + bottom
 
-        y = self._draw_footer(y, inner)
-        self._set_height(y + PAD)
+    def _tab_view(self, tab):
+        """The selected tab's cards and the footer, built once per render."""
+        if tab["key"] not in self._tab_views:
+            inner = WIDTH - 2 * PAD
+            view = _FlippedView.alloc().initWithFrame_(NSMakeRect(0, self._content_top, WIDTH, 10))
+            view.setWantsLayer_(True)  # so it can fade in smoothly
+            self._drawing_into = view
+            try:
+                y = 0
+                for card in tab["cards"]:
+                    y = self._draw_card(card, y, inner) + GAP
+                y = self._draw_footer(y, inner)
+            finally:
+                self._drawing_into = None
+            view.setFrameSize_((WIDTH, y))
+            self._tab_views[tab["key"]] = (view, y)
+        return self._tab_views[tab["key"]]
+
+    def _show_tab(self, fade):
+        view, height = self._tab_view(self._current_tab())
+        if self._shown_tab_view is not None and self._shown_tab_view is not view:
+            self._shown_tab_view.removeFromSuperview()
+        self._shown_tab_view = view
+        if view.superview() is None:
+            self.root.addSubview_(view)
+        self._set_height(self._content_top + height + PAD)
+        if fade and self.animation_seconds:
+            from AppKit import NSAnimationContext
+
+            view.setAlphaValue_(0.0)
+
+            def animate(context):
+                context.setDuration_(TAB_FADE_SECONDS)
+                view.animator().setAlphaValue_(1.0)
+
+            NSAnimationContext.runAnimationGroup_completionHandler_(animate, None)
+        else:
+            view.setAlphaValue_(1.0)
 
     def _set_height(self, height):
         self.root.setFrameSize_((WIDTH, height))
         screen = NSScreen.mainScreen()
         screen_height = screen.visibleFrame().size.height if screen else height + SCREEN_MARGIN
         self._full_height = panel_height(height, screen_height)
-        if self._animation is None:  # an animation sizes the panel itself
+        # An animation sizes the panel itself; an unchanged size would only
+        # cost a needless layout pass.
+        if self._animation is None and self.popover.contentSize().height != self._full_height:
             self.popover.setContentSize_((WIDTH, self._full_height))
 
     def _draw_titled_cards(self, tab, y, inner):
         """A tab drawn on its own, under a title (the first-run picker)."""
-        self.root.addSubview_(
+        self._canvas.addSubview_(
             _label(tab["title"], NSMakeRect(PAD + 2, y + 4, inner, 20), size=15,
                    weight=NSFontWeightSemibold)
         )
@@ -570,14 +646,14 @@ class Panel:
             view = NSImageView.imageViewWithImage_(logo)
             view.setContentTintColor_(NSColor.labelColor())
             view.setFrame_(NSMakeRect(PAD, y + 2, 28, 28))
-            self.root.addSubview_(view)
+            self._canvas.addSubview_(view)
         else:
-            self.root.addSubview_(_label("🪙", NSMakeRect(PAD, y + 2, 28, 28), size=22))
-        self.root.addSubview_(
+            self._canvas.addSubview_(_label("🪙", NSMakeRect(PAD, y + 2, 28, 28), size=22))
+        self._canvas.addSubview_(
             _label(APP_NAME, NSMakeRect(PAD + 34, y, 200, 18),
                    size=14, weight=NSFontWeightSemibold)
         )
-        self.root.addSubview_(
+        self._canvas.addSubview_(
             _label(getattr(self, "subtitle", "for Claude Code"), NSMakeRect(PAD + 34, y + 17, 220, 15), size=11,
                    color=NSColor.secondaryLabelColor())
         )
@@ -587,28 +663,20 @@ class Panel:
         height = 44
         count = len(self.tabs)
         slot = inner / count
+        self._tab_parts = []  # (tab, icon button, caption) for restyling
         for index, tab in enumerate(self.tabs):
             x = PAD + index * slot
-            selected = tab["key"] == self.selected
-            tint = NSColor.controlAccentColor() if selected else NSColor.secondaryLabelColor()
             button = NSButton.alloc().initWithFrame_(NSMakeRect(x, y, slot, 26))
             button.setBordered_(False)
-            button.setImage_(_symbol(tab["icon"], 16, NSFontWeightSemibold if selected else 0.0))
             button.setImagePosition_(NSImageOnly)
-            button.setContentTintColor_(tint)
             button.setToolTip_(tab["title"])
             button.setTag_(index)
             button.setTarget_(self._target)
             button.setAction_("tabClicked:")
-            self.root.addSubview_(button)
-            caption = _label(tab["short"], NSMakeRect(x, y + 26, slot, 13), size=9,
-                             weight=NSFontWeightSemibold if selected else 0.0,
-                             color=tint, align="center")
-            self.root.addSubview_(caption)
-            if selected:
-                underline = _box(NSMakeRect(x + slot * 0.25, y + height - 3, slot * 0.5, 3),
-                                 NSColor.controlAccentColor(), radius=1.5)
-                self.root.addSubview_(underline)
+            self._canvas.addSubview_(button)
+            caption = _label(tab["short"], NSMakeRect(x, y + 26, slot, 13), size=9, align="center")
+            self._canvas.addSubview_(caption)
+            self._tab_parts.append((tab, button, caption))
             # An invisible button over the whole tab (icon, caption and the
             # space around them), so clicking anywhere on it switches tabs.
             hit_area = NSButton.alloc().initWithFrame_(NSMakeRect(x, y, slot, height))
@@ -617,10 +685,29 @@ class Panel:
             hit_area.setTag_(index)
             hit_area.setTarget_(self._target)
             hit_area.setAction_("tabClicked:")
-            self.root.addSubview_(hit_area)
+            self._canvas.addSubview_(hit_area)
+        self._underline = _box(NSMakeRect(PAD, y + height - 3, slot * 0.5, 3),
+                               NSColor.controlAccentColor(), radius=1.5)
+        self._canvas.addSubview_(self._underline)
+        self._tab_slot = (y + height - 3, slot)
+        self._style_tab_bar()
         hairline = _box(NSMakeRect(PAD, y + height, inner, 1), _faint(0.1), radius=0)
-        self.root.addSubview_(hairline)
+        self._canvas.addSubview_(hairline)
         return y + height + 1
+
+    def _style_tab_bar(self):
+        """Mark the selected tab: accent color, bolder icon, underline."""
+        for index, (tab, button, caption) in enumerate(self._tab_parts):
+            selected = tab["key"] == self.selected
+            tint = NSColor.controlAccentColor() if selected else NSColor.secondaryLabelColor()
+            weight = NSFontWeightSemibold if selected else 0.0
+            button.setImage_(_symbol(tab["icon"], 16, weight))
+            button.setContentTintColor_(tint)
+            caption.setTextColor_(tint)
+            caption.setFont_(NSFont.systemFontOfSize_weight_(9, weight))
+            if selected:
+                top, slot = self._tab_slot
+                self._underline.setFrameOrigin_((PAD + index * slot + slot * 0.25, top))
 
     def _card_height(self, card):
         height = CARD_PAD * 2
@@ -635,12 +722,12 @@ class Panel:
             self._draw_tiles(card["items"][0], PAD, y, inner)
             return y + 58
         height = self._card_height(card)
-        self.root.addSubview_(_box(NSMakeRect(PAD, y, inner, height), _faint(0.05), _faint(0.08)))
+        self._canvas.addSubview_(_box(NSMakeRect(PAD, y, inner, height), _faint(0.05), _faint(0.08)))
         x = PAD + CARD_PAD
         width = inner - 2 * CARD_PAD
         cy = y + CARD_PAD
         if card["title"]:
-            self.root.addSubview_(
+            self._canvas.addSubview_(
                 _label(card["title"], NSMakeRect(x, cy, width, 18), size=13,
                        weight=NSFontWeightSemibold, color=NSColor.secondaryLabelColor())
             )
@@ -658,48 +745,48 @@ class Panel:
         tile_width = (width - gap * (len(tiles) - 1)) / len(tiles)
         for index, (label, value, icon) in enumerate(tiles):
             tx = x + index * (tile_width + gap)
-            self.root.addSubview_(_box(NSMakeRect(tx, y, tile_width, 58), _faint(0.06), radius=8))
+            self._canvas.addSubview_(_box(NSMakeRect(tx, y, tile_width, 58), _faint(0.06), radius=8))
             text_x = tx + 10
             if icon:
                 image_view = NSImageView.imageViewWithImage_(_symbol(icon, 11, NSFontWeightSemibold))
                 image_view.setContentTintColor_(NSColor.controlAccentColor())
                 image_view.setFrame_(NSMakeRect(tx + 10, y + 9, 14, 14))
-                self.root.addSubview_(image_view)
+                self._canvas.addSubview_(image_view)
                 text_x += 18
-            self.root.addSubview_(
+            self._canvas.addSubview_(
                 _label(label, NSMakeRect(text_x, y + 8, tile_width - (text_x - tx) - 8, 16),
                        size=11, color=NSColor.secondaryLabelColor())
             )
             value_field = _label(value, NSMakeRect(tx + 10, y + 26, tile_width - 20, 26))
             value_field.setFont_(NSFont.monospacedDigitSystemFontOfSize_weight_(21, NSFontWeightSemibold))
-            self.root.addSubview_(value_field)
+            self._canvas.addSubview_(value_field)
 
     def _draw_chart(self, item, x, y, width):
         _, values, caption = item
-        self.root.addSubview_(
+        self._canvas.addSubview_(
             _label(caption, NSMakeRect(x, y, width, 14), size=10, color=NSColor.secondaryLabelColor())
         )
         chart = _ChartView.alloc().initWithFrame_(NSMakeRect(x, y + 18, width, 58))
         chart.values = list(values)
-        self.root.addSubview_(chart)
+        self._canvas.addSubview_(chart)
 
     def _draw_bar(self, item, x, y, width):
         _, label, value, fraction = item
-        self.root.addSubview_(
+        self._canvas.addSubview_(
             _label(label, NSMakeRect(x, y, width - 120, 18), truncate="middle")
         )
-        self.root.addSubview_(
+        self._canvas.addSubview_(
             _label(value, NSMakeRect(x + width - 120, y, 120, 18), align="right",
                    color=NSColor.secondaryLabelColor())
         )
         bar = _BarView.alloc().initWithFrame_(NSMakeRect(x, y + 21, width, 6))
         bar.fraction = fraction
-        self.root.addSubview_(bar)
+        self._canvas.addSubview_(bar)
 
     def _draw_row(self, item, x, y, width):
         _, label, value = item
-        self.root.addSubview_(_label(label, NSMakeRect(x, y + 2, width - 110, 18), truncate="middle"))
-        self.root.addSubview_(
+        self._canvas.addSubview_(_label(label, NSMakeRect(x, y + 2, width - 110, 18), truncate="middle"))
+        self._canvas.addSubview_(
             _label(value, NSMakeRect(x + width - 110, y + 2, 110, 18), align="right",
                    weight=NSFontWeightSemibold)
         )
@@ -711,14 +798,14 @@ class Panel:
             icon = NSImageView.imageViewWithImage_(_symbol("exclamationmark.triangle.fill", 12))
             icon.setContentTintColor_(NSColor.systemOrangeColor())
             icon.setFrame_(NSMakeRect(x, y + 1, 16, 15))
-            self.root.addSubview_(icon)
-        self.root.addSubview_(
+            self._canvas.addSubview_(icon)
+        self._canvas.addSubview_(
             _label(text, NSMakeRect(x + 22, y, width - 22, 16), size=12,
                    weight=NSFontWeightSemibold, color=NSColor.systemOrangeColor())
         )
 
     def _draw_note(self, item, x, y, width):
-        self.root.addSubview_(
+        self._canvas.addSubview_(
             _label(item[1], NSMakeRect(x, y + 1, width, 14), size=11,
                    color=NSColor.secondaryLabelColor())
         )
@@ -734,11 +821,11 @@ class Panel:
                 button.setImagePosition_(NSImageLeading)
             button.setFrame_(NSMakeRect(x + index * (button_width + gap), y, button_width, 26))
             button.setTag_(self._register(action))
-            self.root.addSubview_(button)
+            self._canvas.addSubview_(button)
 
     def _control_label(self, label, x, y, width):
         if label:
-            self.root.addSubview_(_label(label, NSMakeRect(x, y + 5, width, 18)))
+            self._canvas.addSubview_(_label(label, NSMakeRect(x, y + 5, width, 18)))
 
     def _draw_segmented(self, item, x, y, width):
         _, label, options, selected, action = item
@@ -751,7 +838,7 @@ class Panel:
         control.setFrame_(NSMakeRect(control_x, y + 2, x + width - control_x, 24))
         control.setSelectedSegment_(selected)
         control.setTag_(self._register(action))
-        self.root.addSubview_(control)
+        self._canvas.addSubview_(control)
 
     def _draw_popup(self, item, x, y, width):
         _, label, options, selected, action = item
@@ -764,7 +851,7 @@ class Panel:
         popup.setTarget_(self._target)
         popup.setAction_("popupChanged:")
         popup.setTag_(self._register(action))
-        self.root.addSubview_(popup)
+        self._canvas.addSubview_(popup)
 
     def _draw_switch(self, item, x, y, width):
         _, label, is_on, action = item
@@ -775,18 +862,18 @@ class Panel:
         switch.setTarget_(self._target)
         switch.setAction_("switchChanged:")
         switch.setTag_(self._register(action))
-        self.root.addSubview_(switch)
+        self._canvas.addSubview_(switch)
 
     # -- footer
 
     def _draw_footer(self, y, inner):
-        self.root.addSubview_(_box(NSMakeRect(PAD, y, inner, 1), _faint(0.1), radius=0))
+        self._canvas.addSubview_(_box(NSMakeRect(PAD, y, inner, 1), _faint(0.1), radius=0))
         y += 9
         calendar = NSImageView.imageViewWithImage_(_symbol("calendar", 11))
         calendar.setContentTintColor_(NSColor.secondaryLabelColor())
         calendar.setFrame_(NSMakeRect(PAD + 2, y + 5, 14, 14))
-        self.root.addSubview_(calendar)
-        self.root.addSubview_(
+        self._canvas.addSubview_(calendar)
+        self._canvas.addSubview_(
             _label(self.footer, NSMakeRect(PAD + 20, y + 4, inner - 90, 16), size=11,
                    color=NSColor.secondaryLabelColor())
         )
@@ -806,7 +893,7 @@ class Panel:
             button.setTarget_(self._target)
             button.setAction_("buttonClicked:")
             button.setTag_(self._register(action))
-            self.root.addSubview_(button)
+            self._canvas.addSubview_(button)
         return y + 24
 
 
