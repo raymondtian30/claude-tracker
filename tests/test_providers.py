@@ -5,7 +5,31 @@ from usage_stats import add_usage
 
 
 def test_provider_names():
-    assert PROVIDERS == [("openai", "OpenAI"), ("deepseek", "DeepSeek"), ("kimi", "Kimi")]
+    assert PROVIDERS == [
+        ("openai", "OpenAI"), ("deepseek", "DeepSeek"), ("kimi", "Kimi"),
+        ("google", "Google"), ("anthropic", "Anthropic"), ("xai", "xAI"),
+        ("mistral", "Mistral"), ("qwen", "Qwen"), ("zai", "Z.ai (GLM)"), ("minimax", "MiniMax"),
+    ]
+
+
+def test_more_providers_models():
+    cases = {
+        "gemini-4-argon": "google", "gemini-2.5-pro": "google", "google/gemma-3-27b": "google",
+        "claude-opus-5-5": "anthropic", "anthropic/claude-sonnet-4": "anthropic",
+        "grok-code-fast": "xai", "x-ai/grok-4": "xai",
+        "mistral-large-latest": "mistral", "codestral-2508": "mistral", "devstral-medium": "mistral",
+        "mistralai/mixtral-8x7b": "mistral", "magistral-medium": "mistral",
+        "qwen3-coder": "qwen", "qwen/qwen3-235b": "qwen", "qwq-32b": "qwen",
+        "glm-4.6": "zai", "z-ai/glm-4.5-air": "zai", "zhipuai/glm-4": "zai",
+        "minimax-m2": "minimax", "MiniMax-M1": "minimax", "minimax/minimax-m2": "minimax",
+    }
+    for model, provider in cases.items():
+        assert provider_of(model) == provider, model
+
+
+def test_names_that_only_look_alike_stay_unmatched():
+    for model in ["olmo-2", "big-pickle", "llama-4-scout", "phi-4", "unknown"]:
+        assert provider_of(model) is None, model
 
 
 def test_openai_models():
@@ -24,8 +48,7 @@ def test_deepseek_and_kimi_models():
 
 
 def test_other_models_belong_to_none():
-    for model in ["claude-opus-5-5", "gemini-4-argon", "unknown", "qwen3-coder", "olmo-2", "",
-                  "grok-code-fast"]:
+    for model in ["unknown", "olmo-2", ""]:
         assert provider_of(model) is None, model
 
 

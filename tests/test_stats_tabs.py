@@ -404,7 +404,8 @@ def test_settings_only_picks_which_ais_are_used():
 
     items = next(c for c in tab["cards"] if c["title"] == "AI tools")["items"]
     switches = [i[1] for i in items if i[0] == "switch"]
-    assert switches == ["Claude Code", "Codex", "OpenAI", "DeepSeek", "Kimi"]
+    assert switches == ["Claude Code", "Codex", "OpenAI", "DeepSeek", "Kimi", "Google",
+                        "Anthropic", "xAI", "Mistral", "Qwen", "Z.ai (GLM)", "MiniMax"]
 
 
 # --- warnings when an AI's usage can't be seen ----------------------------
@@ -474,3 +475,11 @@ def test_settings_has_the_panel_animation_speed():
     tab = settings_tab({"panel_animation": "off"}, paused=False, interval_choices=[15], detected=[])
     items = next(c for c in tab["cards"] if c["title"] == "Menu bar")["items"]
     assert ("popup", "Animation", ["Off", "Fast", "Normal", "Slow"], 0, "panel_animation") in items
+
+
+def test_providers_without_key_support_offer_no_key():
+    tabs = build_panel({}, [], [], today=date(2026, 11, 8), view=_empty_provider("google", "Google"))
+
+    assert not any(c["title"] == "Whole account (optional)" for c in tabs[0]["cards"])
+    warning = alert_text(tabs[0])
+    assert warning == "No Google usage found on this Mac. None of your tools have used Google models yet."

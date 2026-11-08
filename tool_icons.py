@@ -30,11 +30,23 @@ SOURCES = {
     },
     "deepseek": {"apps": [], "app_names": ["DeepSeek.app"], "extension": None},
     "kimi": {"apps": [], "app_names": ["Kimi.app"], "extension": None},
+    "anthropic": {
+        "apps": ["com.anthropic.claudefordesktop"],
+        "extension": ("anthropic.claude-code-", "resources/claude-logo.svg", False),
+    },
+    "google": {"apps": [], "app_names": ["Gemini.app"], "extension": None},
+    "xai": {"apps": [], "app_names": ["Grok.app"], "extension": None},
+    "mistral": {"apps": [], "app_names": ["Le Chat.app"], "extension": None},
+    "qwen": {"apps": [], "app_names": ["Qwen.app"], "extension": None},
+    "zai": {"apps": [], "app_names": ["Z.ai.app"], "extension": None},
+    "minimax": {"apps": [], "app_names": ["MiniMax.app"], "extension": None},
 }
 
 APP_DIRS = [Path("/Applications"), Path.home() / "Applications"]
 
-MONOGRAMS = {"openai": "AI", "deepseek": "DS", "kimi": "K"}
+MONOGRAMS = {"openai": "AI", "deepseek": "DS", "kimi": "K", "google": "G",
+             "anthropic": "A", "xai": "X", "mistral": "M", "qwen": "Q",
+             "zai": "Z", "minimax": "MM"}
 
 EXTENSION_DIRS = [
     Path.home() / ".vscode" / "extensions",
