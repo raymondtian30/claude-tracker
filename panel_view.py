@@ -333,7 +333,7 @@ class Panel:
 
         def click_in_app(event):
             # A click in this app's own windows (e.g. Settings) is outside too.
-            if event.window() != self.root.window():
+            if self._click_closes(event.window()):
                 self.close()
             return event
 
@@ -343,6 +343,14 @@ class Panel:
             NSEvent.addLocalMonitorForEventsMatchingMask_handler_(clicks, click_in_app),
             NSEvent.addLocalMonitorForEventsMatchingMask_handler_(NSEventMaskKeyDown, escape_key),
         ]
+
+    def _click_closes(self, window):
+        """Whether a click in this app's `window` should close the panel:
+        not in the panel itself, and not on the menu bar icon, whose own
+        click toggles the panel (closing here first would make it reopen)."""
+        button = getattr(self, "_button", None)
+        status_window = button.window() if button is not None else None
+        return window is not None and window not in (self.root.window(), status_window)
 
     def _stop_monitors(self):
         for monitor in self._monitors:
