@@ -546,7 +546,9 @@ def test_limits_tab_explains_claude_records_limits_only_when_reached():
     plan = next(c for c in tab["cards"] if c["title"] == "Plan limits")
     assert "only records a limit once it's reached" in " ".join(
         i[1] for i in plan["items"] if i[0] == "note")
-    assert ("switch", "Percentages from Anthropic", False, "claude_usage_enabled") in plan["items"]
+    assert "Turn on Percentages from Anthropic in Settings" in " ".join(
+        i[1] for i in plan["items"] if i[0] == "note")
+    assert not [i for i in plan["items"] if i[0] == "switch"]
 
 
 def _claude_usage_state(**usage):
@@ -566,7 +568,6 @@ def test_limits_tab_shows_claudes_percentages():
     plan = next(c for c in tab["cards"] if c["title"] == "Plan limits")["items"]
     assert plan[:2] == [("bar", "5-hour · resets 3:30 PM", "23%", 0.23),
                         ("bar", "Weekly", "41%", 0.414)]
-    assert ("switch", "Percentages from Anthropic", True, "claude_usage_enabled") in plan
 
 
 def test_limits_tab_says_when_claudes_percentages_are_unavailable():
@@ -611,6 +612,20 @@ def test_limits_tab_has_no_notifications_card_without_plan_limits():
     tab = _limits_tab({}, view)
 
     assert [c["title"] for c in tab["cards"] if c["title"]] == ["Plan limits"]
+
+
+def test_settings_has_the_percentages_from_anthropic_switch_when_tracking_claude():
+    def general(state):
+        tab = settings_tab(state, paused=False, interval_choices=[15], detected=[])
+        return next(c for c in tab["cards"] if c["title"] == "General")["items"]
+
+    on = general({"enabled_tools": ["claude_code"]})
+    off = general({"enabled_tools": ["claude_code"], "claude_usage_enabled": False})
+
+    assert ("switch", "Percentages from Anthropic", True, "claude_usage_enabled") in on
+    assert ("switch", "Percentages from Anthropic", False, "claude_usage_enabled") in off
+    assert not [i for i in general({"enabled_tools": ["codex"]})
+                if i[-1] == "claude_usage_enabled"]
 
 
 def test_settings_has_no_usage_alerts_card():
