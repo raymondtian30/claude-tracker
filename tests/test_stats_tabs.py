@@ -483,3 +483,11 @@ def test_providers_without_key_support_offer_no_key():
     assert not any(c["title"] == "Whole account (optional)" for c in tabs[0]["cards"])
     warning = alert_text(tabs[0])
     assert warning == "No Google usage found on this Mac. None of your tools have used Google models yet."
+
+
+def test_tool_with_no_usage_yet_warns():
+    view = {"key": "gemini_cli", "name": "Gemini CLI", "daily": {}, "grand_total": 0, "error": None}
+
+    tabs = build_panel({}, [], [], today=date(2026, 11, 8), view=view)
+
+    assert alert_text(tabs[0]) == "No Gemini CLI usage found on this Mac yet."

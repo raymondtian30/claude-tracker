@@ -16,11 +16,13 @@ def paths(tmp_path):
         "claude_code": tmp_path / "claude" / "projects",
         "codex": tmp_path / "codex" / "sessions",
         "opencode": tmp_path / "opencode.db",
+        "gemini_cli": tmp_path / "gemini",
     }
 
 
 def test_tool_names():
-    assert TOOLS == [("claude_code", "Claude Code"), ("codex", "Codex"), ("opencode", "opencode")]
+    assert TOOLS == [("claude_code", "Claude Code"), ("codex", "Codex"), ("opencode", "opencode"),
+                     ("gemini_cli", "Gemini CLI")]
 
 
 def test_detect_only_existing(tmp_path):

@@ -45,3 +45,24 @@ individual accounts (or the user is on a Cursor team and wants the Admin API).
   up with how the other tools are counted?
 - Does Cursor's terms of service allow reading the dashboard's private
   connection from a third-party app?
+
+## Cline and GitHub Copilot CLI usage tracking
+
+**Status:** deferred (2026-11-08). Both are installed on this Mac but have
+recorded no usage yet, and neither file format could be confirmed, so
+building now would mean guessing. Tracking needs to stay accurate.
+
+**Cline (VS Code extension `saoudrizwan.claude-dev`):** older versions kept
+each task under VS Code's `globalStorage/saoudrizwan.claude-dev/tasks/<id>/`.
+Cline has since moved to an SDK with "SQLite-backed local session stores"
+(default data dir `~/.cline/data`). Neither the old `ui_messages.json`
+`api_req_started` token fields nor the new SQLite schema were verified from
+source. This Mac only has one task folder, holding just `settings.json`.
+
+**GitHub Copilot CLI (`~/.copilot`):** closed source. Its changelog mentions
+session event logs, a `session.db`, and "usage events" for cost reports. But
+no public source documents the file path, event names or token fields. This
+Mac has only `config.json` and process logs.
+
+**Revisit when:** either tool has real usage on this Mac to check a parser
+against, or its storage format is documented.

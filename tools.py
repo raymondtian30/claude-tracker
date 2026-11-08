@@ -8,17 +8,20 @@ file_offsets, daily); other tools live under state["sources"][tool].
 """
 
 from codex_source import CODEX_SESSIONS_DIR, codex_daily, codex_total, scan_codex
+from gemini_source import GEMINI_DIR, gemini_daily, gemini_total, scan_gemini
 from opencode_source import OPENCODE_DB, opencode_daily, opencode_total, scan_opencode
 from token_math import CLAUDE_PROJECTS_DIR, refresh_grand_total
 from usage_stats import merge_daily
 
-TOOLS = [("claude_code", "Claude Code"), ("codex", "Codex"), ("opencode", "opencode")]
+TOOLS = [("claude_code", "Claude Code"), ("codex", "Codex"), ("opencode", "opencode"),
+         ("gemini_cli", "Gemini CLI")]
 TOOL_NAMES = dict(TOOLS)
 
 DEFAULT_PATHS = {
     "claude_code": CLAUDE_PROJECTS_DIR,
     "codex": CODEX_SESSIONS_DIR,
     "opencode": OPENCODE_DB,
+    "gemini_cli": GEMINI_DIR,
 }
 
 
@@ -38,6 +41,8 @@ def scan_tools(state, enabled, paths=None):
         scan_codex(sources.setdefault("codex", {}), paths["codex"])
     if "opencode" in enabled:
         scan_opencode(sources.setdefault("opencode", {}), paths["opencode"])
+    if "gemini_cli" in enabled:
+        scan_gemini(sources.setdefault("gemini_cli", {}), paths["gemini_cli"])
 
 
 def tool_view(state, key):
@@ -47,6 +52,8 @@ def tool_view(state, key):
         source = state.get("sources", {}).get(key, {})
         if key == "codex":
             daily, total = codex_daily(source), codex_total(source)
+        elif key == "gemini_cli":
+            daily, total = gemini_daily(source), gemini_total(source)
         else:
             daily, total = opencode_daily(source), opencode_total(source)
         error = source.get("error")

@@ -243,6 +243,10 @@ def _warning(d):
     view, name, key = d.view, d.view["name"], d.view["key"]
     if view["error"]:
         return f"{name} data couldn't be read: {view['error']}"
+    if key in TOOL_NAMES:
+        if not d.daily and not d.grand_total:
+            return f"No {name} usage found on this Mac yet."
+        return None
     if key not in PROVIDER_NAMES:
         return None
     has_key = key in d.state.get("provider_keys", [])
