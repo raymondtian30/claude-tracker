@@ -128,7 +128,7 @@ def test_animation_speeds():
                                 ("normal", "Normal", 0.22), ("slow", "Slow", 0.4)]
 
 
-def test_unfolding_grows_from_a_strip_to_full_height_easing_out():
+def test_unfolding_grows_from_a_strip_to_full_height():
     from panel_view import FOLDED_HEIGHT, fold_height
 
     heights = [fold_height(t / 10, 600, unfolding=True) for t in range(11)]
@@ -136,7 +136,19 @@ def test_unfolding_grows_from_a_strip_to_full_height_easing_out():
     assert heights[0] == FOLDED_HEIGHT
     assert heights[-1] == 600
     assert heights == sorted(heights)
-    assert heights[5] > (FOLDED_HEIGHT + 600) / 2  # fast at first, gentle at the end
+
+
+def test_no_frame_jumps_much_more_than_the_average():
+    """Big jumps in the first frames looked choppy: the motion eases in and
+    out, so no step is more than twice the average one."""
+    from panel_view import fold_height
+
+    frames = 26  # 0.22 s at 120 Hz
+    for unfolding in (True, False):
+        heights = [fold_height(i / frames, 600, unfolding) for i in range(frames + 1)]
+        steps = [abs(b - a) for a, b in zip(heights, heights[1:])]
+        assert max(steps) <= 2 * sum(steps) / len(steps), unfolding
+        assert steps[0] <= steps[frames // 2] and steps[-1] <= steps[frames // 2]
 
 
 def test_folding_shrinks_back_to_the_strip():

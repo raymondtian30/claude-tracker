@@ -6,6 +6,7 @@ The whole view is rebuilt on each render, which keeps the code simple and
 is cheap at this size.
 """
 
+import math
 import time
 
 import objc
@@ -74,18 +75,17 @@ SCREEN_MARGIN = 40  # keep the panel this far from the bottom of the screen
 
 
 FOLDED_HEIGHT = 24  # how tall the panel is when fully folded
-ANIMATION_FPS = 60
+ANIMATION_FPS = 60  # only where there's no display link (before macOS 14)
 
 
 def fold_height(progress, full_height, unfolding):
     """The panel's height `progress` (0-1) of the way through unfolding to
-    `full_height`, or folding from it. Unfolding eases out, folding eases in,
-    so both are quick near the menu bar and gentle at the far end."""
+    `full_height`, or folding from it. Both ease in and out (a half cosine):
+    a sharper curve front-loads the motion, and its first frames jumped by
+    over 100 points, which looked choppy."""
     t = min(max(progress, 0.0), 1.0)
-    if unfolding:
-        share = 1 - (1 - t) ** 3
-    else:
-        share = 1 - t ** 3
+    eased = (1 - math.cos(math.pi * t)) / 2
+    share = eased if unfolding else 1 - eased
     return round(FOLDED_HEIGHT + (full_height - FOLDED_HEIGHT) * share)
 
 
@@ -369,11 +369,20 @@ class Panel:
         current = self.popover.contentSize().height
         self._stop_animation()
         self._animation = {"start": time.monotonic(), "unfolding": unfolding, "from": current}
-        self._animation_timer = NSTimer.timerWithTimeInterval_target_selector_userInfo_repeats_(
-            1 / ANIMATION_FPS, self._target, "animationStep:", None, True
-        )
+        run_loop = NSRunLoop.currentRunLoop()
         # Common modes keep it running while a control is being clicked.
-        NSRunLoop.currentRunLoop().addTimer_forMode_(self._animation_timer, NSRunLoopCommonModes)
+        if hasattr(self.root, "displayLinkWithTarget_selector_"):
+            # One step per screen refresh, in step with it (120 Hz on
+            # ProMotion screens). A 60 Hz timer drifts against the refresh,
+            # so some frames were shown twice: a stutter.
+            self._animation_timer = self.root.displayLinkWithTarget_selector_(
+                self._target, "animationStep:")
+            self._animation_timer.addToRunLoop_forMode_(run_loop, NSRunLoopCommonModes)
+        else:
+            self._animation_timer = NSTimer.timerWithTimeInterval_target_selector_userInfo_repeats_(
+                1 / ANIMATION_FPS, self._target, "animationStep:", None, True
+            )
+            run_loop.addTimer_forMode_(self._animation_timer, NSRunLoopCommonModes)
 
     def _animation_step(self):
         animation = self._animation
