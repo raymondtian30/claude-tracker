@@ -11,12 +11,12 @@ Yes. There's no compiled binary and nothing hidden -- it's a handful of short Py
 By default it never connects to the internet or sends your data anywhere. The only things it touches are:
 
 - Usage data your AI coding tools already keep on your own Mac, only for the tools you turn on:
-  - **Claude Code:** its logs in `~/.claude/projects/`
+  - **Claude Code:** its logs in `~/.claude/projects/`; for the Active Sessions tab's Plugins list, also your plugin settings (`~/.claude/settings.json` and an open project's `.claude/settings.json` / `settings.local.json`), `~/.claude/plugins/installed_plugins.json`, and each enabled plugin's own folder (to see which skills, agents, hooks and MCP servers it has)
   - **Codex:** its session logs in `~/.codex/sessions/`
   - **opencode:** its database at `~/.local/share/opencode/opencode.db`, opened read-only
   - **Gemini CLI:** its saved chat sessions in `~/.gemini/tmp/<project>/chats/` (and each project's `.project_root` file, for the folder name)
 
-  From these it reads only token counts, which model was used, when, and which project folder. It skips your prompts, code and replies, and never touches opencode's account or credential tables.
+  From these it reads only token counts, which model was used, when, and which project folder, plus, for open Claude Code sessions, which plugin skills, agents, hooks and MCP tools ran and when. It skips your prompts, code and replies, and never touches opencode's account or credential tables.
 - `launchctl`, macOS's own built-in tool, only to turn its "start at login" setting on or off
 
 **There are three exceptions.** One is on by default: if you track Claude Code, the app asks Anthropic for your plan's limit percentages (see [Usage limits and alerts](#usage-limits-and-alerts)); turn off **Percentages from Anthropic** in Settings to stop it. Two are opt-in: an API key you add for an AI provider (see [OpenAI, DeepSeek, Kimi and other AI companies](#openai-deepseek-kimi-and-other-ai-companies)), and the Leaderboard (Beta) feature. Clicking **Check for Updates** also contacts GitHub, only when you click it (see [Updating](#quick-start)).
@@ -53,7 +53,9 @@ A panel opens with a row of tabs along the top. It always opens on **Overview**;
 - **Projects** -- every folder you used tokens in over the last 7 days, most first: the top 5, and the rest behind **Show more**
 - **Estimated API Cost** -- what your usage would cost at Anthropic's pay-as-you-go API prices. Just for fun: a Pro or Max subscription is flat-rate, so you aren't billed this. Prices live in `pricing.py` and will drift over time.
 - **Usage Limits** -- how much of your plan's limits you've used, and when to be notified (see [Usage limits and alerts](#usage-limits-and-alerts))
-- **Active Sessions** -- every Claude Code terminal you currently have open, and how many tokens each one has used
+- **Active Sessions** -- two sections:
+  - **Sessions:** every Claude Code terminal you currently have open, how many tokens each one has used, and tags for the plugins running in it (crossed out if that project turns a plugin off)
+  - **Plugins:** every Claude Code plugin you have enabled, how many open sessions run it, the last thing it did (ran a skill, started an agent, used an MCP tool, ran a hook, added context to your prompt) and how often today. Two installs of a plugin with the same name can't be told apart in the logs, so their activity is shown on the first one in your settings
 - **Leaderboard (Beta)** -- hidden unless you turn it on in Settings; see below, this one's still a work in progress
 
 At the bottom: the date you started tracking, a **Settings** button that opens a separate Settings window (which AIs you use -- coding tools and providers; **Appearance** -- Auto, Light or Dark, where Auto follows macOS; what the menu bar shows -- lifetime total, today's total, or just the icon -- and its text size; the panel's unfold/fold **Animation** -- Off, Fast, Normal or Slow; how often to scan; start at login; show the Leaderboard; version and credits) and **Quit**. Click anywhere outside the panel to close it.
@@ -147,6 +149,7 @@ notifications.py             macOS notifications (UNUserNotificationCenter)
 version.py                   app name, version number and credits
 updater.py                   Check for Updates: lists newer GitHub releases, installs the newest if you say so
 active_sessions.py           matches running `claude` processes to their sessions
+plugins.py                   enabled Claude Code plugins and what each did in open sessions
 leaderboard.py               Leaderboard (Beta) -- local friends-list storage and sorting
 gist_sync.py                 Leaderboard (Beta) -- Keychain token storage + GitHub Gist API calls
 build_app.py                 builds "Claude Tracker.app" (launcher, a copy of Python, Info.plist, icon) for Applications

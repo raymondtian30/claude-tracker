@@ -102,7 +102,8 @@ def active_sessions(projects_dir=CLAUDE_PROJECTS_DIR, cwds=None):
     top-N most recently modified files there are used, N being how many
     processes share it.
 
-    Returns a list of {"label": str, "tokens": int}, most tokens first.
+    Returns a list of {"label": str, "tokens": int, "cwd": str, "log": str
+    (the session file's path)}, most tokens first.
     """
     cwds = running_claude_cwds() if cwds is None else cwds
     cwd_counts = Counter(cwds)
@@ -117,7 +118,8 @@ def active_sessions(projects_dir=CLAUDE_PROJECTS_DIR, cwds=None):
         )
         for path in files[:count]:
             tokens, _ = sum_usage_since(path, 0)
-            sessions.append({"label": display_name(cwd), "tokens": tokens})
+            sessions.append({"label": display_name(cwd), "tokens": tokens,
+                             "cwd": cwd, "log": str(path)})
 
     sessions.sort(key=lambda s: s["tokens"], reverse=True)
     return sessions
