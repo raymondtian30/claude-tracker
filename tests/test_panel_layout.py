@@ -219,3 +219,17 @@ def test_new_data_rebuilds_the_tabs():
     panel.render([TAB], "footer")
 
     assert panel._shown_tab_view is not before
+
+
+def test_appearance_follows_the_setting():
+    from AppKit import NSApplication
+
+    from panel_view import apply_appearance
+
+    app = NSApplication.sharedApplication()
+    apply_appearance("dark")
+    assert app.appearance().name() == "NSAppearanceNameDarkAqua"
+    apply_appearance("light")
+    assert app.appearance().name() == "NSAppearanceNameAqua"
+    apply_appearance("auto")
+    assert app.appearance() is None  # follows macOS

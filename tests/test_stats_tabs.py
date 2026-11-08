@@ -128,7 +128,7 @@ def test_settings_tab_reflects_state():
     assert_well_formed(tab)
     items = items_of({**tab, "cards": [c for c in tab["cards"] if c["title"] not in ("AI tools", "AI providers")]})
     assert ("segmented", "Shows", ["Lifetime", "Today", "Icon only"], 2, "title_mode") in items
-    assert items[1] == ("popup", "Text size", ["10 pt", "11 pt", "12 pt", "13 pt", "14 pt"], 2,
+    assert next(i for i in items if i[-1] == "menu_bar_font_size") == ("popup", "Text size", ["10 pt", "11 pt", "12 pt", "13 pt", "14 pt"], 2,
                         "menu_bar_font_size")  # 12 pt by default
     assert next(i for i in items if i[-1] == "scan_interval")[3] == 3  # 60 seconds selected
     assert not [i for i in items if i[-1] == "pause"]
@@ -642,3 +642,14 @@ def test_limits_tab_gives_the_date_for_a_reset_after_today():
 
     plan = next(c for c in tab["cards"] if c["title"] == "Plan limits")
     assert plan["items"] == [("bar", "Monthly · resets Nov 20", "83%", 0.83)]
+
+
+def test_settings_has_light_dark_auto_appearance():
+    def appearance(state):
+        tab = settings_tab(state, interval_choices=[15], detected=[])
+        card = next(c for c in tab["cards"] if c["title"] == "Appearance")
+        return card["items"][0]
+
+    assert appearance({}) == ("segmented", "Mode", ["Auto", "Light", "Dark"], 0, "appearance")
+    assert appearance({"appearance": "dark"})[3] == 2
+    assert appearance({"appearance": "bogus"})[3] == 0

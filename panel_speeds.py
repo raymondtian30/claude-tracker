@@ -9,6 +9,10 @@ ANIMATION_SPEEDS = [("off", "Off", 0.0), ("fast", "Fast", 0.12),
                     ("normal", "Normal", 0.22), ("slow", "Slow", 0.4)]
 DEFAULT_ANIMATION = "normal"
 
+# Light or dark look for the panel and Settings; "auto" follows macOS.
+APPEARANCES = [("auto", "Auto"), ("light", "Light"), ("dark", "Dark")]
+DEFAULT_APPEARANCE = "auto"
+
 
 def animation_seconds(key):
     return dict((k, s) for k, _, s in ANIMATION_SPEEDS).get(key, 0.22)

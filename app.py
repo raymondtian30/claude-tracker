@@ -32,8 +32,14 @@ from gist_sync import (
 )
 from leaderboard import load_friends, save_friends, sorted_friends
 from notifications import SETTINGS_URL, Notifier
-from panel_speeds import ANIMATION_SPEEDS, DEFAULT_ANIMATION, animation_seconds
-from panel_view import Panel, SettingsWindow, confirm_with_details
+from panel_speeds import (
+    ANIMATION_SPEEDS,
+    APPEARANCES,
+    DEFAULT_ANIMATION,
+    DEFAULT_APPEARANCE,
+    animation_seconds,
+)
+from panel_view import Panel, SettingsWindow, apply_appearance, confirm_with_details
 from single_instance import acquire_lock, observe_show_requests, request_show_panel
 from stats_tabs import (
     DEFAULT_MENU_BAR_FONT_SIZE,
@@ -158,6 +164,8 @@ class TokenCounterApp(rumps.App):
         self.state.setdefault("title_mode", "lifetime")
         self.state.setdefault("menu_bar_font_size", DEFAULT_MENU_BAR_FONT_SIZE)
         self.state.setdefault("panel_animation", DEFAULT_ANIMATION)
+        self.state.setdefault("appearance", DEFAULT_APPEARANCE)
+        apply_appearance(self.state["appearance"])
         self.state.setdefault("alerts_enabled", True)
         self.state.setdefault("alert_threshold", DEFAULT_ALERT_THRESHOLD)
         self.state.setdefault("alert_windows", [w for w, _ in WINDOWS])
@@ -323,6 +331,10 @@ class TokenCounterApp(rumps.App):
             self.state["menu_bar_font_size"] = MENU_BAR_FONT_SIZES[value]
             save_state(self.state, STATE_FILE)
             self._update_title()
+        elif action == "appearance":
+            self.state["appearance"] = APPEARANCES[value][0]
+            apply_appearance(self.state["appearance"])
+            save_state(self.state, STATE_FILE)
         elif action == "panel_animation":
             self.state["panel_animation"] = ANIMATION_SPEEDS[value][0]
             self.panel.animation_seconds = animation_seconds(self.state["panel_animation"])

@@ -33,7 +33,7 @@ from limits import (
     limit_windows,
     plan_levels,
 )
-from panel_speeds import ANIMATION_SPEEDS, DEFAULT_ANIMATION
+from panel_speeds import ANIMATION_SPEEDS, APPEARANCES, DEFAULT_ANIMATION, DEFAULT_APPEARANCE
 from pricing import estimate_cost, format_dollars
 from providers import PROVIDER_NAMES, PROVIDERS
 from token_math import format_count
@@ -624,6 +624,7 @@ def settings_tab(state, interval_choices, detected, update_status=None):
         "icon": "slider.horizontal.3",
         "cards": [
             _tools_card(state, detected),
+            _appearance_card(state),
             {
                 "title": "Menu bar",
                 "items": [
@@ -671,6 +672,15 @@ def settings_tab(state, interval_choices, detected, update_status=None):
             },
         ],
     }
+
+
+def _appearance_card(state):
+    keys = [key for key, _ in APPEARANCES]
+    current = state.get("appearance", DEFAULT_APPEARANCE)
+    return {"title": "Appearance", "items": [
+        ("segmented", "Mode", [label for _, label in APPEARANCES],
+         keys.index(current) if current in keys else 0, "appearance"),
+    ]}
 
 
 def _animation_index(key):
