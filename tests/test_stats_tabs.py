@@ -511,6 +511,42 @@ def _codex_limits_state(used):
                                                   "limits": limits}}}}}
 
 
+def _projects_view(count):
+    daily = {}
+    for i in range(count):  # project 0 used the most
+        add_usage(daily, date(2026, 11, 8), "m", f"/p/proj{i}", {"input": 1000 - i})
+    return {"key": "opencode", "name": "opencode", "daily": daily, "grand_total": 1,
+            "error": None}
+
+
+def _projects_items(count, expanded=False):
+    tabs = _build_panel(_projects_view(count), {}, [], [], False, today=date(2026, 11, 8),
+                        projects_expanded=expanded)
+    tab = next(t for t in tabs if t["key"] == "projects")
+    return next(c for c in tab["cards"] if c["title"])["items"]
+
+
+def test_projects_shows_the_top_5_then_a_show_more_button():
+    items = _projects_items(8)
+
+    assert [i[1] for i in items if i[0] == "bar"] == [f"/p/proj{i}" for i in range(5)]
+    assert items[-1] == ("buttons", [("Show 3 more", "chevron.down", "projects_expand")])
+
+
+def test_projects_show_more_lists_every_project():
+    items = _projects_items(8, expanded=True)
+
+    assert [i[1] for i in items if i[0] == "bar"] == [f"/p/proj{i}" for i in range(8)]
+    assert items[-1] == ("buttons", [("Show less", "chevron.up", "projects_expand")])
+
+
+def test_projects_without_more_than_5_has_no_button():
+    items = _projects_items(5)
+
+    assert len([i for i in items if i[0] == "bar"]) == 5
+    assert not [i for i in items if i[0] == "buttons"]
+
+
 def test_limits_tab_sits_after_cost():
     tabs = build_panel({}, [], [], today=date(2026, 11, 8))
 
@@ -642,39 +678,3 @@ def test_limits_tab_gives_the_date_for_a_reset_after_today():
 
     plan = next(c for c in tab["cards"] if c["title"] == "Plan limits")
     assert plan["items"] == [("bar", "Monthly · resets Nov 20", "83%", 0.83)]
-
-
-def _projects_view(count):
-    daily = {}
-    for i in range(count):  # project 0 used the most
-        add_usage(daily, date(2026, 11, 8), "m", f"/p/proj{i}", {"input": 1000 - i})
-    return {"key": "opencode", "name": "opencode", "daily": daily, "grand_total": 1,
-            "error": None}
-
-
-def _projects_items(count, expanded=False):
-    tabs = _build_panel(_projects_view(count), {}, [], [], False, today=date(2026, 11, 8),
-                        projects_expanded=expanded)
-    tab = next(t for t in tabs if t["key"] == "projects")
-    return next(c for c in tab["cards"] if c["title"])["items"]
-
-
-def test_projects_shows_the_top_5_then_a_show_more_button():
-    items = _projects_items(8)
-
-    assert [i[1] for i in items if i[0] == "bar"] == [f"/p/proj{i}" for i in range(5)]
-    assert items[-1] == ("buttons", [("Show 3 more", "chevron.down", "projects_expand")])
-
-
-def test_projects_show_more_lists_every_project():
-    items = _projects_items(8, expanded=True)
-
-    assert [i[1] for i in items if i[0] == "bar"] == [f"/p/proj{i}" for i in range(8)]
-    assert items[-1] == ("buttons", [("Show less", "chevron.up", "projects_expand")])
-
-
-def test_projects_without_more_than_5_has_no_button():
-    items = _projects_items(5)
-
-    assert len([i for i in items if i[0] == "bar"]) == 5
-    assert not [i for i in items if i[0] == "buttons"]
