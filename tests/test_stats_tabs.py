@@ -127,7 +127,7 @@ def test_settings_tab_reflects_state():
         detected=["claude_code"],
     )
     assert_well_formed(tab)
-    items = items_of({**tab, "cards": [c for c in tab["cards"] if c["title"] not in ("AI tools", "AI providers", "Usage alerts")]})
+    items = items_of({**tab, "cards": [c for c in tab["cards"] if c["title"] not in ("AI tools", "AI providers")]})
     assert ("segmented", "Shows", ["Lifetime", "Today", "Icon only"], 2, "title_mode") in items
     assert items[1] == ("popup", "Text size", ["10 pt", "11 pt", "12 pt", "13 pt", "14 pt"], 2,
                         "menu_bar_font_size")  # 12 pt by default
@@ -529,49 +529,94 @@ def test_limits_tab_shows_codex_plan_limits():
 
 
 def test_limits_tab_shows_a_reached_claude_limit():
-    state = {"claude_limit_hits": {"five_hour": datetime(2026, 11, 8, 15, 30).timestamp()}}
+    state = {"claude_usage_enabled": False,
+             "claude_limit_hits": {"five_hour": datetime(2026, 11, 8, 15, 30).timestamp()}}
 
     tab = _limits_tab(state, tool_view(state, "claude_code"))
 
     plan = next(c for c in tab["cards"] if c["title"] == "Plan limits")
-    assert plan["items"] == [("bar", "5-hour · resets 3:30 PM", "Reached", 1.0)]
+    assert plan["items"][0] == ("bar", "5-hour · resets 3:30 PM", "Reached", 1.0)
 
 
 def test_limits_tab_explains_claude_records_limits_only_when_reached():
-    tab = _limits_tab({}, tool_view({}, "claude_code"))
+    state = {"claude_usage_enabled": False}
+
+    tab = _limits_tab(state, tool_view(state, "claude_code"))
 
     plan = next(c for c in tab["cards"] if c["title"] == "Plan limits")
-    assert "only records a limit once it's reached" in " ".join(i[1] for i in plan["items"])
+    assert "only records a limit once it's reached" in " ".join(
+        i[1] for i in plan["items"] if i[0] == "note")
+    assert ("switch", "Percentages from Anthropic", False, "claude_usage_enabled") in plan["items"]
 
 
-def test_limits_tab_budgets():
-    daily = {}
-    add_usage(daily, date(2026, 11, 8), "m", "p", {"input": 25_000_000})
-    view = {"key": "opencode", "name": "opencode", "daily": daily, "grand_total": 25_000_000,
-            "error": None}
-    state = {"budgets": {"opencode": {"weekly": 50_000_000}}}
-
-    tab = _limits_tab(state, view)
-
-    budgets = next(c for c in tab["cards"] if c["title"] == "Your budgets")["items"]
-    assert budgets[0][0] == "popup" and budgets[0][1] == "Weekly"
-    assert budgets[0][4] == "budget:opencode:weekly"
-    assert budgets[0][2][budgets[0][3]] == "50M"
-    assert ("bar", "Weekly · 25.0M of 50.0M", "50%", 0.5) in budgets
-    assert [i[1] for i in budgets if i[0] == "popup"] == ["Weekly", "Monthly"]
+def _claude_usage_state(**usage):
+    reset = datetime(2026, 11, 8, 15, 30).timestamp()
+    limits = [{"kind": "five_hour", "window": "five_hour", "label": "5-hour", "percent": 23.0,
+               "resets_at": reset},
+              {"kind": "weekly", "window": "weekly", "label": "Weekly", "percent": 41.4,
+               "resets_at": None}]
+    return {"claude_usage": {"limits": limits, "error": None, "fetched_at": 1, **usage}}
 
 
-def test_settings_usage_alerts_card():
-    tab = settings_tab({}, paused=False, interval_choices=[15], detected=[])
+def test_limits_tab_shows_claudes_percentages():
+    state = _claude_usage_state()
 
-    items = next(c for c in tab["cards"] if c["title"] == "Usage alerts")["items"]
+    tab = _limits_tab(state, tool_view(state, "claude_code"))
+
+    plan = next(c for c in tab["cards"] if c["title"] == "Plan limits")["items"]
+    assert plan[:2] == [("bar", "5-hour · resets 3:30 PM", "23%", 0.23),
+                        ("bar", "Weekly", "41%", 0.414)]
+    assert ("switch", "Percentages from Anthropic", True, "claude_usage_enabled") in plan
+
+
+def test_limits_tab_says_when_claudes_percentages_are_unavailable():
+    state = _claude_usage_state(limits=[], error="Couldn't reach server. Percentage unavailable.")
+
+    tab = _limits_tab(state, tool_view(state, "claude_code"))
+
+    plan = next(c for c in tab["cards"] if c["title"] == "Plan limits")["items"]
+    assert not [i for i in plan if i[0] == "bar"]
+    assert "Couldn't reach server. Percentage unavailable." in " ".join(
+        i[1] for i in plan if i[0] == "note")
+
+
+def test_limits_tab_notifications_card_lists_only_the_windows_the_tool_has():
+    claude = _limits_tab({}, tool_view({}, "claude_code"))
+    free_codex = _codex_limits_state(88.0)
+    free_codex["sources"]["codex"]["files"]["f"]["limits"]["rate_limits"]["primary"][
+        "window_minutes"] = 43200
+    codex = _limits_tab(free_codex, tool_view(free_codex, "codex"))
+
+    def window_switches(tab):
+        card = next(c for c in tab["cards"] if c["title"] == "Notifications")
+        return [i[1] for i in card["items"] if i[0] == "switch" and i[3].startswith("alert_window")]
+
+    assert window_switches(claude) == ["5-hour limit", "Weekly limit"]
+    assert window_switches(codex) == ["Monthly limit"]
+
+
+def test_limits_tab_notifications_card():
+    tab = _limits_tab({}, tool_view({}, "claude_code"))
+
+    items = next(c for c in tab["cards"] if c["title"] == "Notifications")["items"]
     assert ("switch", "Notify me", True, "alerts_enabled") in items
     assert ("popup", "When usage reaches", ["50%", "60%", "70%", "75%", "80%", "90%", "95%"], 3,
             "alert_threshold") in items
-    assert ("switch", "5-hour limits", True, "alert_window:five_hour") in items
-    assert ("switch", "Weekly limits", True, "alert_window:weekly") in items
-    assert ("switch", "Monthly limits", True, "alert_window:monthly") in items
     assert ("buttons", [("Send Test Alert", "bell", "alert_test")]) in items
+
+
+def test_limits_tab_has_no_notifications_card_without_plan_limits():
+    view = {"key": "opencode", "name": "opencode", "daily": {}, "grand_total": 0, "error": None}
+
+    tab = _limits_tab({}, view)
+
+    assert [c["title"] for c in tab["cards"] if c["title"]] == ["Plan limits"]
+
+
+def test_settings_has_no_usage_alerts_card():
+    tab = settings_tab({}, paused=False, interval_choices=[15], detected=[])
+
+    assert "Usage alerts" not in [c["title"] for c in tab["cards"]]
 
 
 def test_limits_tab_gives_the_date_for_a_reset_after_today():

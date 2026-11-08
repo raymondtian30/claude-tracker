@@ -282,18 +282,9 @@ def test_refresh_remembers_when_claude_limits_were_reached(tmp_path):
     assert state["claude_limit_hits"] == {"five_hour": 300, "seven_day": 500}
 
 
-def test_refresh_keeps_the_last_hours_of_replies_for_5_hour_budgets(tmp_path):
-    from datetime import timezone
+def test_refresh_drops_the_old_5_hour_budget_replies(tmp_path):
+    state = {"grand_total": 0, "file_offsets": {}, "claude_recent": [[1, 1]]}
 
-    now = datetime(2026, 11, 8, 12, 0, tzinfo=timezone.utc).timestamp()
-    project = tmp_path / "proj"
-    project.mkdir()
-    write_jsonl(project / "s.jsonl", [
-        assistant_entry(100, 0, timestamp="2026-11-08T11:00:00.000Z"),
-        assistant_entry(5, 0, timestamp="2026-11-08T03:00:00.000Z"),  # older than 6 hours
-    ])
-    state = {"grand_total": 0, "file_offsets": {}, "claude_recent": [[now - 9 * 3600, 1]]}
+    refresh_grand_total(state, tmp_path)
 
-    refresh_grand_total(state, tmp_path, now=now)
-
-    assert state["claude_recent"] == [[now - 3600, 100]]
+    assert "claude_recent" not in state

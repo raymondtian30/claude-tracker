@@ -1,14 +1,13 @@
-from datetime import date, datetime
+from datetime import datetime
 
 from limits import (
-    BUDGET_CHOICES,
     alerts_to_send,
-    budget_tokens_used,
     claude_limits,
     codex_limits,
+    limit_windows,
+    reached_claude_limits,
     window_for_minutes,
 )
-from usage_stats import add_usage
 
 NOW = datetime(2026, 11, 8, 12, 0, 0).timestamp()
 
@@ -46,27 +45,38 @@ def test_codex_limits_without_a_record():
 def test_claude_limit_reached_until_it_resets():
     hits = {"five_hour": NOW + 3600, "seven_day": NOW - 10}
 
-    assert claude_limits(hits, NOW) == [
-        {"window": "five_hour", "label": "5-hour", "percent": 100.0, "resets_at": NOW + 3600},
+    assert reached_claude_limits(hits, NOW) == [
+        {"window": "five_hour", "label": "5-hour", "percent": 100.0, "resets_at": NOW + 3600,
+         "reached": True},
     ]
 
 
-def test_budget_tokens_used_per_window():
-    daily = {}
-    add_usage(daily, date(2026, 11, 8), "m", "p", {"input": 100})
-    add_usage(daily, date(2026, 11, 2), "m", "p", {"input": 20})   # 7th day back
-    add_usage(daily, date(2026, 11, 1), "m", "p", {"input": 3})    # outside the week, in the month
-    add_usage(daily, date(2026, 10, 31), "m", "p", {"input": 5000})  # last month
-    recent = [[NOW - 4 * 3600, 7], [NOW - 6 * 3600, 900]]
-
-    assert budget_tokens_used("weekly", daily, recent, NOW) == 120
-    assert budget_tokens_used("monthly", daily, recent, NOW) == 123
-    assert budget_tokens_used("five_hour", daily, recent, NOW) == 7
+def claude_usage(**changes):
+    limits = [
+        {"kind": "five_hour", "window": "five_hour", "label": "5-hour", "percent": 23.0,
+         "resets_at": NOW + 600},
+        {"kind": "weekly", "window": "weekly", "label": "Weekly", "percent": 41.0,
+         "resets_at": NOW - 1},
+    ]
+    return {"limits": limits, "error": None, "fetched_at": NOW, **changes}
 
 
-def test_budget_choices_start_with_off():
-    assert BUDGET_CHOICES[0] == 0
-    assert BUDGET_CHOICES == sorted(BUDGET_CHOICES)
+def test_claude_limits_use_anthropics_percentages():
+    state = {"claude_usage": claude_usage(), "claude_limit_hits": {"five_hour": NOW + 60}}
+
+    assert [(l["kind"], l["percent"], l["resets_at"]) for l in claude_limits(state, NOW)] == [
+        ("five_hour", 23.0, NOW + 600),
+        ("weekly", 0.0, None),  # its reset time passed: 0% until the next fetch
+    ]
+
+
+def test_claude_limits_fall_back_to_the_logs_without_percentages():
+    hits = {"five_hour": NOW + 60}
+
+    for state in ({"claude_usage": claude_usage(limits=[], error="offline")},
+                  {"claude_usage": claude_usage(), "claude_usage_enabled": False}):
+        state["claude_limit_hits"] = hits
+        assert [l["percent"] for l in claude_limits(state, NOW)] == [100.0]
 
 
 def level(id="codex:five_hour", window="five_hour", percent=80.0, resets_at=None):
@@ -125,36 +135,36 @@ def test_plan_levels_for_codex_and_claude():
     ]
 
 
-def test_budget_windows_and_levels():
-    from limits import budget_levels, budget_windows
+def test_plan_levels_give_each_claude_limit_its_own_id():
+    from limits import plan_levels
 
-    assert budget_windows("claude_code") == ["five_hour", "weekly", "monthly"]
-    assert budget_windows("opencode") == ["weekly", "monthly"]
+    usage = claude_usage()
+    usage["limits"].append({"kind": "weekly_opus", "window": "weekly", "label": "Weekly · Opus",
+                            "percent": 5.0, "resets_at": None})
 
-    daily = {}
-    add_usage(daily, date(2026, 11, 8), "m", "p", {"input": 30_000_000})
-    view = {"key": "opencode", "name": "opencode", "daily": daily}
-    state = {"budgets": {"opencode": {"weekly": 40_000_000}}}
+    levels = plan_levels({"claude_usage": usage}, ["claude_code"], NOW)
 
-    assert budget_levels(view, state, NOW) == [{
-        "id": "budget:opencode:weekly", "name": "opencode", "window": "weekly",
-        "label": "Weekly budget", "budget": 40_000_000, "used": 30_000_000, "percent": 75.0,
-        "resets_at": None,
-    }]
+    assert [l["id"] for l in levels] == [
+        "claude_code:five_hour", "claude_code:weekly", "claude_code:weekly_opus"]
 
 
-def test_levels_for_alerts_cover_plan_limits_and_every_budget():
+def test_limit_windows_are_only_the_ones_a_tool_has():
+    free_codex = codex_state()
+    free_codex["sources"]["codex"]["files"]["f"]["limits"]["rate_limits"]["primary"][
+        "window_minutes"] = 43200
+
+    assert limit_windows({}, ["claude_code"], NOW) == ["five_hour", "weekly"]
+    assert limit_windows(free_codex, ["codex"], NOW) == ["monthly"]
+    assert limit_windows(free_codex, ["claude_code", "codex"], NOW) == [
+        "five_hour", "weekly", "monthly"]
+    assert limit_windows({}, ["codex", "opencode"], NOW) == []
+
+
+def test_levels_for_alerts_cover_the_enabled_tools_plan_limits():
     from limits import levels_for_alerts
 
-    daily = {}
-    add_usage(daily, date(2026, 11, 8), "m", "p", {"input": 80})
-    state = {**codex_state(), "enabled_tools": ["codex"],
-             "budgets": {"all": {"weekly": 100}, "kimi": {"monthly": 0}}}
-    views = {"all": {"key": "all", "name": "All AIs", "daily": daily},
-             "kimi": {"key": "kimi", "name": "Kimi", "daily": {}}}
+    state = {**codex_state(), "enabled_tools": ["codex"]}
 
-    levels = levels_for_alerts(state, views.__getitem__, NOW)
+    levels = levels_for_alerts(state, NOW)
 
-    assert [(l["id"], round(l["percent"])) for l in levels] == [
-        ("codex:five_hour", 83), ("budget:all:weekly", 80),
-    ]
+    assert [(l["id"], round(l["percent"])) for l in levels] == [("codex:five_hour", 83)]

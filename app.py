@@ -21,6 +21,7 @@ from AppKit import (
 
 from accounts import KEY_HELP, account_due, delete_key, fetch_account, load_key, save_key, store_result
 from active_sessions import active_sessions, running_tool_sessions
+from claude_usage import fetch_usage, usage_due
 from gist_sync import (
     NEW_TOKEN_URL,
     create_gist,
@@ -30,6 +31,7 @@ from gist_sync import (
     update_gist,
 )
 from leaderboard import load_friends, save_friends, sorted_friends
+from notifications import SETTINGS_URL, Notifier
 from panel_speeds import ANIMATION_SPEEDS, DEFAULT_ANIMATION, animation_seconds
 from panel_view import Panel, SettingsWindow
 from single_instance import acquire_lock, observe_show_requests, request_show_panel
@@ -47,7 +49,6 @@ from stats_tabs import (
 )
 from limits import (
     ALERT_THRESHOLDS,
-    BUDGET_CHOICES,
     DEFAULT_ALERT_THRESHOLD,
     WINDOWS,
     alerts_to_send,
@@ -133,6 +134,9 @@ class TokenCounterApp(rumps.App):
         init_tool_state(self.state, fresh_install)
         init_provider_state(self.state)
         self._fetching = set()  # providers with an account fetch in flight
+        self._fetching_claude = False
+        self.notifier = Notifier(APP_NAME, fallback=_fallback_notification)
+        self.notifier.request_permission()
         self._fetched = []  # (provider, result) waiting to be saved on the main thread
         self.welcome_choice = []
         self.state.setdefault("first_seen_at", None)
@@ -149,8 +153,9 @@ class TokenCounterApp(rumps.App):
         self.state.setdefault("alerts_enabled", True)
         self.state.setdefault("alert_threshold", DEFAULT_ALERT_THRESHOLD)
         self.state.setdefault("alert_windows", [w for w, _ in WINDOWS])
-        self.state.setdefault("budgets", {})
         self.state.setdefault("alerts_above", [])
+        self.state.setdefault("claude_usage_enabled", True)
+        self.state.pop("budgets", None)  # token budgets, since removed
         self.state.pop("stats_tab", None)  # from the earlier in-menu tabs
         if self.state["first_seen_at"] is None:
             self.state["first_seen_at"] = date.today().isoformat()
@@ -161,6 +166,7 @@ class TokenCounterApp(rumps.App):
         self._scan()
         save_state(self.state, STATE_FILE)
         self._fetch_accounts()
+        self._fetch_claude_usage()
 
         self.paused = False
         self.panel = Panel(
@@ -329,9 +335,13 @@ class TokenCounterApp(rumps.App):
             self.state["alert_windows"] = [w for w, _ in WINDOWS if w in windows]
             save_state(self.state, STATE_FILE)
         elif action == "alert_test":
-            notify("Test alert: this is how usage alerts look.")
-        elif name == "budget":
-            self.set_budget(argument, BUDGET_CHOICES[value])
+            self.send_test_alert()
+        elif action == "claude_usage_enabled":
+            self.state["claude_usage_enabled"] = value
+            if not value:
+                self.state.pop("claude_usage", None)
+            save_state(self.state, STATE_FILE)
+            self._fetch_claude_usage()
         elif action == "scan_interval":
             self.set_scan_interval(SCAN_INTERVAL_CHOICES[value])
         elif action == "pause":
@@ -592,31 +602,53 @@ class TokenCounterApp(rumps.App):
         self.state["last_leaderboard_sync_date"] = today
         save_state(self.state, STATE_FILE)
 
-    def _view_for(self, key):
-        if key == "all":
-            return combined_view(self.state, self.state["enabled_tools"])
-        if key in PROVIDER_NAMES:
-            return provider_view(self.state, key)
-        return tool_view(self.state, key)
+    def _fetch_claude_usage(self):
+        """Start a background fetch of Claude Code's limit percentages, every
+        5 minutes while Claude Code is tracked and the switch is on."""
+        if (self._fetching_claude or not self.state["claude_usage_enabled"]
+                or "claude_code" not in self.state["enabled_tools"]
+                or not usage_due(self.state.get("claude_usage"))):
+            return
+        self._fetching_claude = True
+        threading.Thread(target=self._fetch_claude_usage_now, daemon=True).start()
 
-    def set_budget(self, target, tokens):
-        """`target` is "<view key>:<window>"; 0 tokens turns the budget off."""
-        key, _, window = target.partition(":")
-        budgets = self.state["budgets"].setdefault(key, {})
-        if tokens:
-            budgets[window] = tokens
-        else:
-            budgets.pop(window, None)
-            if not budgets:
-                del self.state["budgets"][key]
+    def _fetch_claude_usage_now(self):
+        """Runs on a background thread; the result is saved on the main thread."""
+        try:
+            result = fetch_usage()
+        except Exception as e:  # keep the fetch from being stuck "in flight"
+            result = {"limits": [], "error": f"Unexpected problem ({type(e).__name__}). "
+                                             "Percentage unavailable.", "fetched_at": time.time()}
+        AppHelper.callAfter(self._show_claude_usage, result)
+
+    def _show_claude_usage(self, result):
+        self._fetching_claude = False
+        if not self.state["claude_usage_enabled"]:
+            return  # turned off meanwhile
+        self.state["claude_usage"] = result
         save_state(self.state, STATE_FILE)
         self._check_alerts()
+        self._render_panel()
+
+    def send_test_alert(self):
+        if self.notifier.denied:
+            self.panel.close()
+            answer = rumps.alert(
+                "Notifications Are Off",
+                f"macOS isn't letting {APP_NAME} show notifications. Turn them on for "
+                f"{APP_NAME} in System Settings > Notifications.",
+                ok="Open Settings", cancel="Not Now",
+            )
+            if answer == 1:
+                subprocess.run(["open", SETTINGS_URL], capture_output=True)
+            return
+        self.notifier.send("Test alert: this is how usage alerts look.")
 
     def _check_alerts(self):
-        """Notify about limits and budgets that just reached the threshold."""
+        """Notify about limits that just reached the threshold."""
         if not self.state["alerts_enabled"]:
             return
-        levels = levels_for_alerts(self.state, self._view_for, time.time())
+        levels = levels_for_alerts(self.state, time.time())
         messages, above = alerts_to_send(
             levels, self.state["alert_threshold"], self.state["alert_windows"],
             self.state["alerts_above"], now=time.time(),
@@ -625,7 +657,7 @@ class TokenCounterApp(rumps.App):
             self.state["alerts_above"] = above
             save_state(self.state, STATE_FILE)
         for message in messages:
-            notify(message)
+            self.notifier.send(message)
 
     def refresh(self, _):
         self._scan()
@@ -633,6 +665,7 @@ class TokenCounterApp(rumps.App):
         save_state(self.state, STATE_FILE)
         self._check_alerts()
         self._fetch_accounts()
+        self._fetch_claude_usage()
         self._update_title()
         self._maybe_run_daily_leaderboard_sync()
         self._render_panel()
@@ -668,24 +701,12 @@ class TokenCounterApp(rumps.App):
         save_state(self.state, STATE_FILE)
 
 
-def notify(message):
-    """A macOS notification from Claude Tracker."""
-    try:
-        rumps.notification(APP_NAME, "", message)
-    except Exception:  # e.g. no notification center: fall back to AppleScript
-        subprocess.run(["osascript", "-e", "on run argv", "-e",
-                        "display notification (item 1 of argv) with title (item 2 of argv)",
-                        "-e", "end run", message, APP_NAME], capture_output=True)
-
-
-def show_as_installed_app():
-    """The app runs as Python; present it as the installed Claude Tracker
-    app so notifications carry its name and icon."""
-    from Foundation import NSBundle
-
-    from build_app import BUNDLE_ID
-
-    NSBundle.mainBundle().infoDictionary()["CFBundleIdentifier"] = BUNDLE_ID
+def _fallback_notification(title, message):
+    """For when the app isn't running from its bundle (e.g. `python3 app.py`):
+    AppleScript's notification, shown as Script Editor's."""
+    subprocess.run(["osascript", "-e", "on run argv", "-e",
+                    "display notification (item 1 of argv) with title (item 2 of argv)",
+                    "-e", "end run", message, title], capture_output=True)
 
 
 def hide_dock_icon():
@@ -702,5 +723,4 @@ if __name__ == "__main__":
         request_show_panel()
         sys.exit(0)
     hide_dock_icon()
-    show_as_installed_app()
     TokenCounterApp().run()

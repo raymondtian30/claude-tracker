@@ -19,7 +19,7 @@ By default it never connects to the internet or sends your data anywhere. The on
   From these it reads only token counts, which model was used, when, and which project folder. It skips your prompts, code and replies, and never touches opencode's account or credential tables.
 - `launchctl`, macOS's own built-in tool, only to turn its "start at login" setting on or off
 
-**There are two exceptions, both opt-in:** an API key you add for an AI provider (see [OpenAI, DeepSeek, Kimi and other AI companies](#openai-deepseek-kimi-and-other-ai-companies)), and the Leaderboard (Beta) feature.
+**There are three exceptions.** One is on by default: if you track Claude Code, the app asks Anthropic for your plan's limit percentages (see [Usage limits and alerts](#usage-limits-and-alerts)); turn off **Percentages from Anthropic** in the Limits tab to stop it. Two are opt-in: an API key you add for an AI provider (see [OpenAI, DeepSeek, Kimi and other AI companies](#openai-deepseek-kimi-and-other-ai-companies)), and the Leaderboard (Beta) feature.
 
 **The Leaderboard (Beta) is entirely opt-in** -- its tab is hidden until you turn on **Show Leaderboard (Beta)** in Settings, and nothing below happens unless you then click "Set Up Leaderboard" yourself. See the [Leaderboard (Beta)](#leaderboard-beta) section for exactly what that does.
 
@@ -50,7 +50,7 @@ A panel opens with a row of tabs along the top. Click an icon to switch tabs:
 - **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...)
 - **Projects** -- the 3 folders you used the most tokens in over the last 7 days
 - **Estimated API Cost** -- what your usage would cost at Anthropic's pay-as-you-go API prices. Just for fun: a Pro or Max subscription is flat-rate, so you aren't billed this. Prices live in `pricing.py` and will drift over time.
-- **Usage Limits** -- your plan limits and your own budgets (see [Usage limits and alerts](#usage-limits-and-alerts))
+- **Usage Limits** -- how much of your plan's limits you've used, and when to be notified (see [Usage limits and alerts](#usage-limits-and-alerts))
 - **Active Sessions** -- every Claude Code terminal you currently have open, and how many tokens each one has used
 - **Leaderboard (Beta)** -- hidden unless you turn it on in Settings; see below, this one's still a work in progress
 
@@ -75,11 +75,11 @@ If an AI's usage can't be seen -- none of your tools have used its models yet, a
 
 ### Usage limits and alerts
 
-The **Limits** tab shows how close you are to a limit, and the app can notify you when you get near one.
+The **Limits** tab shows how much of each plan limit you've used, and the app can notify you when you get near one. Only the limits your plan has are shown.
 
-- **Plan limits (exact, no sign-in):** Codex saves its plan's limits in its own logs -- percent used, the window (5-hour, weekly or 30-day) and when it resets -- so those are shown as Codex recorded them. Claude Code only logs a limit once it's *reached*, so Claude shows "Reached" with the reset time until then, and otherwise says none is reached.
-- **Your budgets:** pick a token amount per window for any AI, or for All AIs -- weekly (last 7 days) and monthly (this calendar month) for everything, plus a 5-hour budget for Claude Code (the only tool whose replies the app keeps with exact times).
-- **Alerts:** under **Usage alerts** in Settings -- on by default at **75%**, changeable, and you choose which windows notify you (5-hour, weekly, monthly). Each limit or budget notifies once when it reaches the threshold, and again only after it has dropped back below (for example when its window resets). **Send Test Alert** shows what one looks like.
+- **Claude Code:** the 5-hour and weekly limits (and the weekly Opus or Sonnet limit, if your plan has one), as percentages, refreshed every 5 minutes. Claude Code doesn't save these on your Mac, so the app asks Anthropic for them the same way Claude Code's own `/usage` does: it reads Claude Code's saved sign-in from your **macOS Keychain** and sends it over HTTPS only to `api.anthropic.com`, without following redirects. The sign-in is never copied into `state.json` or any log, and the app never renews it (renewing could sign Claude Code out) -- if it has expired, open Claude Code and it renews itself. Without a connection the bars say "Couldn't reach server. Percentage unavailable." and fill in again on the next refresh once you're back online. Turn off **Percentages from Anthropic** to stop asking; the tab then shows only limits Claude Code has logged as reached. This uses an endpoint Anthropic hasn't documented, so if it changes, the bars say the percentage is unavailable.
+- **Codex:** saves its plan's limits in its own logs -- percent used, the window and when it resets -- so those are shown as Codex recorded them. Which windows you see depends on your plan: the free plan has one 30-day window (shown as Monthly), paid plans a 5-hour and a weekly one.
+- **Notifications:** the **Notifications** card in the Limits tab -- on by default at **75%**, changeable, with a switch for each limit window your tool has. Each limit notifies once when it reaches that percentage, and again only after it has dropped back below (for example when its window resets). **Send Test Alert** shows what one looks like. The first time, macOS asks whether Claude Tracker may send notifications; if you said no, the test alert offers to open System Settings so you can turn them on.
 
 ### Leaderboard (Beta)
 
@@ -139,12 +139,14 @@ tool_icons.py                finds each tool's or provider's icon on this Mac fo
 stats_tabs.py                what each panel tab shows, as plain data
 panel_view.py                draws the panel (tabs, cards, bars, chart, settings) with AppKit
 pricing.py                   API price table and the estimated-cost math
-limits.py                    plan limits, budgets and when to send a usage alert
+limits.py                    plan limits and when to send a usage alert
+claude_usage.py              Claude Code's limit percentages, from Anthropic
+notifications.py             macOS notifications (UNUserNotificationCenter)
 version.py                   app name, version number and credits
 active_sessions.py           matches running `claude` processes to their sessions
 leaderboard.py               Leaderboard (Beta) -- local friends-list storage and sorting
 gist_sync.py                 Leaderboard (Beta) -- Keychain token storage + GitHub Gist API calls
-build_app.py                 builds "Claude Tracker.app" (launcher, Info.plist, icon) for Applications
+build_app.py                 builds "Claude Tracker.app" (launcher, a copy of Python, Info.plist, icon) for Applications
 single_instance.py           keeps one copy running; opening it again shows the running copy's panel
 install.sh / uninstall.sh    build the app and set up start-at-login / remove both
 tests/                       pytest suite for the logic in the modules above

@@ -1,28 +1,23 @@
-"""Usage limits: the real plan limits tools record on this Mac, budgets the
-user sets, and when to send an alert about either.
+"""Usage limits: each tool's real plan limits, and when to send an alert
+about them.
 
 - Codex saves its plan's limits in its session logs (percent used, window
-  length, reset time), so those are exact.
-- Claude Code only logs a limit when it's reached (with its reset time), so
-  that shows as 100% until the reset.
-- Budgets are token amounts the user picks per window; their percent comes
-  from the app's own counts.
+  length, reset time), so those are exact. Which windows it has depends on
+  the plan: the free plan has one 30-day window, paid plans a 5-hour and a
+  weekly one.
+- Claude Code's percentages (5-hour and weekly) come from Anthropic (see
+  claude_usage.py). Without them, its logs still say when a limit was
+  reached, which shows as 100% until the reset.
 
 Kept free of AppKit so it can be unit-tested.
 """
 
-from datetime import datetime, timedelta
-
-from usage_stats import total_in_range
+from datetime import datetime
 
 WINDOWS = [("five_hour", "5-hour"), ("weekly", "Weekly"), ("monthly", "Monthly")]
 WINDOW_LABELS = dict(WINDOWS)
-FIVE_HOURS = 5 * 3600
-
-# Budget amounts offered in the Limits tab (tokens; 0 = off).
-BUDGET_CHOICES = [0, 1_000_000, 5_000_000, 10_000_000, 25_000_000, 50_000_000, 100_000_000,
-                  250_000_000, 500_000_000, 1_000_000_000, 2_500_000_000, 5_000_000_000,
-                  10_000_000_000]
+# Claude Code's plans have a 5-hour and a weekly limit.
+CLAUDE_WINDOWS = ["five_hour", "weekly"]
 
 ALERT_THRESHOLDS = [50, 60, 70, 75, 80, 90, 95]
 DEFAULT_ALERT_THRESHOLD = 75
@@ -60,7 +55,7 @@ def codex_limits(rate_limits, now):
     return limits
 
 
-def claude_limits(hits, now):
+def reached_claude_limits(hits, now):
     """Claude Code's reached limits ({limit type: reset time}) that haven't
     reset yet, at 100%."""
     limits = []
@@ -68,18 +63,23 @@ def claude_limits(hits, now):
         window = CLAUDE_LIMIT_TYPES.get(kind, "five_hour")
         if resets_at and resets_at > now:
             limits.append({"window": window, "label": WINDOW_LABELS[window], "percent": 100.0,
-                           "resets_at": resets_at})
+                           "resets_at": resets_at, "reached": True})
     return limits
 
 
-def budget_tokens_used(window, daily, recent, now):
-    """Tokens counted against a budget: the last 5 hours (from `recent`, a
-    list of [unix time, tokens]), the last 7 days, or this calendar month."""
-    if window == "five_hour":
-        return sum(tokens for at, tokens in recent or [] if at >= now - FIVE_HOURS)
-    today = datetime.fromtimestamp(now).date()
-    start = today - timedelta(days=6) if window == "weekly" else today.replace(day=1)
-    return total_in_range(daily, start, today)
+def claude_limits(state, now):
+    """Claude Code's limits: Anthropic's percentages if the last fetch
+    worked, else the reached limits from its logs. A limit whose reset time
+    has passed reads 0% until the next fetch."""
+    usage = state.get("claude_usage") or {}
+    if state.get("claude_usage_enabled", True) and usage.get("limits"):
+        limits = []
+        for limit in usage["limits"]:
+            reset = limit.get("resets_at") is not None and limit["resets_at"] <= now
+            limits.append({**limit, "percent": 0.0 if reset else limit["percent"],
+                           "resets_at": None if reset else limit.get("resets_at")})
+        return limits
+    return reached_claude_limits(state.get("claude_limit_hits"), now)
 
 
 def format_reset(resets_at, now):
@@ -122,47 +122,26 @@ def plan_levels(state, tool_keys, now):
     levels = []
     for key in tool_keys:
         if key == "claude_code":
-            found = claude_limits(state.get("claude_limit_hits"), now)
+            found = claude_limits(state, now)
         elif key == "codex":
             found = codex_limits(codex_rate_limits(state.get("sources", {}).get("codex", {})), now)
         else:
             continue
-        levels += [{"id": f"{key}:{limit['window']}", "name": TOOL_NAMES[key], **limit}
+        levels += [{"id": f"{key}:{limit.get('kind', limit['window'])}",
+                    "name": TOOL_NAMES[key], **limit}
                    for limit in found]
     return levels
 
 
-def budget_windows(view_key):
-    """Windows a budget can be set for. Only Claude Code's replies are kept
-    with exact times, which a 5-hour window needs."""
-    if view_key == "claude_code":
-        return ["five_hour", "weekly", "monthly"]
-    return ["weekly", "monthly"]
+def limit_windows(state, tool_keys, now):
+    """The windows `tool_keys` have limits in, in WINDOWS order: Claude
+    Code's two, plus whichever Codex has recorded."""
+    windows = {level["window"] for level in plan_levels(state, tool_keys, now)}
+    if "claude_code" in tool_keys:
+        windows |= set(CLAUDE_WINDOWS)
+    return [window for window, _ in WINDOWS if window in windows]
 
 
-def budget_levels(view, state, now):
-    """The budgets set for `view`, as alert levels with "budget" and "used"."""
-    budgets = state.get("budgets", {}).get(view["key"], {})
-    recent = state.get("claude_recent", []) if view["key"] == "claude_code" else []
-    levels = []
-    for window in budget_windows(view["key"]):
-        budget = budgets.get(window)
-        if not budget:
-            continue
-        used = budget_tokens_used(window, view["daily"], recent, now)
-        levels.append({
-            "id": f"budget:{view['key']}:{window}", "name": view["name"], "window": window,
-            "label": f"{WINDOW_LABELS[window]} budget", "budget": budget, "used": used,
-            "percent": used / budget * 100, "resets_at": None,
-        })
-    return levels
-
-
-def levels_for_alerts(state, view_for, now):
-    """Everything an alert can be about: the plan limits of the enabled
-    tools, then each view's budgets. `view_for(key)` builds a view."""
-    levels = plan_levels(state, state.get("enabled_tools", []), now)
-    for key, budgets in state.get("budgets", {}).items():
-        if any(budgets.values()):
-            levels += budget_levels(view_for(key), state, now)
-    return levels
+def levels_for_alerts(state, now):
+    """Everything an alert can be about: the plan limits of the enabled tools."""
+    return plan_levels(state, state.get("enabled_tools", []), now)
