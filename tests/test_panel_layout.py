@@ -119,3 +119,38 @@ def test_clicking_the_menu_bar_icon_is_left_to_the_icon_to_toggle():
     assert not panel._click_closes(status_window)
     assert not panel._click_closes(panel.root.window())
     assert panel._click_closes(settings_window)
+
+
+def test_animation_speeds():
+    from panel_view import ANIMATION_SPEEDS
+
+    assert ANIMATION_SPEEDS == [("off", "Off", 0.0), ("fast", "Fast", 0.12),
+                                ("normal", "Normal", 0.22), ("slow", "Slow", 0.4)]
+
+
+def test_unfolding_grows_from_a_strip_to_full_height_easing_out():
+    from panel_view import FOLDED_HEIGHT, fold_height
+
+    heights = [fold_height(t / 10, 600, unfolding=True) for t in range(11)]
+
+    assert heights[0] == FOLDED_HEIGHT
+    assert heights[-1] == 600
+    assert heights == sorted(heights)
+    assert heights[5] > (FOLDED_HEIGHT + 600) / 2  # fast at first, gentle at the end
+
+
+def test_folding_shrinks_back_to_the_strip():
+    from panel_view import FOLDED_HEIGHT, fold_height
+
+    heights = [fold_height(t / 10, 600, unfolding=False) for t in range(11)]
+
+    assert heights[0] == 600
+    assert heights[-1] == FOLDED_HEIGHT
+    assert heights == sorted(heights, reverse=True)
+
+
+def test_progress_past_the_end_is_clamped():
+    from panel_view import fold_height
+
+    assert fold_height(1.7, 600, unfolding=True) == 600
+    assert fold_height(-1, 600, unfolding=True) == fold_height(0, 600, unfolding=True)

@@ -131,7 +131,7 @@ def test_settings_tab_reflects_state():
     assert ("segmented", "Shows", ["Lifetime", "Today", "Icon only"], 2, "title_mode") in items
     assert items[1] == ("popup", "Text size", ["10 pt", "11 pt", "12 pt", "13 pt", "14 pt"], 2,
                         "menu_bar_font_size")  # 12 pt by default
-    assert items[2][3] == 3  # 60 seconds selected
+    assert next(i for i in items if i[-1] == "scan_interval")[3] == 3  # 60 seconds selected
     assert ("switch", "Pause scanning", True, "pause") in items
     assert ("switch", "Start at login", False, "login") in items
 
@@ -464,3 +464,14 @@ def test_no_warning_while_waiting_for_first_fetch():
     tabs = build_panel(state, [], [], today=date(2026, 11, 8), view=_empty_provider("kimi", "Kimi"))
 
     assert alert_text(tabs[0]) is None
+
+
+def test_settings_has_the_panel_animation_speed():
+    tab = settings_tab({}, paused=False, interval_choices=[15], detected=[])
+    items = next(c for c in tab["cards"] if c["title"] == "Menu bar")["items"]
+
+    assert ("popup", "Animation", ["Off", "Fast", "Normal", "Slow"], 2, "panel_animation") in items
+
+    tab = settings_tab({"panel_animation": "off"}, paused=False, interval_choices=[15], detected=[])
+    items = next(c for c in tab["cards"] if c["title"] == "Menu bar")["items"]
+    assert ("popup", "Animation", ["Off", "Fast", "Normal", "Slow"], 0, "panel_animation") in items
