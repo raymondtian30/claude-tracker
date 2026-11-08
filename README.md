@@ -37,7 +37,7 @@ That's it. It now also starts automatically every time you log in, and **Claude 
 
 The app in Applications is a small launcher that runs the code in this folder, so your totals stay in `state.json` here. If you move this folder, run `./install.sh` again.
 
-**Updating:** click **Check for Updates** under About in Settings. If GitHub has a newer release, the app downloads it into this folder (a `git` fast-forward to the release's tag), rebuilds itself and restarts. Your settings and totals live in `state.json` and `friends.json`, which updates never touch. It won't update a copy whose code you've changed or that's on a branch other than `master`, so your own work is never overwritten. This is the only time the app contacts GitHub besides the opt-in Leaderboard.
+**Updating:** click **Check for Updates** under About in Settings. If GitHub has newer releases, it lists each one with what's new and asks whether to update. Click **Update** and the app downloads the newest into this folder (a `git` fast-forward to the release's tag), rebuilds itself and restarts; **Not Now** changes nothing. Your settings and totals live in `state.json` and `friends.json`, which updates never touch. It won't update a copy whose code you've changed or that's on a branch other than `master`, so your own work is never overwritten. This is the only time the app contacts GitHub besides the opt-in Leaderboard.
 
 If step 1 fails because `rumps` isn't installed, the script installs it for you automatically the first time (it needs Python 3 and `pip`, which come standard on macOS).
 
@@ -145,7 +145,7 @@ limits.py                    plan limits and when to send a usage alert
 claude_usage.py              Claude Code's limit percentages, from Anthropic
 notifications.py             macOS notifications (UNUserNotificationCenter)
 version.py                   app name, version number and credits
-updater.py                   Check for Updates: installs the newest GitHub release over this copy
+updater.py                   Check for Updates: lists newer GitHub releases, installs the newest if you say so
 active_sessions.py           matches running `claude` processes to their sessions
 leaderboard.py               Leaderboard (Beta) -- local friends-list storage and sorting
 gist_sync.py                 Leaderboard (Beta) -- Keychain token storage + GitHub Gist API calls

@@ -3,7 +3,7 @@ import subprocess
 import pytest
 
 import updater
-from updater import UpdateError, install_release, is_newer, latest_release, parse_version
+from updater import UpdateError, install_release, is_newer, parse_version
 
 
 def test_parse_version():
@@ -18,20 +18,6 @@ def test_is_newer_compares_numbers_not_text():
     assert not is_newer("v2.1.0", current="2.1.0")
     assert not is_newer("v2.0.5", current="2.1.0")
     assert not is_newer("garbage", current="2.1.0")
-
-
-def test_latest_release_reads_the_tag():
-    assert latest_release(get=lambda url: {"tag_name": "v2.2.0"}) == "v2.2.0"
-
-
-def test_latest_release_offline_or_odd_answer():
-    def offline(url):
-        raise OSError("no network")
-
-    with pytest.raises(UpdateError, match="Couldn't reach GitHub"):
-        latest_release(get=offline)
-    with pytest.raises(UpdateError, match="doesn't have a version"):
-        latest_release(get=lambda url: {"tag_name": "latest"})
 
 
 def git(cwd, *args):
@@ -139,3 +125,55 @@ def test_about_has_check_for_updates():
     assert ("row", "Updates", "Checking…") in about
     buttons = next(i for i in about if i[0] == "buttons")[1]
     assert ("Check for Updates", "arrow.down.circle", "check_updates") in buttons
+
+
+RELEASES = [  # as GitHub lists them: newest first
+    {"tag_name": "v2.3.0", "name": "Claude Tracker 2.3.0", "draft": False, "prerelease": False,
+     "body": "## New\n\n- **Update dialog.** Lists what's new.\n"},
+    {"tag_name": "v2.4.0-beta", "name": "beta", "draft": False, "prerelease": True, "body": "x"},
+    {"tag_name": "v2.2.2", "name": "Claude Tracker 2.2.2", "draft": False, "prerelease": False,
+     "body": "## Fixed\n\n- Notifications show."},
+    {"tag_name": "v9.0.0", "name": "draft", "draft": True, "prerelease": False, "body": "x"},
+    {"tag_name": "v2.2.1", "name": "Claude Tracker 2.2.1", "draft": False, "prerelease": False,
+     "body": "old"},
+]
+
+
+def test_newer_releases_lists_every_published_release_after_this_one():
+    from updater import RELEASES_URL, newer_releases
+
+    seen = []
+
+    def get(url):
+        seen.append(url)
+        return RELEASES
+
+    releases = newer_releases(get=get, current="2.2.1")
+
+    assert seen == [RELEASES_URL]
+    assert [r["tag"] for r in releases] == ["v2.3.0", "v2.2.2"]  # newest first
+    assert releases[0]["notes"] == "## New\n\n- **Update dialog.** Lists what's new."
+
+
+def test_newer_releases_when_up_to_date_or_offline():
+    from updater import newer_releases
+
+    assert newer_releases(get=lambda url: RELEASES, current="2.3.0") == []
+
+    def offline(url):
+        raise OSError("no network")
+
+    with pytest.raises(UpdateError, match="Couldn't reach GitHub"):
+        newer_releases(get=offline)
+
+
+def test_release_notes_read_as_plain_text():
+    from updater import describe_releases
+
+    text = describe_releases([
+        {"tag": "v2.3.0", "notes": "## New\n\n- **Update dialog.** Lists what's new.\n"},
+        {"tag": "v2.2.2", "notes": ""},
+    ])
+
+    assert text == ("Version 2.3.0\nNew\n• Update dialog. Lists what's new.\n\n"
+                    "Version 2.2.2\nNo notes.")
