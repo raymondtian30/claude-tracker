@@ -57,9 +57,17 @@ DEFAULT_MENU_BAR_FONT_SIZE = 12
 NOTE_WIDTH = 46  # characters that fit on one note line
 
 
+ALERT_WIDTH = 40  # characters per warning line (it's indented for its icon)
+
+
 def note_lines(text):
     """A note too long for one line, as several note items."""
     return [("note", line) for line in textwrap.wrap(text, NOTE_WIDTH)]
+
+
+def alert_lines(text):
+    """A warning as ("alert", line, show_icon) items; the icon is on line one."""
+    return [("alert", line, i == 0) for i, line in enumerate(textwrap.wrap(text, ALERT_WIDTH))]
 
 
 def _ordinal_suffix(day):
@@ -158,17 +166,12 @@ def _overview_tab(d):
     history_items.append(
         ("row", "New input + output", format_count(lifetime["input"] + lifetime["output"]))
     )
-    error_cards = []
-    if d.view["error"]:
-        error_cards = [{"title": None, "items": [
-            ("note", f"{d.view['name']} data couldn't be read: {d.view['error']}")
-        ]}]
     return {
         "key": "overview",
         "title": "Overview",
         "short": "Home",
         "icon": "square.grid.2x2",
-        "cards": error_cards + [
+        "cards": [
             {
                 "title": None,
                 "items": [
@@ -187,7 +190,7 @@ def _overview_tab(d):
                 "items": [("chart", [t for _, t in series], f"Peak {format_count(peak)}")],
             },
             {"title": "History", "items": history_items},
-        ],
+        ] + _account_invite(d),
     }
 
 
@@ -197,14 +200,14 @@ def _account_cards(d):
     key = d.view["key"]
     if key not in PROVIDER_NAMES:
         return []
-    title = f"{d.view['name']} account"
     if key not in d.state.get("provider_keys", []):
-        return [{"title": title, "items": note_lines(
-            "Add an API key in Settings to include usage from outside this Mac."
-        )}]
+        return []
+    title = f"{d.view['name']} account"
+    key_buttons = ("buttons", [("Replace Key", "key", f"provider_key:{key}"),
+                               ("Remove Key", "trash", f"provider_key_remove:{key}")])
     saved = d.state.get("accounts", {}).get(key)
     if not saved:
-        return [{"title": title, "items": [("note", "Fetching account numbers…")]}]
+        return [{"title": title, "items": [("note", "Fetching account numbers…"), key_buttons]}]
     items = []
     daily = saved.get("daily") or {}
     if daily:
@@ -226,12 +229,51 @@ def _account_cards(d):
     items += [("row", label, value) for label, value in saved.get("rows", [])]
     for note in saved.get("notes", []):
         items += note_lines(note)
-    if saved.get("error"):
-        items += note_lines(f"Couldn't update: {saved['error']}")
     if saved.get("fetched_at"):
         fetched = datetime.fromisoformat(saved["fetched_at"])
         items.append(("note", f"Updated {fetched.strftime('%-I:%M %p')}"))
+    items.append(key_buttons)
     return [{"title": title, "items": items}]
+
+
+def _warning(d):
+    """Why this AI's usage can't be seen, or None. Shown at the top of every
+    tab of its view."""
+    view, name, key = d.view, d.view["name"], d.view["key"]
+    if view["error"]:
+        return f"{name} data couldn't be read: {view['error']}"
+    if key not in PROVIDER_NAMES:
+        return None
+    has_key = key in d.state.get("provider_keys", [])
+    saved = d.state.get("accounts", {}).get(key)
+    if has_key and saved and saved.get("error"):
+        return f"Couldn't connect to {name}: {saved['error']}"
+    if d.grand_total:
+        return None
+    if has_key:
+        if not saved or saved.get("has_usage"):
+            return None  # still fetching, or the account's usage is shown
+        extra = (" An admin key (sk-admin-…) also shows usage." if key == "kimi"
+                 else f" {name} doesn't share usage history.")
+        return f"No {name} usage found on this Mac, and your {name} key only shows your balance.{extra}"
+    found = f"No {name} usage found on this Mac. None of your tools have used {name} models yet."
+    if key == "deepseek":
+        return (found + " DeepSeek doesn't share usage history online, so an API key "
+                "would only show your balance.")
+    return found + " For usage from other computers or the website, add an API key at the bottom of Home."
+
+
+def _account_invite(d):
+    """For a provider view without a key: a quiet, optional way to add one,
+    below everything else. The numbers above never need it."""
+    key = d.view["key"]
+    if key not in PROVIDER_NAMES or key in d.state.get("provider_keys", []):
+        return []
+    items = note_lines("Usage from other computers or the website "
+                       "needs an API key. Not needed for this Mac.")
+    items += note_lines(KEY_HELP[key] + ".")
+    items.append(("buttons", [("Add API Key", "key", f"provider_key:{key}")]))
+    return [{"title": "Whole account (optional)", "items": items}]
 
 
 def _breakdown_card(title, models, extra):
@@ -423,26 +465,16 @@ def _tools_card(state, detected):
     # turned off.
     keys = [key for key, _ in TOOLS if key in detected or key in enabled]
     items = [("switch", TOOL_NAMES[key], key in enabled, f"tool:{key}") for key in keys]
+    items += _provider_items(state)
     items.append(("switch", "Combine all tools", state.get("combine_tools", False), "combine_tools"))
     return {"title": "AI tools", "items": items}
 
 
-def _providers_card(state):
+def _provider_items(state):
+    """On/off switches for OpenAI, DeepSeek and Kimi. Their optional API key
+    lives on each provider's own Home tab, so turning one on asks nothing."""
     enabled = state.get("enabled_providers", [])
-    keys = state.get("provider_keys", [])
-    items = note_lines("Each company's models, used in any of your tools.")
-    for key, name in PROVIDERS:
-        items.append(("switch", name, key in enabled, f"provider:{key}"))
-        if key not in enabled:
-            continue
-        if key in keys:
-            items.append(("row", f"{name} key", "In Keychain"))
-            items.append(("buttons", [("Replace Key", "key", f"provider_key:{key}"),
-                                      ("Remove Key", "trash", f"provider_key_remove:{key}")]))
-        else:
-            items.append(("buttons", [("Add API Key", "key", f"provider_key:{key}")]))
-            items += note_lines(KEY_HELP[key] + " (optional).")
-    return {"title": "AI providers", "items": items}
+    return [("switch", name, key in enabled, f"provider:{key}") for key, name in PROVIDERS]
 
 
 def welcome_tab(detected, chosen):
@@ -501,7 +533,6 @@ def settings_tab(state, paused, interval_choices, detected):
         "icon": "slider.horizontal.3",
         "cards": [
             _tools_card(state, detected),
-            _providers_card(state),
             {
                 "title": "Menu bar",
                 "items": [
@@ -565,6 +596,10 @@ def build_panel(view, state, sessions, friends, show_leaderboard, today=None):
     # have no Live tab.
     if view["key"] not in PROVIDER_NAMES:
         tabs.append(_sessions_tab(view, sessions))
+    warning = _warning(d)
+    if warning:
+        for tab in tabs:
+            tab["cards"].insert(0, {"title": None, "items": alert_lines(warning)})
     if show_leaderboard:
         tabs.append(_leaderboard_tab(state, friends))
     return tabs

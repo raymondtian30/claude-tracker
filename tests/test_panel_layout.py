@@ -16,10 +16,9 @@ def test_tool_switcher_is_a_dropdown():
 
     tab = {"key": "overview", "title": "Overview", "short": "Home", "icon": "square.grid.2x2",
            "cards": [{"title": None, "items": [("note", "hi")]}]}
-    settings = {**tab, "key": "settings", "title": "Settings"}
     panel = Panel(on_action=lambda action, value: None)
 
-    panel.render([tab], settings, "footer", False,
+    panel.render([tab], "footer", False,
                  tool_choices=[("claude_code", "Claude Code"), ("codex", "Codex"), ("opencode", "opencode")],
                  selected_tool="codex")
 
@@ -28,3 +27,79 @@ def test_tool_switcher_is_a_dropdown():
     assert list(popups[0].itemTitles()) == ["Claude Code", "Codex", "opencode"]
     assert popups[0].indexOfSelectedItem() == 1
     assert not [v for v in panel.root.subviews() if isinstance(v, NSSegmentedControl)]
+
+
+TAB = {"key": "overview", "title": "Overview", "short": "Home", "icon": "square.grid.2x2",
+       "cards": [{"title": None, "items": [("note", "hi")]}]}
+
+
+def test_settings_button_asks_the_app_to_open_the_settings_window():
+    from AppKit import NSButton
+
+    from panel_view import Panel
+
+    calls = []
+    panel = Panel(on_action=lambda action, value: calls.append((action, value)))
+    panel.render([TAB], "footer", False)
+
+    button = next(v for v in panel.root.subviews()
+                  if isinstance(v, NSButton) and v.toolTip() == "Settings")
+    panel._fire(button.tag(), None)
+
+    assert calls == [("open_settings", None)]
+    assert panel.selected == "overview"  # the popover itself doesn't change
+
+
+def test_popover_no_longer_shows_settings_inline():
+    from panel_view import Panel
+
+    panel = Panel(on_action=lambda action, value: None, selected_tab="settings")
+    panel.render([TAB], "footer", False)
+
+    assert panel.selected == "overview"
+
+
+def test_settings_window_draws_the_settings_cards():
+    from AppKit import NSSwitch, NSTextField
+
+    from panel_view import SettingsWindow
+
+    calls = []
+    settings = {"key": "settings", "title": "Settings", "short": "Settings", "icon": "gear",
+                "cards": [{"title": "AI tools", "items": [("switch", "Codex", True, "tool:codex")]}]}
+    window = SettingsWindow(on_action=lambda action, value: calls.append((action, value)))
+
+    window.render(settings)
+
+    assert window.window.title() == "Claude Tracker Settings"
+    labels = [v.stringValue() for v in window.root.subviews() if isinstance(v, NSTextField)]
+    assert "AI tools" in labels and "Codex" in labels
+    switch = next(v for v in window.root.subviews() if isinstance(v, NSSwitch))
+    window._fire(switch.tag(), False)
+    assert calls == [("tool:codex", False)]
+
+
+def test_header_shows_the_selected_ais_logo_instead_of_the_coin():
+    from AppKit import NSImage, NSImageView, NSTextField
+
+    from panel_view import Panel
+
+    logo = NSImage.alloc().initWithSize_((16, 16))
+    panel = Panel(on_action=lambda action, value: None)
+    panel.render([TAB], "footer", False, logo=logo)
+
+    images = [v.image() for v in panel.root.subviews() if isinstance(v, NSImageView)]
+    labels = [v.stringValue() for v in panel.root.subviews() if isinstance(v, NSTextField)]
+    assert logo in images
+    assert "🪙" not in labels
+
+
+def test_header_keeps_the_coin_without_a_logo():
+    from AppKit import NSTextField
+
+    from panel_view import Panel
+
+    panel = Panel(on_action=lambda action, value: None)
+    panel.render([TAB], "footer", False)
+
+    assert "🪙" in [v.stringValue() for v in panel.root.subviews() if isinstance(v, NSTextField)]
