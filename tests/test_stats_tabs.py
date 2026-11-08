@@ -31,7 +31,7 @@ def build_panel(state, sessions, friends, today=None, view=None, show_leaderboar
 
 ITEM_LENGTHS = {
     "tiles": 2, "chart": 3, "bar": 4, "row": 3, "note": 2, "buttons": 2,
-    "segmented": 5, "popup": 5, "switch": 4, "alert": 3, "tags": 2,
+    "segmented": 5, "popup": 5, "switch": 4, "alert": 3, "tags": 2, "choices": 5,
 }
 
 
@@ -641,8 +641,16 @@ def test_limits_tab_notifications_card():
 
     items = next(c for c in tab["cards"] if c["title"] == "Notifications")["items"]
     assert ("switch", "Notify me", True, "alerts_enabled") in items
-    assert ("popup", "When usage reaches", ["50%", "60%", "70%", "75%", "80%", "90%", "95%"], 3,
-            "alert_threshold") in items
+    assert ("choices", "When usage reaches", ["50%", "60%", "70%", "75%", "80%", "90%", "95%"], [3],
+            "alert_thresholds") in items
+
+
+def test_notifications_card_shows_every_chosen_threshold():
+    tab = _limits_tab({"alert_thresholds": [75, 90]}, tool_view({}, "claude_code"))
+
+    items = next(c for c in tab["cards"] if c["title"] == "Notifications")["items"]
+    choices = next(i for i in items if i[0] == "choices")
+    assert choices[3] == [3, 5]
     assert ("buttons", [("Send Test Alert", "bell", "alert_test")]) in items
 
 

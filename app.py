@@ -56,10 +56,10 @@ from stats_tabs import (
 )
 from limits import (
     ALERT_THRESHOLDS,
-    DEFAULT_ALERT_THRESHOLD,
     WINDOWS,
     alerts_to_send,
     levels_for_alerts,
+    migrate_alert_state,
 )
 from updater import (
     UpdateError,
@@ -169,9 +169,8 @@ class TokenCounterApp(rumps.App):
         self.state.setdefault("appearance", DEFAULT_APPEARANCE)
         apply_appearance(self.state["appearance"])
         self.state.setdefault("alerts_enabled", True)
-        self.state.setdefault("alert_threshold", DEFAULT_ALERT_THRESHOLD)
+        migrate_alert_state(self.state)
         self.state.setdefault("alert_windows", [w for w, _ in WINDOWS])
-        self.state.setdefault("alerts_above", [])
         self.state.setdefault("claude_usage_enabled", True)
         self.state.pop("budgets", None)  # token budgets, since removed
         self.state.pop("stats_tab", None)  # from the earlier in-menu tabs
@@ -357,9 +356,11 @@ class TokenCounterApp(rumps.App):
         elif action == "alerts_enabled":
             self.state["alerts_enabled"] = value
             save_state(self.state, STATE_FILE)
-        elif action == "alert_threshold":
-            self.state["alert_threshold"] = ALERT_THRESHOLDS[value]
-            save_state(self.state, STATE_FILE)
+        elif action == "alert_thresholds":
+            # Keep at least one: "Notify me" is the way to turn alerts off.
+            if value:
+                self.state["alert_thresholds"] = [ALERT_THRESHOLDS[i] for i in value]
+                save_state(self.state, STATE_FILE)
         elif name == "alert_window":
             windows = set(self.state["alert_windows"]) - {argument} | ({argument} if value else set())
             self.state["alert_windows"] = [w for w, _ in WINDOWS if w in windows]
@@ -765,7 +766,7 @@ class TokenCounterApp(rumps.App):
             return
         levels = levels_for_alerts(self.state, time.time())
         messages, above = alerts_to_send(
-            levels, self.state["alert_threshold"], self.state["alert_windows"],
+            levels, self.state["alert_thresholds"], self.state["alert_windows"],
             self.state["alerts_above"], now=time.time(),
         )
         if above != self.state["alerts_above"]:
