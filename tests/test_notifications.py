@@ -1,26 +1,29 @@
 import notifications
-from notifications import STATUS_DENIED, STATUS_NOT_DETERMINED, Notifier
+from notifications import ALERT_STYLE_BANNER, ALERT_STYLE_NONE, STATUS_DENIED, STATUS_NOT_DETERMINED, Notifier
 
 AUTHORIZED = 2
 
 
 class FakeSettings:
-    def __init__(self, status):
-        self.status = status
+    def __init__(self, status, style):
+        self.status, self.style = status, style
 
     def authorizationStatus(self):
         return self.status
+
+    def alertStyle(self):
+        return self.style
 
 
 class FakeCenter:
     """Answers like UNUserNotificationCenter, straight away."""
 
-    def __init__(self, status, grant=True, post_error=None):
-        self.status, self.grant, self.post_error = status, grant, post_error
+    def __init__(self, status, grant=True, post_error=None, style=ALERT_STYLE_BANNER):
+        self.status, self.grant, self.post_error, self.style = status, grant, post_error, style
         self.posted = []
 
     def getNotificationSettingsWithCompletionHandler_(self, handler):
-        handler(FakeSettings(self.status))
+        handler(FakeSettings(self.status, self.style))
 
     def requestAuthorizationWithOptions_completionHandler_(self, options, handler):
         self.status = AUTHORIZED if self.grant else STATUS_DENIED
@@ -69,3 +72,34 @@ def test_test_alert_says_blocked_when_permission_refused_or_posting_fails(monkey
         notifier(center, monkeypatch).send_checked("hi", on_blocked=lambda: blocked.append(1))
 
     assert blocked == [1, 1]
+
+
+def test_test_alert_says_when_banners_are_off(monkeypatch):
+    """With the alert style set to None, macOS files alerts in Notification
+    Center without showing them: the test alert is still sent, and the user
+    hears why it didn't pop up."""
+    no_banners = []
+    center = FakeCenter(AUTHORIZED, style=ALERT_STYLE_NONE)
+
+    notifier(center, monkeypatch).send_checked(
+        "hi", on_blocked=lambda: None, on_no_banners=lambda: no_banners.append(1))
+
+    assert center.posted == ["hi"]
+    assert no_banners == [1]
+
+
+def test_test_alert_with_banners_on_says_nothing_more(monkeypatch):
+    no_banners = []
+    center = FakeCenter(AUTHORIZED)
+
+    notifier(center, monkeypatch).send_checked(
+        "hi", on_blocked=lambda: None, on_no_banners=lambda: no_banners.append(1))
+
+    assert center.posted == ["hi"] and no_banners == []
+
+
+def test_settings_link_opens_claude_trackers_own_page():
+    from build_app import BUNDLE_ID
+    from notifications import SETTINGS_URL
+
+    assert SETTINGS_URL.endswith(f"?id={BUNDLE_ID}")
