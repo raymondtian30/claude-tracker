@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import urllib.error
 import webbrowser
 from datetime import date, datetime, timedelta
@@ -44,8 +45,17 @@ from stats_tabs import (
     view_choices,
     welcome_tab,
 )
+from limits import (
+    ALERT_THRESHOLDS,
+    BUDGET_CHOICES,
+    DEFAULT_ALERT_THRESHOLD,
+    WINDOWS,
+    alerts_to_send,
+    levels_for_alerts,
+)
 from token_math import (
     backfill_daily,
+    backfill_limits,
     format_count,
     load_state,
     save_state,
@@ -136,12 +146,18 @@ class TokenCounterApp(rumps.App):
         self.state.setdefault("menu_bar_font_size", DEFAULT_MENU_BAR_FONT_SIZE)
         self.state.setdefault("panel_tab", "overview")
         self.state.setdefault("panel_animation", DEFAULT_ANIMATION)
+        self.state.setdefault("alerts_enabled", True)
+        self.state.setdefault("alert_threshold", DEFAULT_ALERT_THRESHOLD)
+        self.state.setdefault("alert_windows", [w for w, _ in WINDOWS])
+        self.state.setdefault("budgets", {})
+        self.state.setdefault("alerts_above", [])
         self.state.pop("stats_tab", None)  # from the earlier in-menu tabs
         if self.state["first_seen_at"] is None:
             self.state["first_seen_at"] = date.today().isoformat()
         # Backfill must run before the first refresh: it re-reads each file
         # only up to the offsets saved by the previous run.
         backfill_daily(self.state)
+        backfill_limits(self.state)
         self._scan()
         save_state(self.state, STATE_FILE)
         self._fetch_accounts()
@@ -302,6 +318,20 @@ class TokenCounterApp(rumps.App):
             self.state["panel_animation"] = ANIMATION_SPEEDS[value][0]
             self.panel.animation_seconds = animation_seconds(self.state["panel_animation"])
             save_state(self.state, STATE_FILE)
+        elif action == "alerts_enabled":
+            self.state["alerts_enabled"] = value
+            save_state(self.state, STATE_FILE)
+        elif action == "alert_threshold":
+            self.state["alert_threshold"] = ALERT_THRESHOLDS[value]
+            save_state(self.state, STATE_FILE)
+        elif name == "alert_window":
+            windows = set(self.state["alert_windows"]) - {argument} | ({argument} if value else set())
+            self.state["alert_windows"] = [w for w, _ in WINDOWS if w in windows]
+            save_state(self.state, STATE_FILE)
+        elif action == "alert_test":
+            notify("Test alert: this is how usage alerts look.")
+        elif name == "budget":
+            self.set_budget(argument, BUDGET_CHOICES[value])
         elif action == "scan_interval":
             self.set_scan_interval(SCAN_INTERVAL_CHOICES[value])
         elif action == "pause":
@@ -562,10 +592,46 @@ class TokenCounterApp(rumps.App):
         self.state["last_leaderboard_sync_date"] = today
         save_state(self.state, STATE_FILE)
 
+    def _view_for(self, key):
+        if key == "all":
+            return combined_view(self.state, self.state["enabled_tools"])
+        if key in PROVIDER_NAMES:
+            return provider_view(self.state, key)
+        return tool_view(self.state, key)
+
+    def set_budget(self, target, tokens):
+        """`target` is "<view key>:<window>"; 0 tokens turns the budget off."""
+        key, _, window = target.partition(":")
+        budgets = self.state["budgets"].setdefault(key, {})
+        if tokens:
+            budgets[window] = tokens
+        else:
+            budgets.pop(window, None)
+            if not budgets:
+                del self.state["budgets"][key]
+        save_state(self.state, STATE_FILE)
+        self._check_alerts()
+
+    def _check_alerts(self):
+        """Notify about limits and budgets that just reached the threshold."""
+        if not self.state["alerts_enabled"]:
+            return
+        levels = levels_for_alerts(self.state, self._view_for, time.time())
+        messages, above = alerts_to_send(
+            levels, self.state["alert_threshold"], self.state["alert_windows"],
+            self.state["alerts_above"], now=time.time(),
+        )
+        if above != self.state["alerts_above"]:
+            self.state["alerts_above"] = above
+            save_state(self.state, STATE_FILE)
+        for message in messages:
+            notify(message)
+
     def refresh(self, _):
         self._scan()
         self._save_fetched_accounts()
         save_state(self.state, STATE_FILE)
+        self._check_alerts()
         self._fetch_accounts()
         self._update_title()
         self._maybe_run_daily_leaderboard_sync()
@@ -602,6 +668,26 @@ class TokenCounterApp(rumps.App):
         save_state(self.state, STATE_FILE)
 
 
+def notify(message):
+    """A macOS notification from Claude Tracker."""
+    try:
+        rumps.notification(APP_NAME, "", message)
+    except Exception:  # e.g. no notification center: fall back to AppleScript
+        subprocess.run(["osascript", "-e", "on run argv", "-e",
+                        "display notification (item 1 of argv) with title (item 2 of argv)",
+                        "-e", "end run", message, APP_NAME], capture_output=True)
+
+
+def show_as_installed_app():
+    """The app runs as Python; present it as the installed Claude Tracker
+    app so notifications carry its name and icon."""
+    from Foundation import NSBundle
+
+    from build_app import BUNDLE_ID
+
+    NSBundle.mainBundle().infoDictionary()["CFBundleIdentifier"] = BUNDLE_ID
+
+
 def hide_dock_icon():
     # Accessory policy = menu-bar only: no Dock icon, no app menu, not in Cmd-Tab.
     NSApplication.sharedApplication().setActivationPolicy_(
@@ -616,4 +702,5 @@ if __name__ == "__main__":
         request_show_panel()
         sys.exit(0)
     hide_dock_icon()
+    show_as_installed_app()
     TokenCounterApp().run()

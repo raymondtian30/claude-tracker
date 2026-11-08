@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from stats_tabs import (
     build_panel as _build_panel,
@@ -85,7 +85,7 @@ def test_build_panel_with_data():
     tabs = build_panel(state, sessions, friends, today=date(2026, 7, 29))
 
     assert [t["key"] for t in tabs] == [
-        "overview", "breakdown", "models", "projects", "cost", "sessions", "leaderboard",
+        "overview", "breakdown", "models", "projects", "cost", "limits", "sessions", "leaderboard",
     ]
     for tab in tabs:
         assert_well_formed(tab)
@@ -127,7 +127,7 @@ def test_settings_tab_reflects_state():
         detected=["claude_code"],
     )
     assert_well_formed(tab)
-    items = items_of({**tab, "cards": [c for c in tab["cards"] if c["title"] not in ("AI tools", "AI providers")]})
+    items = items_of({**tab, "cards": [c for c in tab["cards"] if c["title"] not in ("AI tools", "AI providers", "Usage alerts")]})
     assert ("segmented", "Shows", ["Lifetime", "Today", "Icon only"], 2, "title_mode") in items
     assert items[1] == ("popup", "Text size", ["10 pt", "11 pt", "12 pt", "13 pt", "14 pt"], 2,
                         "menu_bar_font_size")  # 12 pt by default
@@ -491,3 +491,95 @@ def test_tool_with_no_usage_yet_warns():
     tabs = build_panel({}, [], [], today=date(2026, 11, 8), view=view)
 
     assert alert_text(tabs[0]) == "No Gemini CLI usage found on this Mac yet."
+
+
+# --- limits ---------------------------------------------------------------
+
+LIMITS_NOW = datetime(2026, 11, 8, 12, 0, 0).timestamp()
+
+
+def _limits_tab(state, view, now=LIMITS_NOW):
+    tabs = _build_panel(view, state, [], [], False, today=date(2026, 11, 8), now=now)
+    return next(t for t in tabs if t["key"] == "limits")
+
+
+def _codex_limits_state(used):
+    limits = {"at": "2026-11-08T11:00:00Z", "rate_limits": {
+        "primary": {"used_percent": used, "window_minutes": 300,
+                    "resets_at": datetime(2026, 11, 8, 15, 30).timestamp()},
+        "secondary": None}}
+    return {"sources": {"codex": {"files": {"f": {"size": 1, "mtime": 1, "daily": {},
+                                                  "limits": limits}}}}}
+
+
+def test_limits_tab_sits_after_cost():
+    tabs = build_panel({}, [], [], today=date(2026, 11, 8))
+
+    keys = [t["key"] for t in tabs]
+    assert keys.index("limits") == keys.index("cost") + 1
+
+
+def test_limits_tab_shows_codex_plan_limits():
+    state = _codex_limits_state(83.0)
+
+    tab = _limits_tab(state, tool_view(state, "codex"))
+
+    plan = next(c for c in tab["cards"] if c["title"] == "Plan limits")
+    assert plan["items"] == [("bar", "5-hour · resets 3:30 PM", "83%", 0.83)]
+
+
+def test_limits_tab_shows_a_reached_claude_limit():
+    state = {"claude_limit_hits": {"five_hour": datetime(2026, 11, 8, 15, 30).timestamp()}}
+
+    tab = _limits_tab(state, tool_view(state, "claude_code"))
+
+    plan = next(c for c in tab["cards"] if c["title"] == "Plan limits")
+    assert plan["items"] == [("bar", "5-hour · resets 3:30 PM", "Reached", 1.0)]
+
+
+def test_limits_tab_explains_claude_records_limits_only_when_reached():
+    tab = _limits_tab({}, tool_view({}, "claude_code"))
+
+    plan = next(c for c in tab["cards"] if c["title"] == "Plan limits")
+    assert "only records a limit once it's reached" in " ".join(i[1] for i in plan["items"])
+
+
+def test_limits_tab_budgets():
+    daily = {}
+    add_usage(daily, date(2026, 11, 8), "m", "p", {"input": 25_000_000})
+    view = {"key": "opencode", "name": "opencode", "daily": daily, "grand_total": 25_000_000,
+            "error": None}
+    state = {"budgets": {"opencode": {"weekly": 50_000_000}}}
+
+    tab = _limits_tab(state, view)
+
+    budgets = next(c for c in tab["cards"] if c["title"] == "Your budgets")["items"]
+    assert budgets[0][0] == "popup" and budgets[0][1] == "Weekly"
+    assert budgets[0][4] == "budget:opencode:weekly"
+    assert budgets[0][2][budgets[0][3]] == "50M"
+    assert ("bar", "Weekly · 25.0M of 50.0M", "50%", 0.5) in budgets
+    assert [i[1] for i in budgets if i[0] == "popup"] == ["Weekly", "Monthly"]
+
+
+def test_settings_usage_alerts_card():
+    tab = settings_tab({}, paused=False, interval_choices=[15], detected=[])
+
+    items = next(c for c in tab["cards"] if c["title"] == "Usage alerts")["items"]
+    assert ("switch", "Notify me", True, "alerts_enabled") in items
+    assert ("popup", "When usage reaches", ["50%", "60%", "70%", "75%", "80%", "90%", "95%"], 3,
+            "alert_threshold") in items
+    assert ("switch", "5-hour limits", True, "alert_window:five_hour") in items
+    assert ("switch", "Weekly limits", True, "alert_window:weekly") in items
+    assert ("switch", "Monthly limits", True, "alert_window:monthly") in items
+    assert ("buttons", [("Send Test Alert", "bell", "alert_test")]) in items
+
+
+def test_limits_tab_gives_the_date_for_a_reset_after_today():
+    state = _codex_limits_state(83.0)
+    record = state["sources"]["codex"]["files"]["f"]["limits"]["rate_limits"]["primary"]
+    record.update(window_minutes=43200, resets_at=datetime(2026, 11, 20, 18, 46).timestamp())
+
+    tab = _limits_tab(state, tool_view(state, "codex"))
+
+    plan = next(c for c in tab["cards"] if c["title"] == "Plan limits")
+    assert plan["items"] == [("bar", "Monthly · resets Nov 20", "83%", 0.83)]

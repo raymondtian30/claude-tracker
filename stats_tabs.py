@@ -20,9 +20,21 @@ Kept free of AppKit so it can be unit-tested.
 """
 
 import textwrap
+import time
 from datetime import date, datetime, timedelta
 
 from accounts import KEY_HELP, WINDOW_DAYS
+from limits import (
+    ALERT_THRESHOLDS,
+    BUDGET_CHOICES,
+    DEFAULT_ALERT_THRESHOLD,
+    WINDOW_LABELS,
+    WINDOWS,
+    budget_levels,
+    budget_windows,
+    format_reset,
+    plan_levels,
+)
 from panel_speeds import ANIMATION_SPEEDS, DEFAULT_ANIMATION
 from pricing import estimate_cost, format_dollars
 from providers import PROVIDER_NAMES, PROVIDERS
@@ -402,6 +414,87 @@ def _cost_tab(d):
     }
 
 
+def format_budget(tokens):
+    """5_000_000 -> '5M', 2_500_000_000 -> '2.5B', 0 -> 'Off'."""
+    if not tokens:
+        return "Off"
+    for size, suffix in ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K")):
+        if tokens >= size:
+            return f"{tokens / size:g}{suffix}"
+    return str(tokens)
+
+
+def _limits_tab(d, now):
+    view, key = d.view, d.view["key"]
+    if key == "all":
+        tool_keys = d.state.get("enabled_tools", [])
+    elif key in TOOL_NAMES:
+        tool_keys = [key]
+    else:
+        tool_keys = []
+
+    plan = []
+    for level in plan_levels(d.state, tool_keys, now):
+        label = level["label"]
+        if key == "all":
+            label = f"{level['name']} {label}"
+        if level["resets_at"]:
+            label += f" · resets {format_reset(level['resets_at'], now)}"
+        reached = level["id"].startswith("claude_code:")
+        value = "Reached" if reached else f"{level['percent']:.0f}%"
+        plan.append(("bar", label, value, min(level["percent"] / 100, 1.0)))
+    if not plan:
+        if "claude_code" in tool_keys:
+            plan += note_lines("Claude Code only records a limit once it's reached. "
+                               "None is reached right now.")
+        if "codex" in tool_keys:
+            plan += note_lines("Codex hasn't recorded its plan limits yet.")
+        if not plan:
+            plan += note_lines(f"{view['name']} doesn't record plan limits on this Mac.")
+
+    budgets = []
+    levels = {level["window"]: level for level in budget_levels(view, d.state, now)}
+    for window in budget_windows(key):
+        set_to = d.state.get("budgets", {}).get(key, {}).get(window, 0)
+        index = BUDGET_CHOICES.index(set_to) if set_to in BUDGET_CHOICES else 0
+        budgets.append(("popup", WINDOW_LABELS[window], [format_budget(c) for c in BUDGET_CHOICES],
+                        index, f"budget:{key}:{window}"))
+        if window in levels:
+            level = levels[window]
+            budgets.append(("bar", f"{WINDOW_LABELS[window]} · {format_count(level['used'])} "
+                                   f"of {format_count(level['budget'])}",
+                            f"{level['percent']:.0f}%", min(level["percent"] / 100, 1.0)))
+    if d.state.get("alerts_enabled", True):
+        threshold = d.state.get("alert_threshold", DEFAULT_ALERT_THRESHOLD)
+        budgets += note_lines(f"Alerts at {threshold}% are on. Change them in Settings.")
+    else:
+        budgets += note_lines("Alerts are off. Turn them on in Settings.")
+
+    return {
+        "key": "limits",
+        "title": "Usage Limits",
+        "short": "Limits",
+        "icon": "speedometer",
+        "cards": [{"title": "Plan limits", "items": plan},
+                  {"title": "Your budgets", "items": budgets}],
+    }
+
+
+def _alerts_card(state):
+    threshold = state.get("alert_threshold", DEFAULT_ALERT_THRESHOLD)
+    windows_on = state.get("alert_windows", [w for w, _ in WINDOWS])
+    items = [
+        ("switch", "Notify me", state.get("alerts_enabled", True), "alerts_enabled"),
+        ("popup", "When usage reaches", [f"{t}%" for t in ALERT_THRESHOLDS],
+         ALERT_THRESHOLDS.index(threshold) if threshold in ALERT_THRESHOLDS
+         else ALERT_THRESHOLDS.index(DEFAULT_ALERT_THRESHOLD), "alert_threshold"),
+    ]
+    items += [("switch", f"{label} limits", window in windows_on, f"alert_window:{window}")
+              for window, label in WINDOWS]
+    items.append(("buttons", [("Send Test Alert", "bell", "alert_test")]))
+    return {"title": "Usage alerts", "items": items}
+
+
 def _sessions_tab(view, sessions):
     if sessions:
         items = [
@@ -540,6 +633,7 @@ def settings_tab(state, paused, interval_choices, detected):
         "icon": "slider.horizontal.3",
         "cards": [
             _tools_card(state, detected),
+            _alerts_card(state),
             {
                 "title": "Menu bar",
                 "items": [
@@ -596,7 +690,7 @@ def leaderboard_enabled(state):
     return state.get("leaderboard_enabled", bool(state.get("my_gist_id")))
 
 
-def build_panel(view, state, sessions, friends, show_leaderboard, today=None):
+def build_panel(view, state, sessions, friends, show_leaderboard, today=None, now=None):
     """The tabs shown in the tab bar, in order, for one tool's view (or the
     combined view)."""
     d = _Data(view, today or date.today(), state)
@@ -606,6 +700,7 @@ def build_panel(view, state, sessions, friends, show_leaderboard, today=None):
         _models_tab(d),
         _projects_tab(d),
         _cost_tab(d),
+        _limits_tab(d, now or time.time()),
     ]
     # A running session can't be tied to one provider, so provider views
     # have no Live tab.

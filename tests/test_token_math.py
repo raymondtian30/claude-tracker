@@ -260,3 +260,40 @@ def test_backfill_skips_missing_files(tmp_path):
     backfill_daily(state)
 
     assert state["daily"] == {}
+
+
+def limit_hit(kind="five_hour", resets_at=1794123000, status="rejected"):
+    return {"type": "assistant", "timestamp": "2026-11-08T07:29:11.278Z",
+            "apiErrorParams": {"rate_limit_info": {"status": status, "resetsAt": resets_at,
+                                                   "rateLimitType": kind}}}
+
+
+def test_refresh_remembers_when_claude_limits_were_reached(tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    write_jsonl(project / "s.jsonl", [
+        limit_hit(resets_at=100), limit_hit(resets_at=300), limit_hit("seven_day", 500),
+        limit_hit(resets_at=999, status="allowed"),
+    ])
+    state = {"grand_total": 0, "file_offsets": {}}
+
+    refresh_grand_total(state, tmp_path)
+
+    assert state["claude_limit_hits"] == {"five_hour": 300, "seven_day": 500}
+
+
+def test_refresh_keeps_the_last_hours_of_replies_for_5_hour_budgets(tmp_path):
+    from datetime import timezone
+
+    now = datetime(2026, 11, 8, 12, 0, tzinfo=timezone.utc).timestamp()
+    project = tmp_path / "proj"
+    project.mkdir()
+    write_jsonl(project / "s.jsonl", [
+        assistant_entry(100, 0, timestamp="2026-11-08T11:00:00.000Z"),
+        assistant_entry(5, 0, timestamp="2026-11-08T03:00:00.000Z"),  # older than 6 hours
+    ])
+    state = {"grand_total": 0, "file_offsets": {}, "claude_recent": [[now - 9 * 3600, 1]]}
+
+    refresh_grand_total(state, tmp_path, now=now)
+
+    assert state["claude_recent"] == [[now - 3600, 100]]

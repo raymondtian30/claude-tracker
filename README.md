@@ -50,6 +50,7 @@ A panel opens with a row of tabs along the top. Click an icon to switch tabs:
 - **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...)
 - **Projects** -- the 3 folders you used the most tokens in over the last 7 days
 - **Estimated API Cost** -- what your usage would cost at Anthropic's pay-as-you-go API prices. Just for fun: a Pro or Max subscription is flat-rate, so you aren't billed this. Prices live in `pricing.py` and will drift over time.
+- **Usage Limits** -- your plan limits and your own budgets (see [Usage limits and alerts](#usage-limits-and-alerts))
 - **Active Sessions** -- every Claude Code terminal you currently have open, and how many tokens each one has used
 - **Leaderboard (Beta)** -- hidden unless you turn it on in Settings; see below, this one's still a work in progress
 
@@ -71,6 +72,14 @@ Turn on OpenAI, DeepSeek, Kimi, Google, Anthropic, xAI, Mistral, Qwen, Z.ai (GLM
 If an AI's usage can't be seen -- none of your tools have used its models yet, a key only gives a balance, a key is rejected, or its data can't be read or reached -- an orange warning saying why sits at the top of every tab when you pick it from the dropdown. These account numbers are shown in their own card and never added to the local totals, since the two overlap. Numbers refresh every 15 minutes; if a refresh fails, the last good numbers stay with the error shown under them.
 
 **How keys are kept private:** a key is stored only in your **macOS Keychain**, written through `security -i` on standard input so it never appears in a process list. It's never written to `state.json`, any log or this repo. It's sent only over HTTPS, only to that provider's own API (`api.openai.com`, `api.deepseek.com`, or `api.moonshot.ai` / `api.moonshot.cn`), and redirects aren't followed. **Remove Key** deletes it from the Keychain. Only usage numbers and balances are requested.
+
+### Usage limits and alerts
+
+The **Limits** tab shows how close you are to a limit, and the app can notify you when you get near one.
+
+- **Plan limits (exact, no sign-in):** Codex saves its plan's limits in its own logs -- percent used, the window (5-hour, weekly or 30-day) and when it resets -- so those are shown as Codex recorded them. Claude Code only logs a limit once it's *reached*, so Claude shows "Reached" with the reset time until then, and otherwise says none is reached.
+- **Your budgets:** pick a token amount per window for any AI, or for All AIs -- weekly (last 7 days) and monthly (this calendar month) for everything, plus a 5-hour budget for Claude Code (the only tool whose replies the app keeps with exact times).
+- **Alerts:** under **Usage alerts** in Settings -- on by default at **75%**, changeable, and you choose which windows notify you (5-hour, weekly, monthly). Each limit or budget notifies once when it reaches the threshold, and again only after it has dropped back below (for example when its window resets). **Send Test Alert** shows what one looks like.
 
 ### Leaderboard (Beta)
 
@@ -130,6 +139,7 @@ tool_icons.py                finds each tool's or provider's icon on this Mac fo
 stats_tabs.py                what each panel tab shows, as plain data
 panel_view.py                draws the panel (tabs, cards, bars, chart, settings) with AppKit
 pricing.py                   API price table and the estimated-cost math
+limits.py                    plan limits, budgets and when to send a usage alert
 version.py                   app name, version number and credits
 active_sessions.py           matches running `claude` processes to their sessions
 leaderboard.py               Leaderboard (Beta) -- local friends-list storage and sorting
