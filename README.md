@@ -18,7 +18,7 @@ By default it never connects to the internet or sends your data anywhere. The on
   From these it reads only token counts, which model was used, when, and which project folder. It skips your prompts, code and replies, and never touches opencode's account or credential tables.
 - `launchctl`, macOS's own built-in tool, only to turn its "start at login" setting on or off
 
-**There are two exceptions, both opt-in:** an API key you add for an AI provider (see [OpenAI, DeepSeek and Kimi](#openai-deepseek-and-kimi)), and the Leaderboard (Beta) feature.
+**There are two exceptions, both opt-in:** an API key you add for an AI provider (see [OpenAI, DeepSeek, Kimi and other AI companies](#openai-deepseek-kimi-and-other-ai-companies)), and the Leaderboard (Beta) feature.
 
 **The Leaderboard (Beta) is entirely opt-in** -- its tab is hidden until you turn on **Show Leaderboard (Beta)** in Settings, and nothing below happens unless you then click "Set Up Leaderboard" yourself. See the [Leaderboard (Beta)](#leaderboard-beta) section for exactly what that does.
 
@@ -54,9 +54,9 @@ A panel opens with a row of tabs along the top. Click an icon to switch tabs:
 
 At the bottom: the date you started tracking, a **Settings** button that opens a separate Settings window (which AIs you use -- coding tools and providers; what the menu bar shows -- lifetime total, today's total, or just the icon -- and its text size; the panel's unfold/fold **Animation** -- Off, Fast, Normal or Slow; how often to scan; pause scanning; start at login; show the Leaderboard; version and credits) and **Quit**. Click anywhere outside the panel to close it.
 
-### OpenAI, DeepSeek and Kimi
+### OpenAI, DeepSeek, Kimi and other AI companies
 
-Turn on OpenAI, DeepSeek or Kimi under **AI tools** in Settings (listed after your coding tools) (all off by default) and each appears in the **Tracking** dropdown. A provider view counts that company's models wherever they ran -- Claude Code, Codex or opencode -- using the tools' own exact token counts, so **no sign-in or key is needed**. The model name decides the company (`gpt-*`, `o3`, `codex-*` → OpenAI; `deepseek-*` → DeepSeek; `kimi-*`, `moonshot-*` → Kimi), so e.g. Kimi via OpenRouter still counts as Kimi. While any provider is on, every tool found on your Mac is read (read-only), so Codex counts toward OpenAI even if the Codex view is off. **All AIs** adds up tools only, not provider views on top, so nothing is counted twice. Live Sessions isn't shown for providers, since a running session can't be tied to one company.
+Turn on OpenAI, DeepSeek, Kimi, Google, Anthropic, xAI, Mistral, Qwen, Z.ai (GLM) or MiniMax under **AI tools** in Settings (listed after your coding tools) (all off by default) and each appears in the **Tracking** dropdown. A provider view counts that company's models wherever they ran -- Claude Code, Codex or opencode -- using the tools' own exact token counts, so **no sign-in or key is needed**. The model name decides the company (`gpt-*`, `o3`, `codex-*` → OpenAI; `deepseek-*` → DeepSeek; `kimi-*`, `moonshot-*` → Kimi; `gemini-*`, `gemma-*` → Google; `claude-*` → Anthropic; `grok-*` → xAI; `mistral-*`, `codestral-*`, `devstral-*` → Mistral; `qwen*` → Qwen; `glm-*` → Z.ai; `minimax-*` → MiniMax). API keys are supported for OpenAI, DeepSeek and Kimi only, so e.g. Kimi via OpenRouter still counts as Kimi. While any provider is on, every tool found on your Mac is read (read-only), so Codex counts toward OpenAI even if the Codex view is off. **All AIs** adds up tools only, not provider views on top, so nothing is counted twice. Live Sessions isn't shown for providers, since a running session can't be tied to one company.
 
 **Optional API key, for usage from outside this Mac.** Turning a provider on never asks for a key. If you want usage from other computers or the website too, use **Add API Key** in the "Whole account (optional)" card at the bottom of that provider's Home tab; it then shows what the provider's own API reports (and Replace/Remove Key live in that card):
 

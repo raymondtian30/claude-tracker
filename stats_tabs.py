@@ -258,6 +258,8 @@ def _warning(d):
                  else f" {name} doesn't share usage history.")
         return f"No {name} usage found on this Mac, and your {name} key only shows your balance.{extra}"
     found = f"No {name} usage found on this Mac. None of your tools have used {name} models yet."
+    if key not in KEY_HELP:
+        return found  # no account API, so nothing more to offer
     if key == "deepseek":
         return (found + " DeepSeek doesn't share usage history online, so an API key "
                 "would only show your balance.")
@@ -268,8 +270,8 @@ def _account_invite(d):
     """For a provider view without a key: a quiet, optional way to add one,
     below everything else. The numbers above never need it."""
     key = d.view["key"]
-    if key not in PROVIDER_NAMES or key in d.state.get("provider_keys", []):
-        return []
+    if key not in KEY_HELP or key in d.state.get("provider_keys", []):
+        return []  # no account API supported, or a key is already added
     items = note_lines("Usage from other computers or the website "
                        "needs an API key. Not needed for this Mac.")
     items += note_lines(KEY_HELP[key] + ".")

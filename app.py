@@ -278,7 +278,7 @@ class TokenCounterApp(rumps.App):
             # Dialogs can't sit on top of the popover, so close it first.
             self.panel.close()
             dialogs[action]()
-        elif name in provider_dialogs and argument in PROVIDER_NAMES:
+        elif name in provider_dialogs and argument in KEY_HELP:
             self.panel.close()
             provider_dialogs[name](argument)
         elif name == "provider" and argument in PROVIDER_NAMES:
