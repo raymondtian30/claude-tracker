@@ -29,6 +29,7 @@ from gist_sync import (
     update_gist,
 )
 from leaderboard import load_friends, save_friends, sorted_friends
+from panel_speeds import ANIMATION_SPEEDS, DEFAULT_ANIMATION, animation_seconds
 from panel_view import Panel, SettingsWindow
 from single_instance import acquire_lock, observe_show_requests, request_show_panel
 from stats_tabs import (
@@ -131,6 +132,7 @@ class TokenCounterApp(rumps.App):
         self.state.setdefault("title_mode", "lifetime")
         self.state.setdefault("menu_bar_font_size", DEFAULT_MENU_BAR_FONT_SIZE)
         self.state.setdefault("panel_tab", "overview")
+        self.state.setdefault("panel_animation", DEFAULT_ANIMATION)
         self.state.pop("stats_tab", None)  # from the earlier in-menu tabs
         if self.state["first_seen_at"] is None:
             self.state["first_seen_at"] = date.today().isoformat()
@@ -147,6 +149,7 @@ class TokenCounterApp(rumps.App):
             on_tab_change=self.set_panel_tab,
             selected_tab=self.state["panel_tab"],
         )
+        self.panel.animation_seconds = animation_seconds(self.state["panel_animation"])
         self.settings_window = SettingsWindow(on_action=self.handle_action)
         self._render_panel()
         self._update_title()
@@ -291,6 +294,10 @@ class TokenCounterApp(rumps.App):
             self.state["menu_bar_font_size"] = MENU_BAR_FONT_SIZES[value]
             save_state(self.state, STATE_FILE)
             self._update_title()
+        elif action == "panel_animation":
+            self.state["panel_animation"] = ANIMATION_SPEEDS[value][0]
+            self.panel.animation_seconds = animation_seconds(self.state["panel_animation"])
+            save_state(self.state, STATE_FILE)
         elif action == "scan_interval":
             self.set_scan_interval(SCAN_INTERVAL_CHOICES[value])
         elif action == "pause":

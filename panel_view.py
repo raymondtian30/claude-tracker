@@ -48,6 +48,7 @@ from AppKit import (
 )
 from Foundation import NSObject
 
+from panel_speeds import ANIMATION_SPEEDS, DEFAULT_ANIMATION  # noqa: F401 (re-exported)
 from version import APP_NAME
 
 WIDTH = 360
@@ -70,6 +71,22 @@ HEIGHTS = {
 }
 CARD_TITLE_HEIGHT = 24
 SCREEN_MARGIN = 40  # keep the panel this far from the bottom of the screen
+
+
+FOLDED_HEIGHT = 24  # how tall the panel is when fully folded
+ANIMATION_FPS = 60
+
+
+def fold_height(progress, full_height, unfolding):
+    """The panel's height `progress` (0-1) of the way through unfolding to
+    `full_height`, or folding from it. Unfolding eases out, folding eases in,
+    so both are quick near the menu bar and gentle at the far end."""
+    t = min(max(progress, 0.0), 1.0)
+    if unfolding:
+        share = 1 - (1 - t) ** 3
+    else:
+        share = 1 - t ** 3
+    return round(FOLDED_HEIGHT + (full_height - FOLDED_HEIGHT) * share)
 
 
 def panel_height(content_height, screen_height):
@@ -234,6 +251,9 @@ class _ActionTarget(NSObject):
     def retryShow_(self, _):
         self.panel._show(retries_left=getattr(self, "retries_left", 0))
 
+    def animationStep_(self, _timer):
+        self.panel._animation_step()
+
 
 # --- the panel ---------------------------------------------------------------
 
@@ -270,6 +290,10 @@ class Panel:
         self.popover.setAnimates_(False)
         self._monitors = []
         self._last_toggle = 0.0
+        self.animation_seconds = 0.0  # set from Settings; 0 = no animation
+        self._full_height = 400
+        self._animation = None  # {"start", "unfolding", "from"} while animating
+        self._animation_timer = None
 
     # -- wiring
 
@@ -289,7 +313,7 @@ class Panel:
             return
         self._last_toggle = now
         if self.popover.isShown():
-            self.close()
+            self.close(animated=True)
         else:
             self._show(retries_left=3)
 
@@ -297,11 +321,15 @@ class Panel:
         from AppKit import NSApplication
 
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        if self.animation_seconds:
+            self.popover.setContentSize_((WIDTH, FOLDED_HEIGHT))
         self.popover.showRelativeToRect_ofView_preferredEdge_(
             self._button.bounds(), self._button, NSMinYEdge
         )
         if self.popover.isShown():
             self._start_monitors()
+            if self.animation_seconds:
+                self._animate(unfolding=True)
         elif retries_left:
             # The status bar can still be busy with the click; try again shortly.
             self._target.retries_left = retries_left - 1
@@ -312,10 +340,56 @@ class Panel:
         if getattr(self, "_button", None) is not None and not self.popover.isShown():
             self._show(retries_left=3)
 
-    def close(self):
+    def close(self, animated=False):
+        """Close the panel; `animated` folds it up first (if the animation
+        is on). Dialogs and the Settings window close it straight away."""
+        if animated and self.animation_seconds and self.popover.isShown():
+            if self._animation and not self._animation["unfolding"]:
+                return  # already folding
+            self._stop_monitors()
+            self._animate(unfolding=False)
+            return
+        self._stop_animation()
         self._stop_monitors()
         if self.popover.isShown():
             self.popover.close()
+
+    # -- animation
+
+    def _animate(self, unfolding):
+        from Foundation import NSRunLoop, NSRunLoopCommonModes, NSTimer
+
+        current = self.popover.contentSize().height
+        self._stop_animation()
+        self._animation = {"start": time.monotonic(), "unfolding": unfolding, "from": current}
+        self._animation_timer = NSTimer.timerWithTimeInterval_target_selector_userInfo_repeats_(
+            1 / ANIMATION_FPS, self._target, "animationStep:", None, True
+        )
+        # Common modes keep it running while a control is being clicked.
+        NSRunLoop.currentRunLoop().addTimer_forMode_(self._animation_timer, NSRunLoopCommonModes)
+
+    def _animation_step(self):
+        animation = self._animation
+        if animation is None:
+            return
+        progress = (time.monotonic() - animation["start"]) / self.animation_seconds
+        if animation["unfolding"]:
+            # Unfold towards the current full height, which can change if
+            # the panel is redrawn mid-animation.
+            height = fold_height(progress, self._full_height, unfolding=True)
+        else:
+            height = fold_height(progress, animation["from"], unfolding=False)
+        self.popover.setContentSize_((WIDTH, height))
+        if progress >= 1:
+            self._stop_animation()
+            if not animation["unfolding"]:
+                self.popover.close()
+
+    def _stop_animation(self):
+        if self._animation_timer is not None:
+            self._animation_timer.invalidate()
+        self._animation_timer = None
+        self._animation = None
 
     def _start_monitors(self):
         self._stop_monitors()
@@ -323,18 +397,18 @@ class Panel:
         def outside_click(_event):
             # Global monitors only see clicks in other apps, so any click
             # here is outside the panel.
-            self.close()
+            self.close(animated=True)
 
         def escape_key(event):
             if event.keyCode() == 53 and event.window() == self.root.window():  # Esc
-                self.close()
+                self.close(animated=True)
                 return None
             return event
 
         def click_in_app(event):
             # A click in this app's own windows (e.g. Settings) is outside too.
             if self._click_closes(event.window()):
-                self.close()
+                self.close(animated=True)
             return event
 
         clicks = NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown
@@ -436,7 +510,9 @@ class Panel:
         self.root.setFrameSize_((WIDTH, height))
         screen = NSScreen.mainScreen()
         screen_height = screen.visibleFrame().size.height if screen else height + SCREEN_MARGIN
-        self.popover.setContentSize_((WIDTH, panel_height(height, screen_height)))
+        self._full_height = panel_height(height, screen_height)
+        if self._animation is None:  # an animation sizes the panel itself
+            self.popover.setContentSize_((WIDTH, self._full_height))
 
     def _draw_titled_cards(self, tab, y, inner):
         """A tab drawn on its own, under a title (the first-run picker)."""

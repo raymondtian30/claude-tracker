@@ -23,6 +23,7 @@ import textwrap
 from datetime import date, datetime, timedelta
 
 from accounts import KEY_HELP, WINDOW_DAYS
+from panel_speeds import ANIMATION_SPEEDS, DEFAULT_ANIMATION
 from pricing import estimate_cost, format_dollars
 from providers import PROVIDER_NAMES, PROVIDERS
 from token_math import format_count
@@ -543,6 +544,9 @@ def settings_tab(state, paused, interval_choices, detected):
                      if font_size in MENU_BAR_FONT_SIZES
                      else MENU_BAR_FONT_SIZES.index(DEFAULT_MENU_BAR_FONT_SIZE),
                      "menu_bar_font_size"),
+                    ("popup", "Animation", [label for _, label, _ in ANIMATION_SPEEDS],
+                     _animation_index(state.get("panel_animation", DEFAULT_ANIMATION)),
+                     "panel_animation"),
                 ],
             },
             {
@@ -573,6 +577,11 @@ def settings_tab(state, paused, interval_choices, detected):
             },
         ],
     }
+
+
+def _animation_index(key):
+    keys = [k for k, _, _ in ANIMATION_SPEEDS]
+    return keys.index(key) if key in keys else keys.index(DEFAULT_ANIMATION)
 
 
 def leaderboard_enabled(state):
