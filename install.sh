@@ -11,7 +11,9 @@ if [ -z "$PYTHON_BIN" ]; then
     exit 1
 fi
 
-if ! "$PYTHON_BIN" -c "import rumps" 2>/dev/null; then
+# find_spec only looks for rumps: importing it would load AppKit and put a
+# Python rocket in the Dock for a moment.
+if ! "$PYTHON_BIN" -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('rumps') is None)" 2>/dev/null; then
     echo "Installing the 'rumps' dependency with $PYTHON_BIN -m pip..."
     "$PYTHON_BIN" -m pip install rumps
 fi
@@ -62,6 +64,12 @@ done
 launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH"
 
 APP_BUNDLE="${APP_EXEC%/Contents/MacOS/*}"
+# The LaunchAgent starts it now, unless start at login was turned off in
+# Settings (launchd then skips it): open the app itself instead.
+sleep 1
+if ! launchctl print "gui/$(id -u)/${LABEL}" 2>/dev/null | grep -q "state = running"; then
+    open "$APP_BUNDLE"
+fi
 echo "Installed and started. Look for the coin icon (🪙) in your menu bar."
 echo "Claude Tracker is also in Finder at: ${APP_BUNDLE}"
 echo "It will start automatically the next time you log in."

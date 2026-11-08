@@ -106,3 +106,23 @@ def test_build_replaces_existing_bundle_and_makes_icon(tmp_path):
     assert not stale.exists()
     icon = bundle / "Contents" / "Resources" / f"{build_app.ICON_NAME}.icns"
     assert icon.stat().st_size > 10_000
+
+
+def test_building_keeps_python_out_of_the_dock():
+    """Drawing the icon uses AppKit; without this, Python.app's rocket
+    shows in the Dock while ./install.sh or an update runs."""
+    from AppKit import NSApplication, NSApplicationActivationPolicyProhibited
+
+    build_app.stay_out_of_the_dock()
+
+    assert (NSApplication.sharedApplication().activationPolicy()
+            == NSApplicationActivationPolicyProhibited)
+
+
+def test_install_checks_for_rumps_without_importing_it():
+    script = (Path(build_app.__file__).parent / "install.sh").read_text()
+
+    assert '-c "import rumps"' not in script  # importing it loads AppKit
+    assert "find_spec('rumps')" in script
+    assert subprocess.run(["bash", "-n", str(Path(build_app.__file__).parent / "install.sh")]
+                          ).returncode == 0

@@ -197,7 +197,18 @@ def render_icon_png(path, pixels):
     data.writeToFile_atomically_(str(path), True)
 
 
+def stay_out_of_the_dock():
+    """Drawing the icon uses AppKit, and a Python process that uses AppKit
+    shows up in the Dock as Python.app (the rocket icon) while it runs.
+    This build is a background job, so keep it out of the Dock."""
+    from AppKit import NSApplication, NSApplicationActivationPolicyProhibited
+
+    NSApplication.sharedApplication().setActivationPolicy_(
+        NSApplicationActivationPolicyProhibited)
+
+
 def build_icns(dest):
+    stay_out_of_the_dock()
     with tempfile.TemporaryDirectory() as tmp:
         iconset = Path(tmp) / f"{ICON_NAME}.iconset"
         iconset.mkdir()
