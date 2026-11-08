@@ -631,18 +631,19 @@ class TokenCounterApp(rumps.App):
         self._render_panel()
 
     def send_test_alert(self):
-        if self.notifier.denied:
-            self.panel.close()
-            answer = rumps.alert(
-                "Notifications Are Off",
-                f"macOS isn't letting {APP_NAME} show notifications. Turn them on for "
-                f"{APP_NAME} in System Settings > Notifications.",
-                ok="Open Settings", cancel="Not Now",
-            )
-            if answer == 1:
-                subprocess.run(["open", SETTINGS_URL], capture_output=True)
-            return
-        self.notifier.send("Test alert: this is how usage alerts look.")
+        self.notifier.send_checked("Test alert: this is how usage alerts look.",
+                                   on_blocked=self._notifications_blocked)
+
+    def _notifications_blocked(self):
+        self.panel.close()
+        answer = rumps.alert(
+            "Notifications Are Off",
+            f"macOS isn't letting {APP_NAME} show notifications. Turn them on for "
+            f"{APP_NAME} in System Settings > Notifications.",
+            ok="Open Settings", cancel="Not Now",
+        )
+        if answer == 1:
+            subprocess.run(["open", SETTINGS_URL], capture_output=True)
 
     def _check_alerts(self):
         """Notify about limits that just reached the threshold."""
