@@ -119,3 +119,18 @@ def test_clicking_the_menu_bar_icon_is_left_to_the_icon_to_toggle():
     assert not panel._click_closes(status_window)
     assert not panel._click_closes(panel.root.window())
     assert panel._click_closes(settings_window)
+
+
+def test_switch_without_an_action_is_greyed_out():
+    from AppKit import NSSwitch
+
+    from panel_view import Panel
+
+    tab = {**TAB, "cards": [{"title": None, "items": [
+        ("switch", "Codex", False, None), ("switch", "Combine all tools", True, "combine_tools"),
+    ]}]}
+    panel = Panel(on_action=lambda action, value: None)
+    panel.render([tab], "footer", False)
+
+    switches = [v for v in panel.root.subviews() if isinstance(v, NSSwitch)]
+    assert [bool(s.isEnabled()) for s in switches] == [False, True]

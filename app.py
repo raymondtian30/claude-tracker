@@ -52,7 +52,7 @@ from token_math import (
 )
 from tool_icons import icon_image, menu_bar_image
 from providers import PROVIDER_NAMES, PROVIDERS, provider_view, tools_to_scan
-from tools import TOOLS, combined_view, detect_tools, scan_tools, tool_view
+from tools import TOOLS, combined_tool_keys, combined_view, detect_tools, scan_tools, tool_view
 from usage_stats import total_in_range
 from version import APP_NAME, REPO_URL
 
@@ -170,9 +170,12 @@ class TokenCounterApp(rumps.App):
 
     def _current_view(self, detected=None):
         """The view the panel and menu bar show: the selected tool or
-        provider, or every enabled tool combined."""
+        provider, or every tool combined."""
+        detected = detected or detect_tools()
+        if self.state["combine_tools"]:
+            return combined_view(self.state, combined_tool_keys(self.state, detected))
         enabled = self.state["enabled_tools"]
-        choices = [key for key, _ in view_choices(self.state, detected or detect_tools())]
+        choices = [key for key, _ in view_choices(self.state, detected)]
         if not choices:
             return combined_view(self.state, enabled)
         selected = self.state["selected_tool"]
@@ -186,7 +189,12 @@ class TokenCounterApp(rumps.App):
     def _sessions_for(self, view):
         if view["key"] in PROVIDER_NAMES:
             return []
-        keys = [view["key"]] if view["key"] != "all" else self.state["enabled_tools"]
+        if view["key"] != "all":
+            keys = [view["key"]]
+        elif self.state["combine_tools"]:
+            keys = combined_tool_keys(self.state, detect_tools())
+        else:
+            keys = self.state["enabled_tools"]
         sessions = []
         for key in keys:
             sessions += active_sessions() if key == "claude_code" else running_tool_sessions(key)

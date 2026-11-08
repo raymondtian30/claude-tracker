@@ -382,13 +382,12 @@ def test_long_notes_are_split_into_lines():
     assert " ".join(item[1] for item in lines) == text
 
 
-def test_view_choices_when_combined_offers_all_tools_and_providers():
+def test_view_choices_when_combined_is_just_the_combined_view():
     from stats_tabs import view_choices
-    state = {"enabled_tools": ["claude_code"], "combine_tools": True}
+    state = {"enabled_tools": ["claude_code"], "enabled_providers": ["deepseek"],
+             "combine_tools": True}
 
-    assert view_choices(state, ["claude_code"]) == []
-    state["enabled_providers"] = ["deepseek"]
-    assert view_choices(state, ["claude_code"]) == [("all", "All tools"), ("deepseek", "DeepSeek")]
+    assert view_choices(state, ["claude_code", "codex"]) == []
 
 
 def test_view_choices_per_tool_matches_tool_choices():
@@ -464,3 +463,25 @@ def test_no_warning_while_waiting_for_first_fetch():
     tabs = build_panel(state, [], [], today=date(2026, 11, 8), view=_empty_provider("kimi", "Kimi"))
 
     assert alert_text(tabs[0]) is None
+
+
+def test_combine_turns_the_other_switches_off_and_greys_them_out():
+    state = {"enabled_tools": ["claude_code", "opencode"], "enabled_providers": ["openai"],
+             "combine_tools": True}
+
+    tab = settings_tab(state, paused=False, interval_choices=[15],
+                       detected=["claude_code", "codex", "opencode"])
+
+    items = next(c for c in tab["cards"] if c["title"] == "AI tools")["items"]
+    assert items == [
+        ("switch", "Claude Code", False, None),
+        ("switch", "Codex", False, None),
+        ("switch", "opencode", False, None),
+        ("switch", "OpenAI", False, None),
+        ("switch", "DeepSeek", False, None),
+        ("switch", "Kimi", False, None),
+        ("switch", "Combine all tools", True, "combine_tools"),
+    ]
+    # The saved choices are untouched, ready for when Combine is turned off.
+    assert state["enabled_tools"] == ["claude_code", "opencode"]
+    assert state["enabled_providers"] == ["openai"]

@@ -40,9 +40,9 @@ def provider_of(model):
 
 def tools_to_scan(state, detected):
     """Enabled tools, plus every tool on this Mac while any provider is on
-    (a provider's models can run in any of them)."""
+    (a provider's models can run in any of them) or tools are combined."""
     wanted = set(state.get("enabled_tools", []))
-    if state.get("enabled_providers"):
+    if state.get("enabled_providers") or state.get("combine_tools"):
         wanted |= set(detected)
     return [key for key, _ in TOOLS if key in wanted]
 

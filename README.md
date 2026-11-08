@@ -40,7 +40,7 @@ If step 1 fails because `rumps` isn't installed, the script installs it for you 
 
 ## What you'll see when you click the icon
 
-The first time you open it, it asks which AI tools you use (Claude Code, Codex, opencode -- only the ones found on your Mac are listed) and tracks only those. If you track more than one, a dropdown at the top picks which tool you're looking at, and the menu bar and the top of the panel show that tool's icon (taken from its app or editor extension already on your Mac; the coin if none is found, and in the combined view); turn on **Combine all tools** in Settings to see every tool's usage together, grouped by model.
+The first time you open it, it asks which AI tools you use (Claude Code, Codex, opencode -- only the ones found on your Mac are listed) and tracks only those. If you track more than one, a dropdown at the top picks which tool you're looking at, and the menu bar and the top of the panel show that tool's icon (taken from its app or editor extension already on your Mac; the coin if none is found, and in the combined view); turn on **Combine all tools** in Settings to see the usage of every tool on your Mac together, grouped by model. While it's on, the other switches show off and greyed out and the dropdown is hidden; your choices come back when you turn it off.
 
 A panel opens with a row of tabs along the top. Click an icon to switch tabs:
 

@@ -662,11 +662,17 @@ class Panel:
         self.root.addSubview_(popup)
 
     def _draw_switch(self, item, x, y, width):
+        """A labelled switch; with no action it's greyed out and can't change."""
         _, label, is_on, action = item
-        self._control_label(label, x, y, width)
+        if action is None:
+            self.root.addSubview_(_label(label, NSMakeRect(x, y + 5, width, 18),
+                                         color=NSColor.tertiaryLabelColor()))
+        else:
+            self._control_label(label, x, y, width)
         switch = NSSwitch.alloc().initWithFrame_(NSMakeRect(x + width - 40, y + 3, 40, 22))
         switch.setControlSize_(1)  # small
         switch.setState_(1 if is_on else 0)
+        switch.setEnabled_(action is not None)
         switch.setTarget_(self._target)
         switch.setAction_("switchChanged:")
         switch.setTag_(self._register(action))

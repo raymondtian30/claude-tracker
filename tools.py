@@ -28,6 +28,13 @@ def detect_tools(paths=None):
     return [key for key, _ in TOOLS if paths[key].exists()]
 
 
+def combined_tool_keys(state, detected):
+    """The tools "Combine all tools" adds up: every tool on this Mac, plus
+    any enabled one whose data has gone (its history still counts)."""
+    enabled = state.get("enabled_tools", [])
+    return [key for key, _ in TOOLS if key in detected or key in enabled]
+
+
 def scan_tools(state, enabled, paths=None):
     """Read new usage for each enabled tool into `state`."""
     paths = paths or DEFAULT_PATHS

@@ -90,3 +90,11 @@ def test_scan_skips_disabled_tools(tmp_path):
 
     assert state["grand_total"] == 10
     assert tool_view(state, "codex")["grand_total"] == 6
+
+
+def test_combined_tool_keys_are_every_tool_on_this_mac_or_enabled():
+    from tools import combined_tool_keys
+
+    state = {"enabled_tools": ["codex"]}
+
+    assert combined_tool_keys(state, ["claude_code", "opencode"]) == ["claude_code", "codex", "opencode"]
