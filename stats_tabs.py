@@ -413,8 +413,7 @@ def _cost_tab(d):
 
 
 def _claude_limit_notes(state, levels, prefix):
-    """What to say under Claude Code's limits: why there are no percentages,
-    and the switch for getting them."""
+    """What to say under Claude Code's limits when there are no percentages."""
     notes = []
     if state.get("claude_usage_enabled", True):
         usage = state.get("claude_usage") or {}
@@ -426,9 +425,8 @@ def _claude_limit_notes(state, levels, prefix):
         text = "Claude Code only records a limit once it's reached."
         if not levels:
             text += " None is reached right now."
+        text += " Turn on Percentages from Anthropic in Settings to see how close you are."
         notes += note_lines(prefix + text)
-    notes.append(("switch", "Percentages from Anthropic", state.get("claude_usage_enabled", True),
-                  "claude_usage_enabled"))
     return notes
 
 
@@ -656,6 +654,9 @@ def settings_tab(state, paused, interval_choices, detected, update_status=None):
                     ("switch", "Start at login", state.get("start_at_login", True), "login"),
                     ("switch", "Show Leaderboard (Beta)", leaderboard_enabled(state),
                      "leaderboard_enabled"),
+                    *([("switch", "Percentages from Anthropic",
+                        state.get("claude_usage_enabled", True), "claude_usage_enabled")]
+                      if "claude_code" in state.get("enabled_tools", []) else []),
                 ],
             },
             {
