@@ -173,14 +173,24 @@ public enum Limits {
     /// reaches each threshold, and again only after it has dropped back below it
     /// (e.g. when its window resets). Passing several thresholds at once (75 and
     /// 90 on the way to 95) sends one alert, not one per threshold.
+    ///
+    /// A level missing from `levels` keeps its keys only when that means
+    /// "unknown" and not "gone": its id is present with its window switched off,
+    /// or its prefix ("claude_code:") is in `unknownIDPrefixes`. Otherwise the
+    /// keys are dropped, so the level alerts again when it comes back.
+    /// `seeding` (the first pass after launch) records keys and sends nothing.
     public static func alertsToSend(_ levels: [Level], thresholds: [Int], windowsOn: [String],
-                                    above: [String], now: Double? = nil) -> (messages: [String], above: [String]) {
+                                    above: [String], seeding: Bool = false,
+                                    unknownIDPrefixes: Set<String> = [],
+                                    now: Double? = nil) -> (messages: [String], above: [String]) {
         var messages = [String]()
         var newAbove = [String]()
+        var activeIDs = Set<String>()
         for level in levels where windowsOn.contains(level.window) {
+            activeIDs.insert(level.id)
             let keys = thresholds.sorted().filter { level.percent >= Double($0) }.map { "\(level.id)@\($0)" }
             newAbove += keys
-            if keys.allSatisfy({ above.contains($0) }) {
+            if seeding || keys.allSatisfy({ above.contains($0) }) {
                 continue
             }
             var message = "\(level.name): \(level.label) usage is at \(String(format: "%.0f", level.percent))%."
@@ -191,7 +201,42 @@ public enum Limits {
             }
             messages.append(message)
         }
+        let presentIDs = Set(levels.map(\.id))
+        for key in above where !newAbove.contains(key) {
+            guard let at = key.lastIndex(of: "@") else { continue }
+            let id = String(key[..<at])
+            if activeIDs.contains(id) {
+                continue  // present and switched on: below this threshold now
+            }
+            let prefix = id.firstIndex(of: ":").map { String(id[...$0]) } ?? id
+            if presentIDs.contains(id) || unknownIDPrefixes.contains(prefix) {
+                newAbove.append(key)
+            }
+        }
         return (messages, newAbove)
+    }
+
+    /// The id prefixes ("claude_code:") whose levels are missing because they
+    /// are unknown right now, not gone: a disabled tool; Claude Code while
+    /// Percentages from Anthropic is on and the fetched list is empty (the
+    /// fetch failed or has not happened); Codex with no rate-limit record.
+    static func unknownIDPrefixes(_ state: JSONObject, now: Double) -> Set<String> {
+        var prefixes = Set<String>()
+        let enabled = Set((state.array("enabled_tools") ?? []).compactMap(JSON.string))
+        for tool in Tools.tools.map(\.key) where !enabled.contains(tool) {
+            prefixes.insert("\(tool):")
+        }
+        let usage = state.object("claude_usage") ?? [:]
+        let fetched = (usage.array("limits") ?? []).compactMap { JSON.object($0).flatMap(Level.init(json:)) }
+        let percentages = state["claude_usage_enabled"].map { JSON.truthy($0) } ?? true
+        if percentages, fetched.isEmpty {
+            prefixes.insert("claude_code:")
+        }
+        let codex = state.object("sources")?.object("codex") ?? [:]
+        if CodexSource.codexRateLimits(codex) == nil {
+            prefixes.insert("codex:")
+        }
+        return prefixes
     }
 
     /// Before several thresholds could be picked, state had one
