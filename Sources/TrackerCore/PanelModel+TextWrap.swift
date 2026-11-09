@@ -117,4 +117,40 @@ extension PanelModel {
         }
         return pieces.filter { !$0.isEmpty }.map { Array($0.unicodeScalars) }
     }
+
+    /// Lines of `text` no wider than `width` points, by `measure`: breaks at
+    /// spaces, and by character inside a word wider than a line.
+    public static func wrapMeasured(_ text: String, width: CGFloat, size: CGFloat,
+                                    measure: TextMeasure) -> [String] {
+        func fits(_ s: String) -> Bool { measure(s, size, .regular) <= width }
+        var lines = [String]()
+        var line = ""
+        for word in text.split(whereSeparator: { $0.isWhitespace }).map(String.init) {
+            let joined = line.isEmpty ? word : line + " " + word
+            if fits(joined) {
+                line = joined
+                continue
+            }
+            if !line.isEmpty {
+                lines.append(line)
+                line = ""
+            }
+            // A word on a line of its own; cut it by character if it's too wide.
+            var rest = Substring(word)
+            while !fits(String(rest)) {
+                var cut = rest.startIndex
+                for index in rest.indices {
+                    let next = rest.index(after: index)
+                    if !fits(String(rest[..<next])) { break }
+                    cut = next
+                }
+                if cut == rest.startIndex { cut = rest.index(after: cut) }  // at least one character
+                lines.append(String(rest[..<cut]))
+                rest = rest[cut...]
+            }
+            line = String(rest)
+        }
+        if !line.isEmpty { lines.append(line) }
+        return lines
+    }
 }

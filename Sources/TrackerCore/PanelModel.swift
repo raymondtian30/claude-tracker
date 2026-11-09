@@ -197,6 +197,21 @@ public enum PanelModel {
                                   showLeaderboard: Bool, today: Day? = nil, now: Double? = nil,
                                   projectsExpanded: Bool = false,
                                   plugins: [Plugins.Row]? = nil) -> [Tab] {
+        buildPanelResult(view, state: state, sessions: sessions, friends: friends,
+                         showLeaderboard: showLeaderboard, today: today, now: now,
+                         projectsExpanded: projectsExpanded, plugins: plugins).tabs
+    }
+
+    /// `buildPanel`, plus what the app needs to know about rows by id (their
+    /// folder, for rows that can be opened in Finder). `context` carries UI
+    /// state that survives redraws.
+    public static func buildPanelResult(_ view: Tools.View, state: JSONObject,
+                                        sessions: [ActiveSessions.Session], friends: [JSONObject],
+                                        showLeaderboard: Bool, today: Day? = nil, now: Double? = nil,
+                                        projectsExpanded: Bool = false,
+                                        plugins: [Plugins.Row]? = nil,
+                                        context: PanelContext = PanelContext())
+        -> (tabs: [Tab], rows: [String: RowInfo]) {
         let d = PanelData(view, today: today ?? Day.today(), state: state)
         var tabs = [
             overviewTab(d),
@@ -219,7 +234,7 @@ public enum PanelModel {
         if showLeaderboard {
             tabs.append(leaderboardTab(state, friends))
         }
-        return tabs
+        return (tabs, [:])
     }
 
     /// Why this AI's usage can't be seen, or nil. Shown at the top of every
@@ -263,5 +278,33 @@ public enum PanelModel {
                 + "would only show your balance."
         }
         return found + " For usage from other computers or the website, add an API key at the bottom of Home."
+    }
+}
+
+/// How heavy a label's text is drawn (the panel uses these two).
+public enum LabelWeight { case regular, semibold }
+
+/// The width in points of `text` at `size` and `weight`. The app passes the
+/// real font metrics; tests pass a stub.
+public typealias TextMeasure = (_ text: String, _ size: CGFloat, _ weight: LabelWeight) -> CGFloat
+
+/// UI state the app keeps across redraws and hands to the model.
+public struct PanelContext {
+    /// Rows whose detail is open, by row id.
+    public var open: [String: Bool]
+    public var measure: TextMeasure
+
+    public init(open: [String: Bool] = [:], measure: @escaping TextMeasure = { _, _, _ in 0 }) {
+        self.open = open
+        self.measure = measure
+    }
+}
+
+/// What the app can do with a row, by id.
+public struct RowInfo: Equatable {
+    public var path: String?
+
+    public init(path: String? = nil) {
+        self.path = path
     }
 }

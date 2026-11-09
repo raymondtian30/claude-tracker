@@ -86,6 +86,13 @@ public enum PanelLayout {
         return base
     }
 
+    /// Whether a label's text is wider than its slot and would be cut off
+    /// (the last point is kept as air, so a text exactly the budget wide is cut).
+    public static func isCutOff(text: String, size: CGFloat, weight: LabelWeight, budget: CGFloat,
+                                measure: TextMeasure) -> Bool {
+        measure(text, size, weight) > budget - 1
+    }
+
     /// The width a bar's or row's label may take inside a card (312 wide);
     /// a chevron takes 14 of it. `kind` is "bar" or "row".
     public static func labelBudget(kind: String, hasChevron: Bool) -> CGFloat {
