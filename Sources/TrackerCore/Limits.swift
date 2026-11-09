@@ -30,6 +30,13 @@ public enum Limits {
         "seven_day_opus": "weekly", "seven_day_sonnet": "weekly",
     ]
 
+    /// The kind Anthropic gives the limits that share a window with another
+    /// ("weekly_opus"), for Claude's own names for them. Fallback levels use
+    /// it so their ids match the fetched ones.
+    public static let claudeLimitKinds = [
+        "seven_day_opus": "weekly_opus", "seven_day_sonnet": "weekly_sonnet",
+    ]
+
     /// One plan limit and how much of it is used. As an alert level it also
     /// has `id` ("tool:kind") and `name` (the tool's name).
     public struct Level: Equatable {
@@ -118,7 +125,8 @@ public enum Limits {
         for kind in (hits ?? [:]).keys.sorted() {
             let window = claudeLimitTypes[kind] ?? "five_hour"
             if let resetsAt = hits?.double(kind), resetsAt != 0, resetsAt > now {
-                limits.append(Level(window: window, label: windowLabels[window]!, percent: 100.0,
+                limits.append(Level(kind: claudeLimitKinds[kind], window: window,
+                                    label: windowLabels[window]!, percent: 100.0,
                                     resetsAt: resetsAt, reached: true))
             }
         }

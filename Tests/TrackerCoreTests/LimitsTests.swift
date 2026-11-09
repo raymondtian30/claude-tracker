@@ -52,6 +52,22 @@ private let NOW = LocalTime.timestamp(2026, 11, 8, 12, 0, 0)
     #expect(Limits.reachedClaudeLimits(hits, now: NOW) == [
         Level(window: "five_hour", label: "5-hour", percent: 100.0, resetsAt: NOW + 3600, reached: true),
     ])
+
+    let model: JSONObject = ["seven_day_opus": NOW + 60]
+    #expect(Limits.reachedClaudeLimits(model, now: NOW) == [
+        Level(kind: "weekly_opus", window: "weekly", label: "Weekly", percent: 100.0,
+              resetsAt: NOW + 60, reached: true),
+    ])
+}
+
+@Test func fallbackOpusAndSonnetIdsMatchFetched() {
+    let hits: JSONObject = ["seven_day_opus": NOW + 60, "seven_day_sonnet": NOW + 60,
+                            "seven_day": NOW + 60]
+    let levels = Limits.planLevels(["claude_usage_enabled": false, "claude_limit_hits": hits],
+                                   toolKeys: ["claude_code"], now: NOW)
+
+    #expect(levels.map(\.id) == ["claude_code:weekly", "claude_code:weekly_opus", "claude_code:weekly_sonnet"])
+    #expect(Limits.claudeLimitKinds == ["seven_day_opus": "weekly_opus", "seven_day_sonnet": "weekly_sonnet"])
 }
 
 private func claudeUsage(_ changes: JSONObject = [:]) -> JSONObject {
