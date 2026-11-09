@@ -17,6 +17,8 @@ import TrackerCore
 final class AppController {
     let files: AppState.Files
     var state: JSONObject = [:]
+    /// Whether the first alert pass of this run has happened (memory only).
+    var alertsSeeded = false
 
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private(set) lazy var panel = PanelController(

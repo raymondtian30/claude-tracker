@@ -97,7 +97,8 @@ extension AppState {
 
     /// Messages for limits that just reached an alert threshold. Updates
     /// state["alerts_above"]; `changed` says whether it did (so it's saved).
-    public static func checkAlerts(_ state: inout JSONObject, now: Double)
+    /// `seeding` is the process's first pass: keys are saved, nothing is sent.
+    public static func checkAlerts(_ state: inout JSONObject, now: Double, seeding: Bool = false)
         -> (messages: [String], changed: Bool) {
         guard JSON.truthy(state["alerts_enabled"]) else { return ([], false) }
         let levels = Limits.levelsForAlerts(state, now: now)
@@ -105,7 +106,9 @@ extension AppState {
         let before = strings(state["alerts_above"])
         let (messages, above) = Limits.alertsToSend(levels, thresholds: thresholds,
                                                     windowsOn: strings(state["alert_windows"]),
-                                                    above: before, now: now)
+                                                    above: before, seeding: seeding,
+                                                    unknownIDPrefixes: Limits.unknownIDPrefixes(state, now: now),
+                                                    now: now)
         let changed = above != before
         if changed {
             state["alerts_above"] = above
