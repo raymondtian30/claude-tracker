@@ -19,7 +19,9 @@ final class AppController {
     var state: JSONObject = [:]
 
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private(set) lazy var panel = PanelController(onAction: { [weak self] in self?.handleLater($0, $1) })
+    private(set) lazy var panel = PanelController(
+        onAction: { [weak self] in self?.handleLater($0, $1) },
+        onTabChange: { [weak self] _ in self?.closeOpenRows() })
     private(set) lazy var settingsWindow = SettingsWindow(onAction: { [weak self] in self?.handleLater($0, $1) })
     let notifier = Notifier.live(title: Version.appName)
 
@@ -30,6 +32,11 @@ final class AppController {
     var updateStatus: String?
     /// The Projects tab's "Show more".
     var projectsExpanded = false
+    /// Rows whose detail is open, by row id. Not saved: opening the panel or
+    /// changing tab closes them all.
+    var openRows: [String: Bool] = [:]
+    /// What the last render knows about each row (its folder).
+    var rowInfo: [String: RowInfo] = [:]
     /// Whether Settings > About shows Credits. Not saved: it opens on About.
     var aboutShowsCredits = false
     /// The welcome picker's switches, in the order they were turned on.
@@ -75,7 +82,10 @@ final class AppController {
 
         panel.animationSeconds = PanelSpeeds.animationSeconds(state.string("panel_animation"))
         panel.attach(statusItem)
-        panel.onWillShow = { [weak self] in self?.renderPanel() }
+        panel.onWillShow = { [weak self] in
+            self?.openRows = [:]
+            self?.renderPanel()
+        }
         renderPanel()
         updateTitle()
         // Opening the app again (e.g. from Finder) asks this copy to show its panel.
@@ -176,10 +186,14 @@ final class AppController {
         var sessions = activeSessions(AppState.sessionTools(view.key, enabled: enabled))
         // Tags each Claude Code session with the plugins it runs.
         let plugins = AppState.showsPlugins(view.key, enabled: enabled) ? Plugins.livePlugins(&sessions) : nil
-        let tabs = PanelModel.buildPanel(
+        let result = PanelModel.buildPanelResult(
             view, state: state, sessions: sessions, friends: friends,
             showLeaderboard: PanelModel.leaderboardEnabled(state) && view.key == "claude_code",
-            projectsExpanded: projectsExpanded, plugins: plugins)
+            projectsExpanded: projectsExpanded, plugins: plugins,
+            context: PanelContext(open: openRows, measure: TextMeasures.live))
+        let tabs = result.tabs
+        rowInfo = result.rows
+        OpenRows.prune(&openRows, present: Set(result.rows.keys))
         let firstSeen = state.string("first_seen_at") ?? Day.today().iso
         panel.render(
             tabs: tabs, footer: "Tracking since \(PanelModel.formatLongDate(firstSeen))",
@@ -192,6 +206,17 @@ final class AppController {
         settingsWindow.render(PanelModel.settingsTab(state, intervalChoices: AppState.scanIntervalChoices,
                                                      detected: detected, updateStatus: updateStatus,
                                                      showCredits: aboutShowsCredits))
+    }
+
+    /// Picking another tab closes every open row. The redraw waits for the
+    /// next run-loop turn: this runs inside `selectTab`, which must not be
+    /// re-entered.
+    private func closeOpenRows() {
+        guard !openRows.isEmpty else { return }
+        openRows = [:]
+        DispatchQueue.main.async { [weak self] in
+            onMain { self?.renderPanel() }
+        }
     }
 
     private func activeSessions(_ tools: [String]) -> [ActiveSessions.Session] {
@@ -299,6 +324,12 @@ final class AppController {
             welcomeChoice = AppState.welcomeChoice(welcomeChoice, key, on)
         case .welcomeDone: finishWelcome()
         case .tool(let key, let on): setToolEnabled(key, on)
+        case .toggleRow(let id):
+            let home = UsageStats.homeDirectory
+            OpenRows.toggle(&openRows, id: id, path: rowInfo[id]?.path) { path in
+                let full = path.hasPrefix("~") ? home + path.dropFirst() : path
+                return FileManager.default.fileExists(atPath: full)
+            }
         }
         renderPanel()
     }

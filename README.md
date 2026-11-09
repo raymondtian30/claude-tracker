@@ -156,6 +156,7 @@ Sources/TrackerCore/         the app's logic, plain Swift with no AppKit, so it 
   PanelSpeeds.swift          the panel's unfold/fold animation speeds
   AppState*.swift            settings added to state.json on launch, changes to it, and the menu bar's text
   AppAction.swift            turns a click in the panel or Settings into what the app should do
+  OpenRows.swift             which expandable panel rows are open
   Subprocess+Detached.swift  starts the restart command after an update, detached from the app
   Pricing.swift              API price table and the estimated-cost math
   Limits.swift               plan limits and when to send a usage alert
@@ -174,6 +175,7 @@ Sources/TrackerCore/         the app's logic, plain Swift with no AppKit, so it 
 Sources/ClaudeTracker/       the menu bar app itself (AppKit and SwiftUI)
   main.swift                 starts the app
   Panel/                     draws the panel and the Settings window (tabs, cards, bars, chart, controls, dialogs)
+  TextMeasure.swift          real text widths, for knowing when a label is cut off
   Notifier.swift             macOS notifications (UNUserNotificationCenter)
   ToolIcons.swift            turns each tool's icon into a menu bar image (or draws a monogram)
   SingleInstance.swift       keeps one copy running; opening it again shows the running copy's panel

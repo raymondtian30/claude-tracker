@@ -45,6 +45,8 @@ public enum AppAction: Equatable {
     case aboutView(showCredits: Bool)
     case checkUpdates
     case openRepo
+    // Expandable rows
+    case toggleRow(id: String)
 
     /// The case for `action` and `value`, or nil for one the app doesn't
     /// handle (or an index outside its options). `scanIntervals` are the
@@ -110,6 +112,7 @@ public enum AppAction: Equatable {
         case "provider_key_remove" where Accounts.keyHelp[argument] != nil: return .providerKeyRemove(argument)
         case "provider" where Providers.providerNames[argument] != nil: return .provider(key: argument, on: isOn)
         case "alert_window": return .alertWindow(window: argument, on: isOn)
+        case "toggle_row" where !argument.isEmpty: return .toggleRow(id: argument)
         case "welcome_tool": return .welcomeTool(key: argument, on: isOn)
         case "tool": return .tool(key: argument, on: isOn)
         default: return nil

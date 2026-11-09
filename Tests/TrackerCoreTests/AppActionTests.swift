@@ -78,3 +78,12 @@ import Testing
     #expect(!AppAction.leaderboardPush.opensDialog)
     #expect(!AppAction.checkUpdates.opensDialog)
 }
+
+@Test func parsesToggleRow() {
+    #expect(AppAction.parse("toggle_row:limit:claude_code:weekly", .none) == .toggleRow(id: "limit:claude_code:weekly"))
+}
+
+@Test func toggleRowIdWithColons() {
+    #expect(AppAction.parse("toggle_row:proj:/a:b/c", .none) == .toggleRow(id: "proj:/a:b/c"))
+    #expect(AppAction.parse("toggle_row:", .none) == nil)
+}

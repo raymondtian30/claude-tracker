@@ -24,6 +24,8 @@ final class PanelController: NSObject {
     private var logo: NSImage?
     private var subtitle = "for Claude Code"
     private var toolPicker: Item?
+    /// The tab the last draw showed, to keep its scroll position on a redraw.
+    private var drawnTab: String?
 
     let popover = NSPopover()
     /// The panel's content, in flipped coordinates; it scrolls when it's
@@ -223,6 +225,17 @@ final class PanelController: NSObject {
     /// Draw everything from scratch (new data).
     private func draw() {
         guard !tabs.isEmpty else { return }
+        // A redraw of the same tab keeps where the user had scrolled to.
+        let keptOffset: CGFloat? = drawnTab == selection.selected && welcome == nil
+            ? scroll.contentView.bounds.origin.y : nil
+        defer {
+            drawnTab = welcome == nil ? selection.selected : nil
+            if let offset = keptOffset {
+                let maxOffset = max(root.frame.height - scroll.contentView.bounds.height, 0)
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: min(offset, maxOffset)))
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
+        }
         root.subviews.forEach { $0.removeFromSuperview() }
         tabViews.removeAll()
         shownTabView = nil
