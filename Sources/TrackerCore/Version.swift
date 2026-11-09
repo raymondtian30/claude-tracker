@@ -1,0 +1,16 @@
+import Foundation
+
+/// App name, version and credits.
+///
+/// The version follows Semantic Versioning (https://semver.org): MAJOR.MINOR.PATCH.
+/// Bump MAJOR for changes that break existing installs or saved data, MINOR for
+/// new features, PATCH for fixes. 2.0.0 marks the redesign on top of the
+/// original 1.x app; 3.0.0 the rewrite in Swift.
+public enum Version {
+    public static let appName = "Claude Tracker"
+    public static let version = "3.0.0"
+
+    public static let originalAuthor = "BrodyKretz"
+    public static let forkAuthor = "Raymond Tian"
+    public static let repoURL = "https://github.com/raymondtian30/claude-tracker"
+}
