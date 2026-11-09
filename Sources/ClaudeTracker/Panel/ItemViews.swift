@@ -103,16 +103,22 @@ struct BarItem: View {
     let label: String
     let value: String
     let fraction: Double
+    var sub: String? = nil
     let width: CGFloat
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                LabelText(text: label, truncation: .middle).frame(width: width - 120)
+                LabelText(text: label, truncation: .middle)
+                    .frame(width: PanelLayout.labelBudget(kind: "bar", hasChevron: false))
                 LabelText(text: value, color: .secondaryLabel, digits: true, alignment: .trailing)
                     .frame(width: 120)
             }
             ShareBar(fraction: fraction).frame(height: 6).padding(.top, 3)  // at y+21
+            if let sub {
+                LabelText(text: sub, size: 11, color: .secondaryLabel, height: PanelLayout.barSubHeight)
+                    .padding(.top, 1)
+            }
         }
     }
 }
@@ -142,7 +148,7 @@ struct RowItem: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            LabelText(text: label, truncation: .middle).frame(width: width - 110)
+            LabelText(text: label, truncation: .middle).frame(width: PanelLayout.labelBudget(kind: "row", hasChevron: false))
             LabelText(text: value, weight: .semibold, digits: true, alignment: .trailing).frame(width: 110)
         }
         .padding(.top, 2)

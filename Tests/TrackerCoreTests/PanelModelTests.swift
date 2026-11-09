@@ -32,7 +32,7 @@ func expectWellFormed(_ tab: Tab) {
     for card in tab.cards {
         #expect(!card.items.isEmpty, "\(tab.key)")
         for item in card.items {
-            if case let .bar(_, _, fraction) = item {
+            if case let .bar(_, _, fraction, _, _) = item {
                 #expect(0.0 <= fraction && fraction <= 1.0)
             }
         }
