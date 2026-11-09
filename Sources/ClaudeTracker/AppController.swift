@@ -30,6 +30,8 @@ final class AppController {
     var updateStatus: String?
     /// The Projects tab's "Show more".
     var projectsExpanded = false
+    /// Whether Settings > About shows Credits. Not saved: it opens on About.
+    var aboutShowsCredits = false
     /// The welcome picker's switches, in the order they were turned on.
     var welcomeChoice: [String] = []
     /// Friend list pushes and pulls run one at a time, off the main thread.
@@ -183,7 +185,8 @@ final class AppController {
             // Same rule as the menu bar: the AI's logo, the coin when combined.
             logo: view.key != "all" ? ToolIcons.iconImage(view.key, size: ToolIcons.headerIconSize) : nil)
         settingsWindow.render(PanelModel.settingsTab(state, intervalChoices: AppState.scanIntervalChoices,
-                                                     detected: detected, updateStatus: updateStatus))
+                                                     detected: detected, updateStatus: updateStatus,
+                                                     showCredits: aboutShowsCredits))
     }
 
     private func activeSessions(_ tools: [String]) -> [ActiveSessions.Session] {
@@ -273,6 +276,7 @@ final class AppController {
             state["leaderboard_enabled"] = on
             save()
         case .projectsExpand: projectsExpanded.toggle()
+        case .aboutView(let showCredits): aboutShowsCredits = showCredits
         case .checkUpdates: checkForUpdates()
         case .openRepo:
             panel.close()

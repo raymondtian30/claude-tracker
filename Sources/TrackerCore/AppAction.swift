@@ -42,6 +42,7 @@ public enum AppAction: Equatable {
     case scanInterval(seconds: Int)
     case login(Bool)
     case projectsExpand
+    case aboutView(showCredits: Bool)
     case checkUpdates
     case openRepo
 
@@ -92,6 +93,8 @@ public enum AppAction: Equatable {
         case "login": return .login(isOn)
         case "leaderboard_enabled": return .leaderboardEnabled(isOn)
         case "projects_expand": return .projectsExpand
+        case "about_view":
+            return pick(value, [false, true]).map { .aboutView(showCredits: $0) }
         case "check_updates": return .checkUpdates
         case "open_repo": return .openRepo
         case "select_tool":

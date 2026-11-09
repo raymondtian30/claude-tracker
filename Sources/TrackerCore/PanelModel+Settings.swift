@@ -70,7 +70,8 @@ extension PanelModel {
     }
 
     public static func settingsTab(_ state: JSONObject, intervalChoices: [Int], detected: [String],
-                                   updateStatus: String? = nil) -> Tab {
+                                   updateStatus: String? = nil,
+                                   showCredits: Bool = false) -> Tab {
         let mode = state["title_mode"] ?? "lifetime"
         let interval = state["scan_interval_seconds"] ?? intervalChoices[0]
         let fontSize = state["menu_bar_font_size"] ?? defaultMenuBarFontSize
@@ -83,16 +84,7 @@ extension PanelModel {
                                    isOn: flag(state, "claude_usage_enabled", default: true),
                                    action: "claude_usage_enabled"))
         }
-        var about: [Item] = [.row(label: "Version", value: Version.version)]
-        if let status = updateStatus, !status.isEmpty {
-            about.append(.row(label: "Updates", value: status))
-        }
-        about += [
-            .row(label: "Original app by", value: Version.originalAuthor),
-            .row(label: "Redesign & new features by", value: Version.forkAuthor),
-            .buttons([Item.Button("Check for Updates", "arrow.down.circle", "check_updates"),
-                      Item.Button("View on GitHub", "arrow.up.right.square", "open_repo")]),
-        ]
+        let about = showCredits ? creditsItems() : aboutItems(updateStatus: updateStatus)
         return Tab(key: "settings", title: "Settings", short: "Settings", icon: "slider.horizontal.3", cards: [
             toolsCard(state, detected: detected),
             appearanceCard(state),
@@ -114,6 +106,36 @@ extension PanelModel {
             Card(title: "General", items: general),
             Card(title: "About", items: about),
         ])
+    }
+
+    /// The About card's switch between its two views.
+    static func aboutSwitch(showCredits: Bool) -> Item {
+        .segmented(label: nil, options: ["About", "Credits"], selected: showCredits ? 1 : 0, action: "about_view")
+    }
+
+    static func aboutItems(updateStatus: String?) -> [Item] {
+        var items: [Item] = [aboutSwitch(showCredits: false), .row(label: "Version", value: Version.version)]
+        if let status = updateStatus, !status.isEmpty {
+            items.append(.row(label: "Updates", value: status))
+        }
+        return items + [
+            .row(label: "Original app by", value: Version.originalAuthor),
+            .row(label: "Redesign & new features by", value: Version.forkAuthor),
+            .buttons([Item.Button("Check for Updates", "arrow.down.circle", "check_updates"),
+                      Item.Button("View on GitHub", "arrow.up.right.square", "open_repo")]),
+        ]
+    }
+
+    /// Everyone who made the app, with their GitHub usernames. The original
+    /// creator keeps a section of their own, ahead of everyone else.
+    static func creditsItems() -> [Item] {
+        func credit(_ person: Credits.Contributor) -> String {
+            "\(person.name ?? person.login) · @\(person.login)"
+        }
+        let creator = Credits.originalCreator
+        return [aboutSwitch(showCredits: true),
+                .row(label: "Original creator", value: credit(creator))]
+            + Credits.contributors.map { .row(label: $0.name ?? $0.login, value: "@\($0.login)") }
     }
 
     static func appearanceCard(_ state: JSONObject) -> Card {
