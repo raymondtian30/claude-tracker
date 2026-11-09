@@ -52,6 +52,22 @@ private let NOW = LocalTime.timestamp(2026, 11, 8, 12, 0, 0)
     #expect(Limits.reachedClaudeLimits(hits, now: NOW) == [
         Level(window: "five_hour", label: "5-hour", percent: 100.0, resetsAt: NOW + 3600, reached: true),
     ])
+
+    let model: JSONObject = ["seven_day_opus": NOW + 60]
+    #expect(Limits.reachedClaudeLimits(model, now: NOW) == [
+        Level(kind: "weekly_opus", window: "weekly", label: "Weekly", percent: 100.0,
+              resetsAt: NOW + 60, reached: true),
+    ])
+}
+
+@Test func fallbackOpusAndSonnetIdsMatchFetched() {
+    let hits: JSONObject = ["seven_day_opus": NOW + 60, "seven_day_sonnet": NOW + 60,
+                            "seven_day": NOW + 60]
+    let levels = Limits.planLevels(["claude_usage_enabled": false, "claude_limit_hits": hits],
+                                   toolKeys: ["claude_code"], now: NOW)
+
+    #expect(levels.map(\.id) == ["claude_code:weekly", "claude_code:weekly_opus", "claude_code:weekly_sonnet"])
+    #expect(Limits.claudeLimitKinds == ["seven_day_opus": "weekly_opus", "seven_day_sonnet": "weekly_sonnet"])
 }
 
 private func claudeUsage(_ changes: JSONObject = [:]) -> JSONObject {
@@ -220,4 +236,169 @@ private func codexState(used: Double = 83.0, resetsAt: Double = NOW + 600, windo
     let levels = Limits.levelsForAlerts(state, now: NOW)
 
     #expect(levels.map { "\($0.id) \(Int($0.percent.rounded()))" } == ["codex:five_hour 83"])
+}
+
+// MARK: - Milestone alerts: carrying keys and seeding
+
+private func claudeLevel(_ kind: String = "weekly", percent: Double = 80.0) -> Level {
+    Level(id: "claude_code:\(kind)", name: "Claude Code", kind: kind, window: "weekly", label: "Weekly",
+          percent: percent, resetsAt: nil)
+}
+
+private let bothWindows = ["five_hour", "weekly"]
+
+@Test func keySurvivesPassWhereLevelIsMissingAndUnknown() {
+    let (messages, above) = Limits.alertsToSend([], thresholds: [75], windowsOn: bothWindows,
+                                                above: ["claude_code:weekly@75"],
+                                                unknownIDPrefixes: ["claude_code:"])
+    #expect(messages == [])
+    #expect(above == ["claude_code:weekly@75"])
+}
+
+@Test func launchWithLevelOverThresholdSendsNothing() {
+    let (messages, above) = Limits.alertsToSend([level()], thresholds: [50, 75], windowsOn: ["five_hour"],
+                                                above: [], seeding: true)
+    #expect(messages == [])
+    #expect(above == ["codex:five_hour@50", "codex:five_hour@75"])
+}
+
+@Test func seedingWritesKeysButSendsNothing() {
+    let (messages, above) = Limits.alertsToSend([claudeLevel(percent: 100.0)], thresholds: [75],
+                                                windowsOn: bothWindows, above: [], seeding: true)
+    #expect(messages == [])
+    #expect(above == ["claude_code:weekly@75"])
+}
+
+@Test func crossingAfterSeedingSends() {
+    var (messages, above) = Limits.alertsToSend([level(percent: 40.0)], thresholds: [75],
+                                                windowsOn: ["five_hour"], above: [], seeding: true)
+    #expect(messages == [] && above == [])
+
+    (messages, above) = Limits.alertsToSend([level(percent: 80.0)], thresholds: [75],
+                                            windowsOn: ["five_hour"], above: above)
+    #expect(messages.count == 1)
+    #expect(above == ["codex:five_hour@75"])
+}
+
+@Test func fallbackLevelFirstSeenAfterLaunchAlerts() {
+    var (messages, above) = Limits.alertsToSend([], thresholds: [75], windowsOn: bothWindows, above: [],
+                                                seeding: true)
+    #expect(messages == [] && above == [])
+
+    // A log-only limit reached after launch is not silenced by the seed.
+    let hit = Level(id: "claude_code:weekly_opus", name: "Claude Code", kind: "weekly_opus",
+                    window: "weekly", label: "Weekly", percent: 100.0, resetsAt: NOW + 60, reached: true)
+    (messages, above) = Limits.alertsToSend([hit], thresholds: [75], windowsOn: bothWindows, above: above,
+                                            now: NOW)
+    #expect(messages.count == 1)
+    #expect(above == ["claude_code:weekly_opus@75"])
+}
+
+@Test func fallbackHitResetHitAgainAlerts() {
+    let hit = Level(id: "claude_code:five_hour", name: "Claude Code", window: "five_hour", label: "5-hour",
+                    percent: 100.0, resetsAt: NOW + 60, reached: true)
+    var (messages, above) = Limits.alertsToSend([hit], thresholds: [75], windowsOn: bothWindows, above: [],
+                                                now: NOW)
+    #expect(messages.count == 1)
+
+    // The window ended: Percentages are off, so the fallback list is authoritative and the key goes.
+    (messages, above) = Limits.alertsToSend([], thresholds: [75], windowsOn: bothWindows, above: above)
+    #expect(messages == [] && above == [])
+
+    (messages, above) = Limits.alertsToSend([hit], thresholds: [75], windowsOn: bothWindows, above: above,
+                                            now: NOW)
+    #expect(messages.count == 1)
+}
+
+private func claudeState(percentages: Bool, limits: [JSONObject]) -> JSONObject {
+    ["enabled_tools": ["claude_code", "codex"], "claude_usage_enabled": percentages,
+     "claude_usage": ["limits": limits, "error": NSNull(), "fetched_at": NOW],
+     "sources": ["codex": ["files": ["f": ["size": 1, "mtime": 1, "daily": JSONObject(),
+                                           "limits": ["at": "2026-11-08T11:00:00Z", "rate_limits": [
+                                               "primary": ["used_percent": 1.0, "window_minutes": 300,
+                                                           "resets_at": NOW + 600]]]]]]]]
+}
+
+@Test func emptyFetchWithPercentagesOffDropsKeys() {
+    let state = claudeState(percentages: false, limits: [])
+    let prefixes = Limits.unknownIDPrefixes(state, now: NOW)
+    let (_, above) = Limits.alertsToSend([], thresholds: [75], windowsOn: bothWindows,
+                                         above: ["claude_code:weekly@75"], unknownIDPrefixes: prefixes)
+    #expect(above == [])
+}
+
+@Test func fetchedLevelVanishingDropsKeys() {
+    // A successful fetch without the weekly limit (plan change): absence means gone.
+    let fiveHour: JSONObject = ["kind": "five_hour", "window": "five_hour", "label": "5-hour",
+                                "percent": 10.0, "resets_at": NOW + 600]
+    let state = claudeState(percentages: true, limits: [fiveHour])
+    let prefixes = Limits.unknownIDPrefixes(state, now: NOW)
+    let levels = Limits.planLevels(state, toolKeys: ["claude_code"], now: NOW)
+    let (_, above) = Limits.alertsToSend(levels, thresholds: [75], windowsOn: bothWindows,
+                                         above: ["claude_code:weekly@75"], unknownIDPrefixes: prefixes)
+    #expect(above == [])
+}
+
+@Test func dropBelowThenCrossSendsAgain() {
+    var (messages, above) = Limits.alertsToSend([level(percent: 80.0)], thresholds: [75],
+                                                windowsOn: ["five_hour"], above: [])
+    #expect(messages.count == 1)
+    (messages, above) = Limits.alertsToSend([level(percent: 60.0)], thresholds: [75],
+                                            windowsOn: ["five_hour"], above: above)
+    #expect(messages == [] && above == [])
+    (messages, above) = Limits.alertsToSend([level(percent: 80.0)], thresholds: [75],
+                                            windowsOn: ["five_hour"], above: above)
+    #expect(messages.count == 1)
+}
+
+@Test func resetToZeroClearsKeys() {
+    let (messages, above) = Limits.alertsToSend([level(percent: 0.0)], thresholds: [50, 75],
+                                                windowsOn: ["five_hour"],
+                                                above: ["codex:five_hour@50", "codex:five_hour@75"],
+                                                unknownIDPrefixes: ["codex:"])
+    #expect(messages == [] && above == [])  // present, so unknown does not apply
+}
+
+@Test func toolDisabledKeepsKeys() {
+    let state: JSONObject = ["enabled_tools": ["claude_code"]]
+    let prefixes = Limits.unknownIDPrefixes(state, now: NOW)
+    let (messages, above) = Limits.alertsToSend([], thresholds: [75], windowsOn: bothWindows,
+                                                above: ["codex:five_hour@75"], unknownIDPrefixes: prefixes)
+    #expect(messages == [])
+    #expect(above == ["codex:five_hour@75"])
+}
+
+@Test func switchOffThenOnSendsNothingWhenKeyPresent() {
+    let keys = ["codex:five_hour@75"]
+    var (messages, above) = Limits.alertsToSend([level()], thresholds: [75], windowsOn: [], above: keys)
+    #expect(messages == [])
+    #expect(above == keys)  // the id is present with its switch off: keep
+
+    (messages, above) = Limits.alertsToSend([level()], thresholds: [75], windowsOn: ["five_hour"], above: above)
+    #expect(messages == [])
+    #expect(above == keys)
+}
+
+@Test func severalThresholdsGiveOneMessage() {
+    let (messages, above) = Limits.alertsToSend([level(percent: 96.0)], thresholds: [75, 90, 95],
+                                                windowsOn: ["five_hour"], above: [])
+    #expect(messages.count == 1)
+    #expect(above == ["codex:five_hour@75", "codex:five_hour@90", "codex:five_hour@95"])
+}
+
+@Test func unknownPrefixesFromState() {
+    // Tool disabled.
+    #expect(Limits.unknownIDPrefixes(["enabled_tools": ["claude_code"], "claude_usage_enabled": false],
+                                     now: NOW).contains("codex:"))
+    // Percentages on with an empty fetch: Claude Code's levels are unknown.
+    let on = claudeState(percentages: true, limits: [])
+    #expect(Limits.unknownIDPrefixes(on, now: NOW).contains("claude_code:"))
+    // Percentages off: the fallback list is authoritative.
+    let off = claudeState(percentages: false, limits: [])
+    #expect(!Limits.unknownIDPrefixes(off, now: NOW).contains("claude_code:"))
+    // No Codex record.
+    var noCodex = on
+    noCodex["sources"] = nil
+    #expect(Limits.unknownIDPrefixes(noCodex, now: NOW).contains("codex:"))
+    #expect(!Limits.unknownIDPrefixes(on, now: NOW).contains("codex:"))
 }

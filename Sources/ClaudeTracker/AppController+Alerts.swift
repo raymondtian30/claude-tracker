@@ -6,7 +6,13 @@ import TrackerCore
 extension AppController {
     /// Notify about limits that just reached an alert threshold.
     func checkAlerts() {
-        let (messages, changed) = AppState.checkAlerts(&state, now: Date().timeIntervalSince1970)
+        // The first pass after launch only records what is already over a
+        // threshold (whether or not "Notify me" is on), so a restart or a
+        // failed fetch never repeats an alert.
+        let seeding = !alertsSeeded
+        alertsSeeded = true
+        let (messages, changed) = AppState.checkAlerts(&state, now: Date().timeIntervalSince1970,
+                                                       seeding: seeding)
         if changed {
             save()
         }

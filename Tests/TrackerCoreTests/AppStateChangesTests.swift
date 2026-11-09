@@ -127,6 +127,32 @@ private func alertState(enabled: Bool = true) -> JSONObject {
     #expect(!second.changed)
 }
 
+@Test func fetchErrorCarriesKeys() {
+    var state = alertState()
+    state["claude_usage_enabled"] = true
+    state["claude_limit_hits"] = nil
+    state["claude_usage"] = ["limits": [Any](), "error": "offline", "fetched_at": NOW]
+    state["alerts_above"] = ["claude_code:five_hour@75", "claude_code:weekly@75"]
+
+    let result = AppState.checkAlerts(&state, now: NOW)
+
+    #expect(result.messages.isEmpty)
+    #expect(!result.changed)
+    #expect(jsonEqual(state["alerts_above"], ["claude_code:five_hour@75", "claude_code:weekly@75"]))
+}
+
+@Test func checkAlertsSeedingSendsNothingAndSavesKeys() {
+    var state = alertState()
+
+    let seeded = AppState.checkAlerts(&state, now: NOW, seeding: true)
+    #expect(seeded.messages.isEmpty)
+    #expect(seeded.changed)
+    #expect(jsonEqual(state["alerts_above"], ["claude_code:five_hour@75"]))
+
+    let later = AppState.checkAlerts(&state, now: NOW)
+    #expect(later.messages.isEmpty && !later.changed)
+}
+
 @Test func noAlertsWhenTurnedOff() {
     var state = alertState(enabled: false)
 
