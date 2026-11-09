@@ -160,3 +160,23 @@ func fetchUsageWithoutAConnectionSaysPercentageUnavailable(_ failure: UsageFailu
     #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
     #expect(request.value(forHTTPHeaderField: "User-Agent") == "ClaudeTracker/\(Version.version)")
 }
+
+/// Many commands at once, each started from a GCD pool thread, must all
+/// finish. The pipe readers used to borrow pool threads too: with more
+/// callers than the pool's thread limit (64) blocked waiting on them, the
+/// readers never got a thread and every caller hung.
+@Test func manyCommandsAtOnceAllFinish() {
+    let group = DispatchGroup()
+    let lock = NSLock()
+    var results = [Subprocess.Result]()
+    for i in 0..<128 {
+        DispatchQueue.global().async(group: group) {
+            let result = Subprocess.run(["/bin/sh", "-c", "sleep 0.2; echo out\(i); echo err\(i) >&2"])
+            lock.lock(); results.append(result); lock.unlock()
+        }
+    }
+    #expect(group.wait(timeout: .now() + 60) == .success)
+    lock.lock(); defer { lock.unlock() }
+    #expect(results.count == 128)
+    #expect(results.allSatisfy { $0.status == 0 && $0.stdout.hasPrefix("out") && $0.stderr.hasPrefix("err") })
+}

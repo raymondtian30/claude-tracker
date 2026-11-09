@@ -210,28 +210,42 @@ public enum Subprocess {
 
         // Read both pipes and write stdin at the same time: a command stuck
         // writing to a full pipe, or waiting for input, would never exit.
-        let group = DispatchGroup()
+        // These run on threads of their own, not GCD's shared pool: blocking
+        // a pool thread here, with many commands running at once, can use up
+        // the pool so the reads never start and every caller hangs.
+        var helpers = [DispatchSemaphore]()
         let errorOutput = DataBox()
-        DispatchQueue.global().async(group: group) {
+        helpers.append(onOwnThread {
             errorOutput.data = stderr.fileHandleForReading.readDataToEndOfFile()
-        }
+        })
         if let input = input {
             let writer = stdin.fileHandleForWriting
             // A command that exits without reading would raise SIGPIPE and
             // kill the app; this makes the write fail quietly instead.
             _ = fcntl(writer.fileDescriptor, F_SETNOSIGPIPE, 1)
-            DispatchQueue.global().async(group: group) {
+            helpers.append(onOwnThread {
                 try? writer.write(contentsOf: Data(input.utf8))
                 try? writer.close()
-            }
+            })
         }
         let output = stdout.fileHandleForReading.readDataToEndOfFile()
-        group.wait()
+        helpers.forEach { $0.wait() }
         process.waitUntilExit()
         let status = process.terminationReason == .uncaughtSignal
             ? -process.terminationStatus : process.terminationStatus
         return Result(status: status, stdout: String(decoding: output, as: UTF8.self),
                       stderr: String(decoding: errorOutput.data, as: UTF8.self))
+    }
+
+    /// Runs `work` on a new thread; the returned semaphore is signaled when
+    /// it's done.
+    static func onOwnThread(_ work: @escaping () -> Void) -> DispatchSemaphore {
+        let done = DispatchSemaphore(value: 0)
+        Thread {
+            work()
+            done.signal()
+        }.start()
+        return done
     }
 
     /// The full path of `program`, searching PATH when it has no slash.
