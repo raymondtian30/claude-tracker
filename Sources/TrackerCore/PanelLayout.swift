@@ -77,8 +77,27 @@ public enum PanelLayout {
 
     // MARK: - Cards
 
+    /// The grey line under a bar that has a `sub`.
+    public static let barSubHeight: CGFloat = 14
+
     public static func height(of item: Item) -> CGFloat {
-        heights[item.kind] ?? 0
+        let base = heights[item.kind] ?? 0
+        if case let .bar(_, _, _, sub, _) = item, sub != nil { return base + barSubHeight }
+        return base
+    }
+
+    /// Whether a label's text is wider than its slot and would be cut off
+    /// (the last point is kept as air, so a text exactly the budget wide is cut).
+    public static func isCutOff(text: String, size: CGFloat, weight: LabelWeight, budget: CGFloat,
+                                measure: TextMeasure) -> Bool {
+        measure(text, size, weight) > budget - 1
+    }
+
+    /// The width a bar's or row's label may take inside a card (312 wide);
+    /// a chevron takes 14 of it. `kind` is "bar" or "row".
+    public static func labelBudget(kind: String, hasChevron: Bool) -> CGFloat {
+        let card = inner - 2 * cardPad
+        return card - (kind == "bar" ? 120 : 110) - (hasChevron ? 14 : 0)
     }
 
     /// Tiles are already boxes, so a card holding only tiles (and no title)

@@ -181,3 +181,15 @@ private let tab = Tab(key: "overview", title: "Overview", short: "Home", icon: "
     let titled: CGFloat = 24 + 24 + 66
     #expect(PanelLayout.cardHeight(Card(title: "T", items: [.tiles([])])) == titled)
 }
+
+@Test func barHeightWithAndWithoutSub() {
+    #expect(PanelLayout.height(of: .bar(label: "a", value: "1%", fraction: 0.1)) == 36)
+    #expect(PanelLayout.height(of: .bar(label: "a", value: "1%", fraction: 0.1, sub: "Resets Nov 20")) == 50)
+}
+
+@Test func labelBudgetPlainAndWithChevron() {
+    #expect(PanelLayout.labelBudget(kind: "bar", hasChevron: false) == 192)
+    #expect(PanelLayout.labelBudget(kind: "bar", hasChevron: true) == 178)
+    #expect(PanelLayout.labelBudget(kind: "row", hasChevron: false) == 202)
+    #expect(PanelLayout.labelBudget(kind: "row", hasChevron: true) == 188)
+}

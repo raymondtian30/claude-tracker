@@ -64,9 +64,9 @@ struct ItemView: View {
             TilesView(tiles: tiles, width: width)
         case let .chart(values, caption):
             ChartItem(values: values, caption: caption)
-        case let .bar(label, value, fraction):
-            BarItem(label: label, value: value, fraction: fraction, width: width)
-        case let .row(label, value):
+        case let .bar(label, value, fraction, sub, _):
+            BarItem(label: label, value: value, fraction: fraction, sub: sub, width: width)
+        case let .row(label, value, _):
             RowItem(label: label, value: value, width: width)
         case let .note(text):
             LabelText(text: text, size: 11, color: .secondaryLabel, height: 14).padding(.top, 1)

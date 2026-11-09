@@ -45,7 +45,7 @@ private func projectsItems(_ count: Int, expanded: Bool = false) -> [Item] {
 
 private func barLabels(_ items: [Item]) -> [String] {
     items.compactMap { item -> String? in
-        if case let .bar(label, _, _) = item { return label }
+        if case let .bar(label, _, _, _, _) = item { return label }
         return nil
     }
 }

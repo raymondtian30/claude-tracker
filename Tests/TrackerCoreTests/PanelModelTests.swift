@@ -32,7 +32,7 @@ func expectWellFormed(_ tab: Tab) {
     for card in tab.cards {
         #expect(!card.items.isEmpty, "\(tab.key)")
         for item in card.items {
-            if case let .bar(_, _, fraction) = item {
+            if case let .bar(_, _, fraction, _, _) = item {
                 #expect(0.0 <= fraction && fraction <= 1.0)
             }
         }
@@ -577,4 +577,36 @@ private func emptyProvider(_ key: String, _ name: String) -> Tools.View {
     #expect(about.contains(.row(label: "Updates", value: "Checking…")))
     let buttons = buttonsOf(about).first!
     #expect(buttons.contains(Item.Button("Check for Updates", "arrow.down.circle", "check_updates")))
+}
+
+// MARK: - Foundation (3.1): result entry point, measured wrapping
+
+@Test func buildPanelWrapperMatchesResultTabs() {
+    let state: JSONObject = [:]
+    let view = Tools.toolView(state, "claude_code")
+    let wrapped = PanelModel.buildPanel(view, state: state, sessions: [], friends: [], showLeaderboard: false,
+                                        today: Day(2026, 5, 20))
+    let result = PanelModel.buildPanelResult(view, state: state, sessions: [], friends: [],
+                                             showLeaderboard: false, today: Day(2026, 5, 20))
+    #expect(wrapped == result.tabs)
+}
+
+private let sevenPerChar: TextMeasure = { text, _, _ in CGFloat(text.count) * 7 }
+
+@Test func wrapMeasuredBreaksWideWordsByCharacter() {
+    #expect(PanelModel.wrapMeasured("abcdefghij kl", width: 28, size: 11, measure: sevenPerChar)
+        == ["abcd", "efgh", "ij", "kl"])
+    #expect(PanelModel.wrapMeasured("", width: 28, size: 11, measure: sevenPerChar) == [])
+}
+
+@Test func stubMeasureBoundaryAtBudgetMinusOne() {
+    func cut(_ width: CGFloat, _ budget: CGFloat) -> Bool {
+        PanelLayout.isCutOff(text: "x", size: 13, weight: .regular, budget: budget, measure: { _, _, _ in width })
+    }
+    #expect(!cut(191, 192))
+    #expect(cut(192, 192))
+    #expect(!cut(177, 178))
+    #expect(cut(178, 178))
+    #expect(!cut(187, 188))
+    #expect(cut(188, 188))
 }

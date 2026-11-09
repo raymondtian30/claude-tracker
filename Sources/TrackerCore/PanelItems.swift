@@ -42,6 +42,24 @@ public struct Card: Equatable {
     }
 }
 
+/// What a bar or row label can carry beyond its text: a grey tail, a
+/// chevron that opens a detail (`expandID`), and a tooltip.
+public struct LabelExtras: Equatable {
+    public var greyTail: String?
+    public var expandID: String?
+    public var isOpen: Bool
+    public var tip: String?
+
+    public init(greyTail: String? = nil, expandID: String? = nil, isOpen: Bool = false, tip: String? = nil) {
+        self.greyTail = greyTail
+        self.expandID = expandID
+        self.isOpen = isOpen
+        self.tip = tip
+    }
+
+    public static let none = LabelExtras()
+}
+
 /// One line (or block) inside a card.
 public enum Item: Equatable {
     /// Big numbers side by side.
@@ -49,8 +67,9 @@ public enum Item: Equatable {
     /// Line chart, oldest first, with a caption above it.
     case chart(values: [Int], caption: String)
     /// Label and value over a 0-1 bar.
-    case bar(label: String, value: String, fraction: Double)
-    case row(label: String, value: String)
+    /// `sub`: an optional grey line under the bar.
+    case bar(label: String, value: String, fraction: Double, sub: String? = nil, extras: LabelExtras = .none)
+    case row(label: String, value: String, extras: LabelExtras = .none)
     /// Small grey line.
     case note(String)
     case buttons([Button])
