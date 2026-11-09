@@ -1,7 +1,7 @@
 # Claude Tracker in Swift: design
 
 Date: 2026-11-08
-Status: approved to build in one pass (design, review, build)
+Status: approved to build in one pass (design, review, build); reviewed
 
 ## Intent
 
@@ -73,9 +73,12 @@ each feature is checked in the running app.
     keys the Swift app doesn't know are kept on save.
   - Keychain services: `com.raymondtian.claudetracker.apikey` (account =
     provider), `com.claudetokencounter.github`, and read-only
-    `Claude Code-credentials`. API keys are still never passed on a
-    command line (use Security.framework directly, which also satisfies
-    this).
+    `Claude Code-credentials`. **All Keychain access keeps going through
+    `/usr/bin/security`, exactly as now** (writes via `security -i` on
+    stdin, so keys never appear on a command line). Existing items trust
+    that tool. Security.framework calls from an ad hoc signed app would
+    trigger permission prompts that come back after every rebuild.
+    *(Builder's call, from the review.)*
   - Network: only the hosts the Python app contacts
     (`api.anthropic.com`, `api.github.com`, the provider APIs in
     `accounts.py`), with the same redirect and host checks.
@@ -103,11 +106,25 @@ and restarts through the LaunchAgent. So the Swift release must:
    the old app working.
 3. The Swift executable finds the project folder through an Info.plist
    key, `ClaudeTrackerProjectDir`, written by `build.sh`.
-4. If compiling fails during the update (no Command Line Tools), the old
-   updater shows "rebuilding failed, run ./install.sh". That message is
-   acceptable. The Python app's files remain until the user does so.
+4. 2.5.0's updater merges *before* it rebuilds, so when the shim runs, the
+   Python sources are already gone from the clone. If the compile fails
+   (no or too-old Command Line Tools, macOS older than 13), the shim
+   **rolls the clone back** with `git reset --keep ORIG_HEAD`, which
+   restores the Python files and leaves untracked `state.json` alone. The
+   old bundle was never replaced, because `build.sh` builds into a
+   temporary folder first. It then exits non-zero, so 2.5.0 shows
+   "rebuilding failed" and doesn't restart, and the user keeps a working
+   Python app. *(Builder's call, from the review.)*
    `install.sh` checks for `swift` first and says to run
    `xcode-select --install` if it's missing.
+5. **Swift version:** the app target must build with Swift 5.9 or newer
+   (the newest Command Line Tools for macOS 13). So use
+   `swift-tools-version: 5.9`, Swift 5 language mode, and no Swift-6-only
+   syntax in `Sources/`. Swift Testing needs a Swift 6 toolchain, which
+   only matters to developers running tests. *(Builder's call.)*
+6. **Updater preflight (Swift to Swift):** before merging a release, the
+   Swift updater checks that `swift` runs and is at least 5.9. If not, it
+   stops with a message and merges nothing. *(Builder's call.)*
 
 Python sources are deleted in the same release, except `build_app.py`.
 
@@ -233,6 +250,14 @@ dialogs pointing to System Settings.
   single-instance reopen, and the upgrade path (a 2.5.0 checkout runs
   its updater against the Swift tag in a scratch clone, never the user's
   own clone).
+
+## Delivery
+
+The build ends at an open PR (version 3.0.0) with tests passing and live
+checks done. Merging and publishing the release need the owner's go-ahead.
+The upgrade check runs in a scratch clone of 2.5.0 whose updater points at
+a local bare repo and a stubbed releases list. It never touches the
+owner's clone or GitHub.
 
 ## Left to the builder
 

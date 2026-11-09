@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 5.9
 import PackageDescription
 
 let package = Package(
@@ -12,6 +12,5 @@ let package = Package(
         // The menu bar app itself: AppKit shell and SwiftUI views.
         .executableTarget(name: "ClaudeTracker", dependencies: ["TrackerCore"]),
         .testTarget(name: "TrackerCoreTests", dependencies: ["TrackerCore"]),
-    ],
-    swiftLanguageModes: [.v5]
+    ]
 )
