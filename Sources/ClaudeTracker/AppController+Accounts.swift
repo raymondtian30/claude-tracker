@@ -1,0 +1,92 @@
+import AppKit
+import TrackerCore
+
+/// Provider API keys and account numbers (OpenAI, DeepSeek, Kimi), and
+/// Claude Code's limit percentages from Anthropic.
+extension AppController {
+    // MARK: - API keys
+
+    func addAPIKey(_ provider: String) {
+        let name = Providers.providerNames[provider] ?? provider
+        let help = Accounts.keyHelp[provider] ?? ""
+        guard let text = Dialogs.ask(
+            title: "\(name) API Key",
+            message: "Paste your \(name) API key. It's stored only in this Mac's Keychain "
+                + "and sent only to \(name).\n\n\(help).",
+            ok: "Save", cancel: "Cancel", secure: true),
+            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+        do {
+            try Accounts.saveKey(provider, text)
+        } catch {
+            Dialogs.alert("Key Not Saved", "\(error)")
+            return
+        }
+        AppState.addProviderKey(&state, provider)
+        save()
+        fetchAccounts(force: provider)
+    }
+
+    func removeAPIKey(_ provider: String) {
+        let name = Providers.providerNames[provider] ?? provider
+        let confirmed = Dialogs.alert(
+            "Remove \(name) API Key?",
+            "This deletes the key from this Mac's Keychain. To see \(name) account "
+                + "numbers again you'll need to paste it again.",
+            ok: "Remove", cancel: "Cancel")
+        guard confirmed else { return }
+        Accounts.deleteKey(provider)
+        AppState.removeProviderKey(&state, provider)
+        save()
+        renderPanel()
+    }
+
+    // MARK: - Account numbers
+
+    /// Start a background fetch for each enabled provider with a key whose
+    /// numbers are due (every 15 minutes) or `force`d.
+    func fetchAccounts(force: String? = nil) {
+        for provider in AppState.accountsToFetch(state, inFlight: fetchingAccounts, force: force) {
+            fetchingAccounts.insert(provider)
+            inBackground({
+                guard let key = Accounts.loadKey(provider) else {
+                    return AppState.failedAccountResult("the key is no longer in the Keychain",
+                                                        now: Date().timeIntervalSince1970)
+                }
+                return Accounts.fetchAccount(provider, key)
+            }, then: { [weak self] result in
+                self?.showFetchedAccount(provider, result)
+            })
+        }
+    }
+
+    private func showFetchedAccount(_ provider: String, _ result: JSONObject) {
+        fetchingAccounts.remove(provider)
+        if AppState.strings(state["provider_keys"]).contains(provider) {  // not removed meanwhile
+            Accounts.storeResult(&state, provider, result)
+        }
+        save()
+        renderPanel()
+    }
+
+    // MARK: - Claude Code's percentages
+
+    /// Start a background fetch of Claude Code's limit percentages, every 5
+    /// minutes while Claude Code is tracked and the switch is on.
+    func fetchClaudeUsage() {
+        guard AppState.claudeUsageDue(state, inFlight: fetchingClaudeUsage) else { return }
+        fetchingClaudeUsage = true
+        inBackground({ ClaudeUsage.fetchUsage() }, then: { [weak self] result in
+            self?.showClaudeUsage(result)
+        })
+    }
+
+    private func showClaudeUsage(_ result: JSONObject) {
+        fetchingClaudeUsage = false
+        guard JSON.truthy(state["claude_usage_enabled"]) else { return }  // turned off meanwhile
+        state["claude_usage"] = result
+        save()
+        checkAlerts()
+        renderPanel()
+    }
+}

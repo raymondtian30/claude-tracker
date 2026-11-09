@@ -94,6 +94,12 @@ struct TabBar: View {
                             .contentShape(Rectangle())
                             .onTapGesture { onSelect(index) }
                             .help(tab.title)
+                            // One button per tab for VoiceOver (and other
+                            // accessibility clients), as the tap gesture alone isn't.
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(tab.title)
+                            .accessibilityAddTraits(tab.key == selected ? [.isButton, .isSelected] : .isButton)
+                            .accessibilityAction { onSelect(index) }
                     }
                 }
                 if let index = selectedIndex {

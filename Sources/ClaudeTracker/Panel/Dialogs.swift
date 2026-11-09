@@ -35,3 +35,39 @@ enum Dialogs {
         return alert.runModal() == .alertFirstButtonReturn
     }
 }
+
+extension Dialogs {
+    /// rumps.alert: `title` in bold, `message` under it. With `cancel`, two
+    /// buttons; true if the user clicks `ok`.
+    @discardableResult
+    static func alert(_ title: String, _ message: String, ok: String = "OK", cancel: String? = nil) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: ok)
+        if let cancel = cancel {
+            alert.addButton(withTitle: cancel)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// rumps.Window: a dialog with a text field. The text typed, or nil if
+    /// the user clicks `cancel`. `secure` hides what's typed (keys, tokens).
+    static func ask(title: String, message: String, defaultText: String = "", ok: String,
+                    cancel: String, secure: Bool = false) -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: ok)
+        alert.addButton(withTitle: cancel)
+        let frame = NSRect(x: 0, y: 0, width: 300, height: 24)
+        let field = secure ? NSSecureTextField(frame: frame) : NSTextField(frame: frame)
+        field.stringValue = defaultText
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        return field.stringValue
+    }
+}
