@@ -4,23 +4,27 @@ set -euo pipefail
 LABEL="com.claudetokencounter.menubar"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
-PYTHON_BIN="$(command -v python3)"
 
-if [ -z "$PYTHON_BIN" ]; then
-    echo "python3 not found on PATH. Install Python 3 first." >&2
+# Claude Tracker is compiled on this Mac by Apple's Swift compiler, which
+# comes with Xcode's Command Line Tools. Without them, /usr/bin/swift still
+# exists but only prints an error, so run it rather than just looking for it.
+if ! SWIFT_VERSION_TEXT="$(swift --version 2>&1)"; then
+    echo "Swift not found. Run this in Terminal to install Xcode's Command Line Tools, then run ./install.sh again:" >&2
+    echo "    xcode-select --install" >&2
+    exit 1
+fi
+SWIFT_VERSION="$(printf '%s\n' "$SWIFT_VERSION_TEXT" \
+    | sed -n 's/.*Swift version \([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1.\2/p' | head -n 1)"
+SWIFT_MAJOR="${SWIFT_VERSION%%.*}"
+SWIFT_MINOR="${SWIFT_VERSION#*.}"
+if [ -z "$SWIFT_VERSION" ] || [ "$SWIFT_MAJOR" -lt 5 ] || { [ "$SWIFT_MAJOR" -eq 5 ] && [ "$SWIFT_MINOR" -lt 9 ]; }; then
+    echo "Claude Tracker needs Swift 5.9 or newer (this Mac has: ${SWIFT_VERSION:-unknown})." >&2
+    echo "Update Xcode's Command Line Tools in Software Update, or run: xcode-select --install" >&2
     exit 1
 fi
 
-# find_spec only looks for rumps: importing it would load AppKit and put a
-# Python rocket in the Dock for a moment.
-if ! "$PYTHON_BIN" -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('rumps') is None)" 2>/dev/null; then
-    echo "Installing the 'rumps' dependency with $PYTHON_BIN -m pip..."
-    "$PYTHON_BIN" -m pip install rumps
-fi
-
-echo "Building Claude Tracker.app..."
-APP_EXEC="$("$PYTHON_BIN" "$SCRIPT_DIR/build_app.py" --python "$PYTHON_BIN" | tail -n 1)"
-if [ ! -x "$APP_EXEC" ]; then
+echo "Building Claude Tracker.app (the first build takes a minute or two)..."
+if ! APP_EXEC="$("$SCRIPT_DIR/build.sh" | tail -n 1)" || [ ! -x "$APP_EXEC" ]; then
     echo "Building the app failed." >&2
     exit 1
 fi
