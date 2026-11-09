@@ -20,18 +20,12 @@ private func aboutCard(_ tab: Tab) -> Card {
 
     #expect(card.items.first == .segmented(label: nil, options: ["About", "Credits"], selected: 1,
                                            action: "about_view"))
-    let rows = card.items.compactMap { item -> (String, String)? in
-        if case .row(let label, let value) = item { return (label, value) }
-        return nil
-    }
-    // The original creator keeps their own section, first.
-    #expect(rows.first! == ("Original creator", "Brody Kretz · @BrodyKretz"))
-    // Then every other GitHub contributor, with their username.
-    let contributorRows = Array(rows.dropFirst())
-    #expect(contributorRows.count == Credits.contributors.count)
-    for (row, person) in zip(contributorRows, Credits.contributors) {
-        #expect(row == (person.name ?? person.login, "@\(person.login)"))
-    }
+    // The original creator keeps their own section, first; then every other
+    // GitHub contributor. Names on the left, usernames on the right.
+    var expected: [Item] = [.note("Original creator"), .row(label: "Brody Kretz", value: "@BrodyKretz"),
+                            .note("Contributors")]
+    expected += Credits.contributors.map { .row(label: $0.name ?? $0.login, value: "@\($0.login)") }
+    #expect(Array(card.items.dropFirst()) == expected)
     // No version row or update buttons in the credits view.
     #expect(!card.items.contains(.row(label: "Version", value: Version.version)))
     #expect(!card.items.contains { if case .buttons = $0 { return true } else { return false } })

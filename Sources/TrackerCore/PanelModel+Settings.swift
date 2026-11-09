@@ -129,13 +129,14 @@ extension PanelModel {
     /// Everyone who made the app, with their GitHub usernames. The original
     /// creator keeps a section of their own, ahead of everyone else.
     static func creditsItems() -> [Item] {
-        func credit(_ person: Credits.Contributor) -> String {
-            "\(person.name ?? person.login) · @\(person.login)"
+        // Name on the left, @username on the right: the right-hand column is
+        // narrow, so it only ever holds the username.
+        func row(_ person: Credits.Contributor) -> Item {
+            .row(label: person.name ?? person.login, value: "@\(person.login)")
         }
-        let creator = Credits.originalCreator
         return [aboutSwitch(showCredits: true),
-                .row(label: "Original creator", value: credit(creator))]
-            + Credits.contributors.map { .row(label: $0.name ?? $0.login, value: "@\($0.login)") }
+                .note("Original creator"), row(Credits.originalCreator),
+                .note("Contributors")] + Credits.contributors.map(row)
     }
 
     static func appearanceCard(_ state: JSONObject) -> Card {
