@@ -6,7 +6,7 @@ A tiny macOS menu bar app (no Dock icon) that shows how many Claude Code tokens 
 
 ## Is this safe to run?
 
-Yes. There's no compiled binary and nothing hidden -- it's a handful of short Python files and 2 shell scripts, all listed below, all readable in a few minutes.
+Yes. Nothing prebuilt is downloaded and nothing is hidden -- it's a set of short Swift files and a few shell scripts, all listed below, all readable. `./install.sh` compiles that source on your own Mac with Apple's Swift compiler (from Xcode's Command Line Tools), so the app you run is built from exactly the code you can read here.
 
 By default it never connects to the internet or sends your data anywhere. The only things it touches are:
 
@@ -18,6 +18,7 @@ By default it never connects to the internet or sends your data anywhere. The on
 
   From these it reads only token counts, which model was used, when, and which project folder, plus, for open Claude Code sessions, which plugin skills, agents, hooks and MCP tools ran and when. It skips your prompts, code and replies, and never touches opencode's account or credential tables.
 - `launchctl`, macOS's own built-in tool, only to turn its "start at login" setting on or off
+- `/usr/bin/security`, macOS's own Keychain tool, only for the Claude Code sign-in, API keys and Leaderboard token described below -- as before, the app reaches your Keychain only through this tool
 
 **There are three exceptions.** One is on by default: if you track Claude Code, the app asks Anthropic for your plan's limit percentages (see [Usage limits and alerts](#usage-limits-and-alerts)); turn off **Percentages from Anthropic** in Settings to stop it. Two are opt-in: an API key you add for an AI provider (see [OpenAI, DeepSeek, Kimi and other AI companies](#openai-deepseek-kimi-and-other-ai-companies)), and the Leaderboard (Beta) feature. Clicking **Check for Updates** also contacts GitHub, only when you click it (see [Updating](#quick-start)).
 
@@ -35,11 +36,17 @@ By default it never connects to the internet or sends your data anywhere. The on
 
 That's it. It now also starts automatically every time you log in, and **Claude Tracker** is in your Applications folder (Finder, Launchpad and Spotlight) if you ever quit it and want it back. Opening it while it's already running just opens its panel.
 
-The app in Applications is a small launcher that runs the code in this folder, so your totals stay in `state.json` here. If you move this folder, run `./install.sh` again.
+The app in Applications is compiled from the code in this folder and keeps your totals in `state.json` here. If you move this folder, run `./install.sh` again.
 
-**Updating:** click **Check for Updates** under About in Settings. If GitHub has newer releases, it lists each one with what's new and asks whether to update. Click **Update** and the app downloads the newest into this folder (a `git` fast-forward to the release's tag), rebuilds itself and restarts; **Not Now** changes nothing. Your settings and totals live in `state.json` and `friends.json`, which updates never touch. It won't update a copy whose code you've changed or that's on a branch other than `master`, so your own work is never overwritten. This is the only time the app contacts GitHub besides the opt-in Leaderboard.
+**Updating:** click **Check for Updates** under About in Settings. If GitHub has newer releases, it lists each one with what's new and asks whether to update. Click **Update** and the app downloads the newest into this folder (a `git` fast-forward to the release's tag), recompiles itself and restarts; **Not Now** changes nothing. Your settings and totals live in `state.json` and `friends.json`, which updates never touch. It won't update a copy whose code you've changed or that's on a branch other than `master`, so your own work is never overwritten, and it checks that Swift 5.9 or newer is installed before changing anything. This is the only time the app contacts GitHub besides the opt-in Leaderboard.
 
-If step 1 fails because `rumps` isn't installed, the script installs it for you automatically the first time (it needs Python 3 and `pip`, which come standard on macOS).
+**Coming from 2.5.0 (the Python version):** Check for Updates works as usual and rebuilds the app in Swift. If this Mac can't compile it (no Command Line Tools, or macOS older than 13), the update puts this folder back on 2.5.0 and your app keeps working; install the Command Line Tools and click Check for Updates again.
+
+If step 1 says Swift isn't found, install Xcode's Command Line Tools (free from Apple, no full Xcode needed) and run `./install.sh` again:
+
+```bash
+xcode-select --install
+```
 
 ## What you'll see when you click the icon
 
@@ -51,7 +58,7 @@ A panel opens with a row of tabs along the top. It always opens on **Overview**;
 - **Token Types** -- today's and lifetime tokens split into input, output, cache write and cache read, each with a bar showing its share
 - **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...)
 - **Projects** -- every folder you used tokens in over the last 7 days, most first: the top 5, and the rest behind **Show more**
-- **Estimated API Cost** -- what your usage would cost at Anthropic's pay-as-you-go API prices. Just for fun: a Pro or Max subscription is flat-rate, so you aren't billed this. Prices live in `pricing.py` and will drift over time.
+- **Estimated API Cost** -- what your usage would cost at Anthropic's pay-as-you-go API prices. Just for fun: a Pro or Max subscription is flat-rate, so you aren't billed this. Prices live in `Sources/TrackerCore/Pricing.swift` and will drift over time.
 - **Usage Limits** -- how much of your plan's limits you've used, and when to be notified (see [Usage limits and alerts](#usage-limits-and-alerts))
 - **Active Sessions** -- two sections:
   - **Sessions:** every Claude Code terminal you currently have open, how many tokens each one has used, and tags for the plugins running in it (crossed out if that project turns a plugin off)
@@ -122,7 +129,7 @@ This removes it from starting at login and deletes **Claude Tracker** from your 
 
 ## Version and credits
 
-Current version: **2.5.0**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `version.py` and is shown in Settings.
+Current version: **3.0.0**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
 
 - Original app by [BrodyKretz](https://github.com/BrodyKretz/claude-token-counter)
 - Redesign and new features (panel, stats tabs, cost estimate, fixes) by Raymond Tian ([raymondtian30](https://github.com/raymondtian30/claude-tracker))
@@ -130,44 +137,65 @@ Current version: **2.5.0**, following [Semantic Versioning](https://semver.org) 
 ## Project layout
 
 ```
-app.py                       menu bar app (rumps): scanning, settings, leaderboard actions
-token_math.py                reads the jsonl logs and does the token accounting
-usage_stats.py               per-day buckets and the breakdown / model / project / history views
-codex_source.py              reads Codex usage from its session logs
-opencode_source.py           reads opencode usage from its database (read-only)
-gemini_source.py             reads Gemini CLI usage from its saved chat sessions
-tools.py                     the supported tools, detection, scanning, per-tool and combined views
-providers.py                 OpenAI / DeepSeek / Kimi: which models are theirs, provider views
-accounts.py                  optional provider API keys (Keychain) and account usage/balance fetching
-tool_icons.py                finds each tool's or provider's icon on this Mac for the menu bar (or draws a monogram)
-stats_tabs.py                what each panel tab shows, as plain data
-panel_view.py                draws the panel (tabs, cards, bars, chart, settings) with AppKit
-pricing.py                   API price table and the estimated-cost math
-limits.py                    plan limits and when to send a usage alert
-claude_usage.py              Claude Code's limit percentages, from Anthropic
-notifications.py             macOS notifications (UNUserNotificationCenter)
-version.py                   app name, version number and credits
-updater.py                   Check for Updates: lists newer GitHub releases, installs the newest if you say so
-active_sessions.py           matches running `claude` processes to their sessions
-plugins.py                   enabled Claude Code plugins and what each did in open sessions
-leaderboard.py               Leaderboard (Beta) -- local friends-list storage and sorting
-gist_sync.py                 Leaderboard (Beta) -- Keychain token storage + GitHub Gist API calls
-build_app.py                 builds "Claude Tracker.app" (launcher, a copy of Python, Info.plist, icon) for Applications
-single_instance.py           keeps one copy running; opening it again shows the running copy's panel
+Sources/TrackerCore/         the app's logic, plain Swift with no AppKit, so it can be tested
+  TokenMath.swift            reads Claude Code's jsonl logs and does the token accounting
+  UsageStats.swift           per-day buckets and the breakdown / model / project / history views
+  Day.swift                  calendar days, the keys of those buckets
+  CodexSource.swift          reads Codex usage from its session logs
+  OpencodeSource.swift       reads opencode usage from its database (read-only)
+  GeminiSource.swift         reads Gemini CLI usage from its saved chat sessions
+  Tools.swift                the supported tools, detection, scanning, per-tool and combined views
+  Providers.swift            OpenAI / DeepSeek / Kimi: which models are theirs, provider views
+  Accounts.swift             optional provider API keys (Keychain) and account usage/balance fetching
+  ToolIconSource.swift       where each tool's or provider's icon is found on this Mac
+  PanelModel*.swift          what each panel tab shows, as plain data
+  PanelItems.swift           the kinds of thing a panel tab can hold (tiles, bars, rows, buttons...)
+  PanelLayout.swift          the panel's sizes and the arithmetic behind them
+  PanelSpeeds.swift          the panel's unfold/fold animation speeds
+  AppState.swift             settings added to state.json on launch, and the menu bar's text
+  Pricing.swift              API price table and the estimated-cost math
+  Limits.swift               plan limits and when to send a usage alert
+  ClaudeUsage.swift          Claude Code's limit percentages, from Anthropic
+  Notifications.swift        when and what to notify, and what to do if macOS won't show it
+  Version.swift              app name, version number and credits
+  Updater.swift              Check for Updates: lists newer GitHub releases, installs the newest if you say so
+  ActiveSessions.swift       matches running `claude` processes to their sessions
+  Plugins.swift              enabled Claude Code plugins and what each did in open sessions
+  Leaderboard.swift          Leaderboard (Beta) -- local friends-list storage and sorting
+  GistSync.swift             Leaderboard (Beta) -- Keychain token storage + GitHub Gist API calls
+  LoginItem.swift            start at login, through the LaunchAgent
+  InstanceLock.swift         the lock file that keeps one copy running
+  JSON.swift                 reading and writing state.json's JSON, keeping keys it doesn't know
+Sources/ClaudeTracker/       the menu bar app itself (AppKit and SwiftUI)
+  main.swift                 starts the app
+  Panel/                     draws the panel and the Settings window (tabs, cards, bars, chart, controls, dialogs)
+  Notifier.swift             macOS notifications (UNUserNotificationCenter)
+  ToolIcons.swift            turns each tool's icon into a menu bar image (or draws a monogram)
+  SingleInstance.swift       keeps one copy running; opening it again shows the running copy's panel
+  PanelPreview.swift         sample panel data for checking the panel by eye
+Tests/TrackerCoreTests/      tests for the logic in the files above
+Resources/AppIcon.icns       the app's icon
+build.sh                     compiles the app and builds "Claude Tracker.app" (Info.plist, icon, signature) for Applications
+build_app.py                 runs build.sh for updates from 2.5.0 (the Python version); removed in a later release
 install.sh / uninstall.sh    build the app and set up start-at-login / remove both
-tests/                       pytest suite for the logic in the modules above
+test.sh                      runs the tests
 ```
 
 ## Requirements
 
-- macOS
-- Python 3.9+
+- macOS 13 or newer
+- Xcode's Command Line Tools, for Swift 5.9 or newer (`xcode-select --install`)
 
 ## Running the tests
 
 ```bash
-pip install pytest
-pytest
+./test.sh
+```
+
+The tests need Swift 6 (current Command Line Tools). One test compiles the whole app into a temporary folder, so it only runs when asked:
+
+```bash
+CT_SLOW_TESTS=1 ./test.sh
 ```
 
 ## License
