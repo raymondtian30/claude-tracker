@@ -206,16 +206,35 @@ public enum Updater {
         }
     }
 
+    /// The commit the project folder is on, to undo an update that won't
+    /// build. (Not ORIG_HEAD: it's left over from an older update when the
+    /// merge has nothing to do.)
+    public static func currentCommit(_ projectDir: String, run: Subprocess.Runner = Subprocess.run) -> String? {
+        let head = git(run, projectDir, "rev-parse", "HEAD")
+        let commit = head.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return head.status == 0 && !commit.isEmpty ? commit : nil
+    }
+
     /// Rebuild "Claude Tracker.app" from the updated code, where it is now:
     /// `<project>/build.sh --dest <bundleDir>`.
+    ///
+    /// If it doesn't build (say a release needs a newer Swift than this Mac
+    /// has), the update is undone with `git reset --keep <undoTo>`, the
+    /// commit the folder was on before `installRelease` (see
+    /// `currentCommit`), so the folder matches the app that's still running.
+    /// build.sh only replaces the app once a build succeeds, so that app is
+    /// untouched.
     public static func rebuildBundle(_ bundleDir: String, run: Subprocess.Runner = Subprocess.run,
-                                     projectDir: String) throws {
+                                     projectDir: String, undoTo: String? = nil) throws {
         let script = URL(fileURLWithPath: projectDir).appendingPathComponent("build.sh").path
         let built = run([script, "--dest", bundleDir], nil)
-        if built.status != 0 {
-            throw UpdateError("The update was downloaded, but rebuilding the app failed. "
-                              + "Run ./install.sh to finish.")
+        guard built.status != 0 else { return }
+        if let undoTo = undoTo, git(run, projectDir, "reset", "--keep", undoTo).status == 0 {
+            throw UpdateError("The update couldn't be built on this Mac, so it was undone. "
+                              + "Nothing changed: you're still on the version you had.")
         }
+        throw UpdateError("The update was downloaded, but rebuilding the app failed. "
+                          + "Run ./install.sh to finish.")
     }
 
     /// A shell command that waits for `pid` to quit, then starts the app

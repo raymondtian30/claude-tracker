@@ -103,10 +103,26 @@ extension AppController {
         guard let gistID = Dialogs.ask(title: "Add Friend",
                                        message: "Paste your friend's Gist ID (their friend code):",
                                        ok: "Add", cancel: "Cancel")?
-                .trimmingCharacters(in: .whitespacesAndNewlines), !gistID.isEmpty,
-              let friends = AppState.addingFriend(loadFriends(), gistID: gistID)
+                .trimmingCharacters(in: .whitespacesAndNewlines), !gistID.isEmpty
         else { return }
-        attempt("save \(files.friends.path)") { try Leaderboard.saveFriends(friends, files.friends) }
+        // Read, change and write friends.json on the leaderboard queue, like
+        // a pull does: done here on the main thread, a pull already running
+        // would save its older copy over the new friend.
+        let file = files.friends
+        inBackground(on: leaderboardQueue, { () -> String? in
+            guard let friends = AppState.addingFriend(Self.loadFriends(file, log: { _ in }), gistID: gistID)
+            else { return nil }
+            do {
+                try Leaderboard.saveFriends(friends, file)
+                return nil
+            } catch {
+                return "Couldn't save \(file.path): \(error)"
+            }
+        }, then: { [weak self] problem in
+            if let problem = problem {
+                self?.log(problem)
+            }
+        })
         pullLeaderboardUpdates()
     }
 

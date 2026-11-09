@@ -75,16 +75,17 @@ final class AppController {
 
         panel.animationSeconds = PanelSpeeds.animationSeconds(state.string("panel_animation"))
         panel.attach(statusItem)
+        panel.onWillShow = { [weak self] in self?.renderPanel() }
         renderPanel()
         updateTitle()
         // Opening the app again (e.g. from Finder) asks this copy to show its panel.
         showObserver = SingleInstance.observeShowRequests { [weak self] in
-            MainActor.assumeIsolated { self?.panel.show() }
+            onMain { self?.panel.show() }
         }
         if !JSON.truthy(state["onboarding_done"]) {
             // First run: ask which tools to track, once the menu bar item is up.
             DispatchQueue.main.async { [weak self] in
-                MainActor.assumeIsolated { self?.panel.show() }
+                onMain { self?.panel.show() }
             }
         }
         startTimer(seconds: state.int("scan_interval_seconds") ?? AppState.refreshSeconds)
@@ -107,13 +108,17 @@ final class AppController {
         fetchClaudeUsage()
         updateTitle()
         runDailyLeaderboardSync()
-        renderPanel()
+        // Redrawing re-reads open sessions' logs and rebuilds every view, so
+        // only do it for what's on screen; the panel redraws when it opens.
+        if panel.isShown || settingsWindow.isShown {
+            renderPanel()
+        }
     }
 
     private func startTimer(seconds: Int) {
         timer?.invalidate()
         let timer = Timer(timeInterval: TimeInterval(seconds), repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refresh() }
+            onMain { self?.refresh() }
         }
         // The default mode only, as rumps' timers: no scan while a dialog is open.
         RunLoop.main.add(timer, forMode: .default)
@@ -208,7 +213,7 @@ final class AppController {
     /// that's done, since acting redraws (replaces) the control.
     private func handleLater(_ action: String, _ value: ActionValue) {
         DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated { self?.handle(action, value) }
+            onMain { self?.handle(action, value) }
         }
     }
 
@@ -347,7 +352,7 @@ final class AppController {
         queue.async {
             let result = UncheckedBox(box.value.0())
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { box.value.1(result.value) }
+                onMain { box.value.1(result.value) }
             }
         }
     }

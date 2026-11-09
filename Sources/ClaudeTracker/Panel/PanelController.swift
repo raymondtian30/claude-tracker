@@ -44,6 +44,9 @@ final class PanelController: NSObject {
     var animationTimer: AnyObject?
 
     var selected: String { selection.selected }
+    /// Called just before the panel opens, so the app can draw fresh data
+    /// then instead of on every scan while nobody's looking.
+    var onWillShow: (() -> Void)?
 
     init(onAction: @escaping ActionHandler, onTabChange: ((String) -> Void)? = nil,
          selectedTab: String = "overview") {
@@ -92,6 +95,7 @@ final class PanelController: NSObject {
         if popover.isShown {
             close(animated: true)
         } else {
+            onWillShow?()
             show(retriesLeft: 3)
         }
     }
@@ -99,6 +103,7 @@ final class PanelController: NSObject {
     /// Open the panel if it isn't already open.
     func show() {
         if button != nil && !popover.isShown {
+            onWillShow?()
             show(retriesLeft: 3)
         }
     }
@@ -160,12 +165,12 @@ final class PanelController: NSObject {
         // Global monitors only see clicks in other apps, so any click here
         // is outside the panel.
         let outside = NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] _ in
-            MainActor.assumeIsolated { self?.close(animated: true) }
+            onMain { self?.close(animated: true) }
         }
         // A click in this app's own windows (e.g. Settings) is outside too.
         let inApp = NSEvent.addLocalMonitorForEvents(matching: clicks) { [weak self] event in
             let window = event.window
-            MainActor.assumeIsolated {
+            onMain {
                 if let self = self, self.clickCloses(window) {
                     self.close(animated: true)
                 }
@@ -175,7 +180,7 @@ final class PanelController: NSObject {
         let escape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let isEsc = event.keyCode == 53
             let window = event.window
-            let closed = MainActor.assumeIsolated { () -> Bool in
+            let closed = onMain { () -> Bool in
                 guard let self = self, isEsc, window === self.root.window else { return false }
                 self.close(animated: true)
                 return true

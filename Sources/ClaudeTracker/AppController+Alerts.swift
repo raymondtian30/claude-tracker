@@ -18,8 +18,8 @@ extension AppController {
     func sendTestAlert() {
         notifier.sendChecked(
             "Test alert: this is how usage alerts look.",
-            onBlocked: { [weak self] in MainActor.assumeIsolated { self?.notificationsBlocked() } },
-            onNoBanners: { [weak self] in MainActor.assumeIsolated { self?.bannersOff() } })
+            onBlocked: { [weak self] in onMain { self?.notificationsBlocked() } },
+            onNoBanners: { [weak self] in onMain { self?.bannersOff() } })
     }
 
     private func notificationsBlocked() {

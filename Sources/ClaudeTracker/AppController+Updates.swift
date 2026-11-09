@@ -65,8 +65,9 @@ extension AppController {
         let bundleDir = bundlePath.deletingLastPathComponent().path
         inBackground({ () -> UpdateOutcome in
             do {
+                let before = Updater.currentCommit(projectDir)
                 try Updater.installRelease(tag, projectDir: projectDir)
-                try Updater.rebuildBundle(bundleDir, projectDir: projectDir)
+                try Updater.rebuildBundle(bundleDir, projectDir: projectDir, undoTo: before)
                 return .updated(tag: tag)
             } catch {
                 return .failure(error)

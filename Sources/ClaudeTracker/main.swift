@@ -28,7 +28,7 @@ let app = NSApplication.shared
 // Accessory policy = menu-bar only: no Dock icon, no app menu, not in Cmd-Tab.
 app.setActivationPolicy(.accessory)
 
-let controller = MainActor.assumeIsolated { () -> AppController in
+let controller = onMain { () -> AppController in
     let controller = AppController(files: files)
     controller.start()
     return controller

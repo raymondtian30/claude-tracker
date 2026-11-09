@@ -26,8 +26,12 @@ extension PanelController {
     }
 
     @objc func animationStep() {
-        guard let animation = animation, animationSeconds > 0 else { return }
-        let progress = (ProcessInfo.processInfo.systemUptime - animation.start) / animationSeconds
+        guard let animation = animation else { return }
+        // Animation turned Off mid-way (from Settings, while open): jump to
+        // the end, or the step would never finish and the link would run on.
+        let progress = animationSeconds > 0
+            ? (ProcessInfo.processInfo.systemUptime - animation.start) / animationSeconds
+            : 1
         let height: CGFloat
         if animation.unfolding {
             // Unfold towards the current full height, which can change if

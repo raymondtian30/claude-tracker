@@ -250,10 +250,6 @@ private let RELEASES: [JSONObject] = [  // as GitHub lists them: newest first
 
     #expect(calls == [["/Users/me/claude-tracker/build.sh", "--dest", "/Applications"]])
 
-    expectUpdateError("rebuilding the app failed") {
-        try Updater.rebuildBundle("/Applications", run: { _, _ in Subprocess.Result(status: 1) },
-                                  projectDir: "/p")
-    }
 }
 
 // Not in the Python tests: shlex.quote's rules and the releases request.
@@ -275,4 +271,38 @@ private let RELEASES: [JSONObject] = [  // as GitHub lists them: newest first
     #expect(request.timeoutInterval == 20)
     #expect(request.value(forHTTPHeaderField: "Accept") == "application/vnd.github+json")
     #expect(request.value(forHTTPHeaderField: "User-Agent") == "ClaudeTracker/\(Version.version)")
+}
+
+// Not in the Python tests: a release that doesn't build here is undone, so
+// the folder matches the app that's still running.
+@Test func failedRebuildUndoesTheUpdate() {
+    var calls: [[String]] = []
+    expectUpdateError("couldn't be built on this Mac, so it was undone") {
+        try Updater.rebuildBundle("/Applications", run: { args, _ in
+            calls.append(args)
+            return Subprocess.Result(status: args.first == "git" ? 0 : 1)
+        }, projectDir: "/p", undoTo: "abc123")
+    }
+    #expect(calls == [["/p/build.sh", "--dest", "/Applications"],
+                      ["git", "-C", "/p", "reset", "--keep", "abc123"]])
+}
+
+@Test func currentCommitReadsHead() {
+    var calls: [[String]] = []
+    let commit = Updater.currentCommit("/p", run: { args, _ in
+        calls.append(args)
+        return Subprocess.Result(status: 0, stdout: "abc123\n")
+    })
+    #expect(commit == "abc123")
+    #expect(calls == [["git", "-C", "/p", "rev-parse", "HEAD"]])
+    #expect(Updater.currentCommit("/p", run: { _, _ in Subprocess.Result(status: 128) }) == nil)
+}
+
+@Test func failedRebuildThatCantBeUndoneSaysSo() {
+    for undoTo in [nil, "abc123"] {  // nothing to undo to, or the undo fails
+        expectUpdateError("Run ./install.sh to finish") {
+            try Updater.rebuildBundle("/Applications", run: { _, _ in Subprocess.Result(status: 1) },
+                                      projectDir: "/p", undoTo: undoTo)
+        }
+    }
 }
