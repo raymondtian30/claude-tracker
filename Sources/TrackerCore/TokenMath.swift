@@ -41,19 +41,21 @@ public enum TokenMath {
     public static func sumUsageSince(_ path: String, offset: Int, stopAt: Int? = nil,
                                      onEntry: (JSONObject) -> Void = { _ in }) throws
         -> (tokens: Int, newOffset: Int) {
-        let data = try readBytes(path, from: offset, upTo: stopAt)
         var tokens = 0
-        var consumed = 0
-        for line in completeLines(data) {
-            consumed += line.count
-            guard let entry = JSON.parseObject(line), entry.string("type") == "assistant" else {
-                continue
+        // Line by line, each in its own autorelease pool: parsing leaves a
+        // lot of temporary objects that otherwise pile up until this whole
+        // read is over, which for months of logs was over a gigabyte.
+        let consumed = try forEachCompleteLine(path, from: offset, upTo: stopAt) { line in
+            autoreleasepool {
+                guard let entry = JSON.parseObject(line), entry.string("type") == "assistant" else {
+                    return
+                }
+                onEntry(entry)
+                guard let usage = entry.object("message")?.object("usage"), !usage.isEmpty else {
+                    return
+                }
+                tokens += usageTokens(usage)
             }
-            onEntry(entry)
-            guard let usage = entry.object("message")?.object("usage"), !usage.isEmpty else {
-                continue
-            }
-            tokens += usageTokens(usage)
         }
         return (tokens, offset + consumed)
     }
@@ -85,15 +87,66 @@ public enum TokenMath {
             + (usage.int("cache_read_input_tokens") ?? 0)
     }
 
-    /// The bytes of `path` from `offset` to `stopAt` (or the end).
-    static func readBytes(_ path: String, from offset: Int, upTo stopAt: Int?) throws -> Data {
-        let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
-        defer { try? handle.close() }
-        try handle.seek(toOffset: UInt64(Swift.max(offset, 0)))
-        if let stopAt = stopAt {
-            return try handle.read(upToCount: Swift.max(stopAt - offset, 0)) ?? Data()
+    /// Calls `body` with each complete line of `path` from byte `offset` to
+    /// `stopAt` (or the end), reading `chunk` bytes at a time so a log of
+    /// hundreds of megabytes never sits in memory whole. Lines are the same as
+    /// `completeLines` gives (see it for the rules); returns the bytes they
+    /// take, which is how far to move the saved offset.
+    @discardableResult
+    static func forEachCompleteLine(_ path: String, from offset: Int, upTo stopAt: Int?,
+                                    chunk: Int = 1 << 20, _ body: (Data) -> Void) throws -> Int {
+        // Plain read(2) into one buffer that is reused: FileHandle hands back a
+        // new object for every piece, and those were not being released.
+        let descriptor = open(path, O_RDONLY)
+        guard descriptor >= 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
         }
-        return try handle.readToEnd() ?? Data()
+        defer { close(descriptor) }
+        guard lseek(descriptor, off_t(Swift.max(offset, 0)), SEEK_SET) >= 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        var remaining = stopAt.map { Swift.max($0 - offset, 0) }
+        var buffer = [UInt8](repeating: 0, count: Swift.max(chunk, 1))
+        var pending = [UInt8]()  // read but not yet a whole line
+        var consumed = 0
+        while remaining != 0 {
+            let want = Swift.min(buffer.count, remaining ?? buffer.count)
+            let count = buffer.withUnsafeMutableBytes { read(descriptor, $0.baseAddress, want) }
+            if count < 0 {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+            }
+            if count == 0 {
+                break
+            }
+            if let left = remaining {
+                remaining = left - count
+            }
+            pending.append(contentsOf: buffer[0..<count])
+            var start = 0
+            var index = 0
+            while index < pending.count {
+                let byte = pending[index]
+                if byte == 0x0A {
+                    body(Data(pending[start...index]))
+                    consumed += index - start + 1
+                    start = index + 1
+                } else if byte == 0x0D {
+                    if index + 1 >= pending.count {
+                        break  // the next piece says whether it's "\r\n"
+                    }
+                    if pending[index + 1] != 0x0A {
+                        return consumed  // a lone "\r": the line isn't complete
+                    }
+                    index += 1
+                    body(Data(pending[start...index]))
+                    consumed += index - start + 1
+                    start = index + 1
+                }
+                index += 1
+            }
+            pending.removeFirst(start)
+        }
+        return consumed
     }
 
     /// The lines of `data` with their line endings, up to the first one that

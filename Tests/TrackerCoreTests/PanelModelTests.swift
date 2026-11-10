@@ -637,16 +637,16 @@ private func effortTabs(_ entries: [(model: String, effort: String?, tokens: Int
 
     let items = itemsOf(tabs["models"]!)
 
-    #expect(items.contains(.bar(label: "gpt-5.6-luna (MEDIUM)", value: "100 · 50%", fraction: 0.5)))
-    #expect(items.contains(.bar(label: "Opus 5.5 (HIGH)", value: "60 · 30%", fraction: 0.3)))
-    #expect(items.contains(.bar(label: "Opus 5.5 (XHIGH)", value: "40 · 20%", fraction: 0.2)))
+    #expect(items.contains(.bar(label: "gpt-5.6-luna (Medium)", value: "100 · 50%", fraction: 0.5)))
+    #expect(items.contains(.bar(label: "Opus 5.5 (High)", value: "60 · 30%", fraction: 0.3)))
+    #expect(items.contains(.bar(label: "Opus 5.5 (Xhigh)", value: "40 · 20%", fraction: 0.2)))
     #expect(!items.contains { if case let .bar(label, _, _, _, _) = $0 { return label == "Opus 5.5" } else { return false } })
     // Within a model, the larger effort comes first.
     let labels = items.compactMap { item -> String? in
         if case let .bar(label, _, _, _, _) = item { return label } else { return nil }
     }
-    let high = labels.firstIndex(of: "Opus 5.5 (HIGH)")!
-    #expect(high < labels.firstIndex(of: "Opus 5.5 (XHIGH)")!)
+    let high = labels.firstIndex(of: "Opus 5.5 (High)")!
+    #expect(high < labels.firstIndex(of: "Opus 5.5 (Xhigh)")!)
 }
 
 @Test func effortSumIsClampedToTheModelTotal() {
@@ -657,8 +657,8 @@ private func effortTabs(_ entries: [(model: String, effort: String?, tokens: Int
 
     let items = itemsOf(tabs["models"]!)
 
-    #expect(items.contains(.bar(label: "Opus 5.5 (HIGH)", value: "100 · 100%", fraction: 1.0)))
-    #expect(!items.contains { if case let .bar(label, _, _, _, _) = $0 { return label.contains("LOW") || label == "Opus 5.5" } else { return false } })
+    #expect(items.contains(.bar(label: "Opus 5.5 (High)", value: "100 · 100%", fraction: 1.0)))
+    #expect(!items.contains { if case let .bar(label, _, _, _, _) = $0 { return label.contains("Low") || label == "Opus 5.5" } else { return false } })
 }
 
 @Test func remainderRowOnlyWhenPositive() {
@@ -666,7 +666,7 @@ private func effortTabs(_ entries: [(model: String, effort: String?, tokens: Int
 
     let items = itemsOf(tabs["models"]!)
 
-    #expect(items.contains(.bar(label: "Opus 5.5 (HIGH)", value: "70 · 70%", fraction: 0.7)))
+    #expect(items.contains(.bar(label: "Opus 5.5 (High)", value: "70 · 70%", fraction: 0.7)))
     #expect(items.contains(.bar(label: "Opus 5.5", value: "30 · 30%", fraction: 0.3)))
 }
 

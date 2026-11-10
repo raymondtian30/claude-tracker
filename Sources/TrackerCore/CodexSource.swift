@@ -36,7 +36,7 @@ public enum CodexSource {
     /// still being written (no newline yet) is left for the next scan.
     static func completeEntries(_ path: String) throws -> [JSONObject] {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        return TokenMath.completeLines(data).compactMap { JSON.parseObject($0) }
+        return TokenMath.completeLines(data).compactMap { line in autoreleasepool { JSON.parseObject(line) } }
     }
 
     /// This file's per-day buckets. Counts per-response usage records
