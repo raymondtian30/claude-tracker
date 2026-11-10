@@ -61,7 +61,7 @@ A panel opens with a row of tabs along the top. It always opens on **Overview**;
 - **Estimated API Cost** -- what your usage would cost at Anthropic's pay-as-you-go API prices. Just for fun: a Pro or Max subscription is flat-rate, so you aren't billed this. Prices live in `Sources/TrackerCore/Pricing.swift` and will drift over time.
 - **Usage Limits** -- how much of your plan's limits you've used, and when to be notified (see [Usage limits and alerts](#usage-limits-and-alerts))
 - **Active Sessions** -- two sections:
-  - **Sessions:** every Claude Code terminal you currently have open, how many tokens each one has used, and tags for the plugins running in it (crossed out if that project turns a plugin off)
+  - **Sessions:** the Claude Code terminals and chats you currently have open, one row per folder ("~/app · 3 sessions" when several run in the same one, such as each chat in VS Code), with the tokens they have used and tags for the plugins running there (crossed out if that project turns a plugin off)
   - **Plugins:** every Claude Code plugin you have enabled, how many open sessions run it, the last thing it did (ran a skill, started an agent, used an MCP tool, ran a hook, added context to your prompt) and how often today. Two installs of a plugin with the same name can't be told apart in the logs, so their activity is shown on the first one in your settings
 - **Leaderboard (Beta)** -- hidden unless you turn it on in Settings; see below, this one's still a work in progress
 

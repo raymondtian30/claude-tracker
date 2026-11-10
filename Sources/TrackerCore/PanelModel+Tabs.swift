@@ -444,11 +444,35 @@ extension PanelModel {
     /// `plugins` is given: Claude Code's view or All AIs) what each plugin did.
     static func sessionsTab(_ view: Tools.View, _ sessions: [ActiveSessions.Session],
                             plugins: [Plugins.Row]? = nil, now: Double? = nil) -> Tab {
-        var items = [Item]()
+        // One row per folder: several processes can run in one (each Claude
+        // Code chat in VS Code, and the helpers it starts), and their rows
+        // were the same line again and again. The first seen keeps its place
+        // (the list is most tokens first), the tokens add up, and the plugin
+        // tags show once each.
+        var order = [String]()
+        var groups = [String: [ActiveSessions.Session]]()
         for session in sessions {
-            items.append(.row(label: session.label,
-                              value: session.tokens.map(TokenMath.formatCount) ?? "running"))
-            let tags = (session.plugins ?? []).map { Item.Tag($0.name, $0.runs) }
+            let key = session.cwd ?? session.label
+            if groups[key] == nil {
+                order.append(key)
+            }
+            groups[key, default: []].append(session)
+        }
+        var items = [Item]()
+        for key in order {
+            let group = groups[key] ?? []
+            let counted = group.compactMap(\.tokens)
+            let label = group.count > 1 ? "\(group[0].label) · \(group.count) sessions" : group[0].label
+            items.append(.row(label: label,
+                              value: counted.isEmpty ? "running" : TokenMath.formatCount(counted.reduce(0, +))))
+            var tags = [Item.Tag]()
+            for tag in group.flatMap({ $0.plugins ?? [] }) {
+                if let index = tags.firstIndex(where: { $0.text == tag.name }) {
+                    tags[index].isOn = tags[index].isOn || tag.runs
+                } else {
+                    tags.append(Item.Tag(tag.name, tag.runs))
+                }
+            }
             items += tagLines(tags).map { .tags($0) }
         }
         if items.isEmpty {

@@ -336,3 +336,57 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
 
     #expect(planItems(tab)[0] == .bar(label: "Claude Code (Daily · Fable)", value: "50%", fraction: 0.5))
 }
+
+// One row per folder: several Claude Code processes can run in the same one
+// (each chat in VS Code, and the helpers it starts).
+
+private func sessionRows(_ sessions: [ActiveSessions.Session]) -> [Item] {
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), sessions, plugins: nil, now: 0)
+    return tab.cards[0].items
+}
+
+@Test func sessionsInOneFolderShareOneRow() {
+    let sessions = [
+        ActiveSessions.Session(label: "~/proj", tokens: 1500, cwd: "/Users/me/proj", log: "a",
+                               plugins: [Plugins.Tag("superpowers", true), Plugins.Tag("caveman", false)]),
+        ActiveSessions.Session(label: "~/proj", tokens: 500, cwd: "/Users/me/proj", log: "b",
+                               plugins: [Plugins.Tag("caveman", true), Plugins.Tag("egm", false)]),
+        ActiveSessions.Session(label: "~/proj", tokens: nil, cwd: "/Users/me/proj"),
+        ActiveSessions.Session(label: "~/other", tokens: 100, cwd: "/Users/me/other"),
+    ]
+
+    let items = sessionRows(sessions)
+
+    #expect(items.filter { if case .row = $0 { return true } else { return false } }
+            == [.row(label: "~/proj · 3 sessions", value: "2.0K"), .row(label: "~/other", value: "100")])
+    // The tags of the folder's sessions, once each; one that runs anywhere runs.
+    var tags = [Item.Tag]()
+    for item in items {
+        if case let .tags(line) = item { tags += line }
+    }
+    #expect(tags.map { $0.text } == ["superpowers", "caveman", "egm"])
+    #expect(tags.first { $0.text == "caveman" }?.isOn == true)
+}
+
+@Test func theSessionCountStillCountsEveryProcess() {
+    let sessions = (0..<5).map { _ in ActiveSessions.Session(label: "~/p", tokens: nil, cwd: "/p") }
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), sessions, plugins: nil, now: 0)
+
+    #expect(tab.cards[0].title == "Sessions (5)")
+    #expect(tab.cards[0].items == [.row(label: "~/p · 5 sessions", value: "running")])
+}
+
+@Test func aLoneSessionIsUnchanged() {
+    let items = sessionRows([ActiveSessions.Session(label: "~/p", tokens: nil, cwd: "/p")])
+
+    #expect(items == [.row(label: "~/p", value: "running")])
+}
+
+@Test func sessionsWithoutAFolderAreGroupedByLabel() {
+    // Codex and opencode rows have a label only.
+    let items = sessionRows([ActiveSessions.Session(label: "~/g", tokens: nil),
+                             ActiveSessions.Session(label: "~/g", tokens: nil),
+                             ActiveSessions.Session(label: "~/h", tokens: nil)])
+
+    #expect(items == [.row(label: "~/g · 2 sessions", value: "running"), .row(label: "~/h", value: "running")])
+}
