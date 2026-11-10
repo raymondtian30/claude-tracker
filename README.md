@@ -129,7 +129,7 @@ This removes it from starting at login and deletes **Claude Tracker** from your 
 
 ## Version and credits
 
-Current version: **3.1.1**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
+Current version: **3.2.0**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
 
 - Original app by Brody Kretz ([BrodyKretz](https://github.com/BrodyKretz/claude-token-counter))
 - Redesign, new features and the Swift rewrite by Raymond Tian ([raymondtian30](https://github.com/raymondtian30/claude-tracker))
