@@ -410,3 +410,80 @@ private func sessionRows(_ sessions: [ActiveSessions.Session]) -> [Item] {
 
     #expect(items == [.row(label: "g · 2 sessions", value: "running"), .row(label: "h", value: "running")])
 }
+
+// MARK: - Stop and Quit for each Claude process
+
+private func claudeTab(_ sessions: [ActiveSessions.Session]) -> Tab {
+    PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), sessions, plugins: nil, now: 0)
+}
+
+private func button(_ title: String, _ icon: String, _ action: String) -> Item.Button {
+    Item.Button(title, icon, action)
+}
+
+@Test func eachClaudeProcessGetsItsOwnCardWithStopAndQuit() {
+    let tab = claudeTab([
+        ActiveSessions.Session(label: "~/a/app", tokens: 1500, cwd: "/Users/me/a/app", log: "x",
+                               plugins: [Plugins.Tag("caveman", true)], pid: 42),
+        ActiveSessions.Session(label: "~/a/app", tokens: 500, cwd: "/Users/me/a/app", log: "y", pid: 43, stopped: true),
+    ])
+
+    expectWellFormed(tab)
+    #expect(tab.cards.count == 3)
+    #expect(tab.cards[0].title == "Sessions (2)")
+    #expect(tab.cards[0].items == [.buttons([button("Stop all", "pause.circle", "sessions_stop_all"),
+                                             button("Resume all", "play.circle", "sessions_resume_all")])])
+    #expect(tab.cards[1].title == nil)
+    #expect(tab.cards[1].items == [
+        .row(label: "app", value: "1.5K"),
+        .note("Process 42 · running"),
+        .tags([Item.Tag("caveman", true)]),
+        .buttons([button("Stop", "pause.circle", "session_stop:42"), button("Quit", "xmark.circle", "session_quit:42")]),
+    ])
+    #expect(tab.cards[2].items == [
+        .row(label: "app", value: "500"),
+        .note("Process 43 · paused"),
+        .buttons([button("Resume", "play.circle", "session_resume:43"), button("Quit", "xmark.circle", "session_quit:43")]),
+    ])
+}
+
+@Test func resumeAllOnlyShowsWhenSomethingIsPaused() {
+    let tab = claudeTab([ActiveSessions.Session(label: "~/p", tokens: nil, cwd: "/p", log: "x", pid: 7)])
+
+    #expect(tab.cards[0].items == [.buttons([button("Stop all", "pause.circle", "sessions_stop_all")])])
+    #expect(tab.cards[1].items.first == .row(label: "p", value: "running"))
+}
+
+@Test func foldersWithOneNameShowTheirParentOnProcessCards() {
+    let tab = claudeTab([
+        ActiveSessions.Session(label: "~/a/app", tokens: 2, cwd: "/Users/me/a/app", log: "x", pid: 1 + 1),
+        ActiveSessions.Session(label: "~/b/app", tokens: 1, cwd: "/Users/me/b/app", log: "y", pid: 3),
+    ])
+
+    #expect(tab.cards[1].items.first == .row(label: "app · a", value: "2"))
+    #expect(tab.cards[2].items.first == .row(label: "app · b", value: "1"))
+}
+
+@Test func sessionsWithNoProcessKeepTheirGroupedRowsInTheSummary() {
+    let tab = claudeTab([
+        ActiveSessions.Session(label: "~/a", tokens: 5, cwd: "/Users/me/a", log: "x", pid: 9),
+        ActiveSessions.Session(label: "~/g", tokens: nil),
+        ActiveSessions.Session(label: "~/g", tokens: nil),
+    ])
+
+    #expect(tab.cards[0].title == "Sessions (3)")
+    #expect(tab.cards[0].items == [.buttons([button("Stop all", "pause.circle", "sessions_stop_all")]),
+                                   .row(label: "g · 2 sessions", value: "running")])
+    #expect(tab.cards.count == 2)  // and one card for the process
+}
+
+@Test func theSameFolderSeenTwoWaysIsNotTwoFolders() {
+    // A Claude process knows its folder's path; another tool's row only its label.
+    let tab = claudeTab([
+        ActiveSessions.Session(label: "~/Desktop/app", tokens: 5, cwd: "/Users/me/Desktop/app", log: "x", pid: 9),
+        ActiveSessions.Session(label: "~/Desktop/app", tokens: nil),
+    ])
+
+    #expect(tab.cards[0].items.contains(.row(label: "app", value: "running")))
+    #expect(tab.cards[1].items.first == .row(label: "app", value: "5"))
+}

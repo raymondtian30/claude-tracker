@@ -42,6 +42,12 @@ public enum AppAction: Equatable {
     case scanInterval(seconds: Int)
     case login(Bool)
     case projectsExpand
+    // Live tab: pause, carry on, or end a Claude Code session's process
+    case sessionStop(Int32)
+    case sessionResume(Int32)
+    case sessionQuit(Int32)
+    case sessionsStopAll
+    case sessionsResumeAll
     case showEffort(Bool)
     case chartDays(Int)
     case chartAll
@@ -102,6 +108,8 @@ public enum AppAction: Equatable {
         case "login": return .login(isOn)
         case "leaderboard_enabled": return .leaderboardEnabled(isOn)
         case "projects_expand": return .projectsExpand
+        case "sessions_stop_all": return .sessionsStopAll
+        case "sessions_resume_all": return .sessionsResumeAll
         case "show_effort": return .showEffort(isOn)
         case "chart_days":
             // The day counts, then "All", then "Custom".
@@ -131,6 +139,9 @@ public enum AppAction: Equatable {
         // Only providers with an account API have a key.
         case "provider_key" where Accounts.keyHelp[argument] != nil: return .providerKey(argument)
         case "provider_key_remove" where Accounts.keyHelp[argument] != nil: return .providerKeyRemove(argument)
+        case "session_stop": return processID(argument).map(AppAction.sessionStop)
+        case "session_resume": return processID(argument).map(AppAction.sessionResume)
+        case "session_quit": return processID(argument).map(AppAction.sessionQuit)
         case "provider" where Providers.providerNames[argument] != nil: return .provider(key: argument, on: isOn)
         case "alert_window": return .alertWindow(window: argument, on: isOn)
         case "toggle_row" where !argument.isEmpty: return .toggleRow(id: argument)
@@ -138,6 +149,15 @@ public enum AppAction: Equatable {
         case "tool": return .tool(key: argument, on: isOn)
         default: return nil
         }
+    }
+
+    /// A process id to signal: plain digits, above 1 (0, 1 and negative ids mean
+    /// every process, launchd or a whole group).
+    private static func processID(_ text: String) -> Int32? {
+        guard !text.isEmpty, text.allSatisfy(\.isASCII), text.allSatisfy(\.isNumber),
+              let pid = Int32(text), pid > 1
+        else { return nil }
+        return pid
     }
 
     /// `options[index]` for a popup or segmented control's pick.
@@ -149,7 +169,7 @@ public enum AppAction: Equatable {
     /// Dialogs can't sit on top of the popover, so these close it first.
     public var opensDialog: Bool {
         switch self {
-        case .leaderboardSetup, .leaderboardShare, .leaderboardAdd, .providerKey, .providerKeyRemove:
+        case .leaderboardSetup, .leaderboardShare, .leaderboardAdd, .providerKey, .providerKeyRemove, .sessionQuit:
             return true
         default:
             return false

@@ -61,7 +61,7 @@ A panel opens with a row of tabs along the top. It always opens on **Overview**;
 - **Estimated API Cost** -- what your usage would cost at Anthropic's pay-as-you-go API prices. Just for fun: a Pro or Max subscription is flat-rate, so you aren't billed this. Prices live in `Sources/TrackerCore/Pricing.swift` and will drift over time.
 - **Usage Limits** -- how much of your plan's limits you've used, and when to be notified (see [Usage limits and alerts](#usage-limits-and-alerts))
 - **Active Sessions** -- two sections:
-  - **Sessions:** the Claude Code terminals and chats you currently have open, one row per folder, showing just the folder's name ("app · 3 sessions" when several run in the same one, such as each chat in VS Code; two folders with one name also show their parent), with the tokens they have used and tags for the plugins running there (crossed out if that project turns a plugin off)
+  - **Sessions:** every Claude Code process you have open (each terminal, and each chat in VS Code with the helpers it starts) gets a card of its own: the folder's name (two folders with one name also show their parent), the tokens used, its process number, tags for the plugins running there (crossed out if that project turns a plugin off), and two buttons. **Stop** pauses that process (nothing is lost; it turns into **Resume**), and **Quit** ends it after asking. **Stop all** at the top pauses every one, and **Resume all** appears when any is paused. Other tools' sessions (Codex, opencode) are listed as plain rows, one per folder, without buttons. Stop and Quit only ever signal a process that was listed and is still a `claude` process, so a process number reused by another program is never touched
   - **Plugins:** every Claude Code plugin you have enabled, how many open sessions run it, the last thing it did (ran a skill, started an agent, used an MCP tool, ran a hook, added context to your prompt) and how often today. Two installs of a plugin with the same name can't be told apart in the logs, so their activity is shown on the first one in your settings
 - **Leaderboard (Beta)** -- hidden unless you turn it on in Settings; see below, this one's still a work in progress
 
@@ -129,7 +129,7 @@ This removes it from starting at login and deletes **Claude Tracker** from your 
 
 ## Version and credits
 
-Current version: **3.3.3**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
+Current version: **3.4.0**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
 
 - Original app by Brody Kretz ([BrodyKretz](https://github.com/BrodyKretz/claude-token-counter))
 - Redesign, new features and the Swift rewrite by Raymond Tian ([raymondtian30](https://github.com/raymondtian30/claude-tracker))
@@ -167,6 +167,7 @@ Sources/TrackerCore/         the app's logic, plain Swift with no AppKit, so it 
   Updater.swift              Check for Updates: lists newer GitHub releases, installs the newest if you say so
   ActiveSessions.swift       matches running `claude` processes to their sessions
   LiveSnapshot.swift         the last background search for open sessions, so a click never waits for it
+  SessionControl.swift       Stop, Resume and Quit for a Claude Code process, with the checks before any signal
   Plugins.swift              enabled Claude Code plugins and what each did in open sessions
   Leaderboard.swift          Leaderboard (Beta) -- local friends-list storage and sorting
   GistSync.swift             Leaderboard (Beta) -- Keychain token storage + GitHub Gist API calls
