@@ -200,9 +200,18 @@ public enum PanelLayout {
     /// Whether a click in this app's `window` should close the panel: not in
     /// the panel itself, and not on the menu bar icon, whose own click
     /// toggles the panel (closing here first would make it reopen).
-    public static func clickCloses<Window: AnyObject>(_ window: Window?, panel: Window?, statusItem: Window?) -> Bool {
+    /// `partOfPanel` says whether a window belongs to the panel, like the
+    /// pop-up of a date field: a click in it is a click in the panel.
+    public static func clickCloses<Window: AnyObject>(_ window: Window?, panel: Window?, statusItem: Window?,
+                                                      partOfPanel: (Window) -> Bool = { _ in false }) -> Bool {
         guard let window = window else { return false }
-        return window !== panel && window !== statusItem
+        return window !== panel && window !== statusItem && !partOfPanel(window)
+    }
+
+    /// Whether a window class is a pop-over's (`_NSPopoverWindow`), such as the
+    /// pop-up a date field opens.
+    public static func isPopoverWindowClass(_ name: String) -> Bool {
+        name.contains("PopoverWindow")
     }
 
     /// The NSAppearance name for an appearance setting; nil ("auto")

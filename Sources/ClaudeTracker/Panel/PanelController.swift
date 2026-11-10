@@ -229,7 +229,24 @@ final class PanelController: NSObject {
     /// Not in the panel itself, and not on the menu bar icon, whose own
     /// click toggles the panel.
     private func clickCloses(_ window: NSWindow?) -> Bool {
-        PanelLayout.clickCloses(window, panel: root.window, statusItem: button?.window)
+        PanelLayout.clickCloses(window, panel: root.window, statusItem: button?.window,
+                                partOfPanel: belongsToPanel)
+    }
+
+    /// A pop-up the panel opened (a date field's calendar): a pop-over window,
+    /// a window whose parent is the panel's, or any window without a title
+    /// bar. Only a real window, like Settings, counts as outside the panel.
+    private func belongsToPanel(_ window: NSWindow) -> Bool {
+        if PanelLayout.isPopoverWindowClass(String(describing: type(of: window)))
+            || !window.styleMask.contains(.titled) {
+            return true
+        }
+        var parent = window.parent
+        while let current = parent {
+            if current === root.window { return true }
+            parent = current.parent
+        }
+        return false
     }
 
     private func stopMonitors() {
