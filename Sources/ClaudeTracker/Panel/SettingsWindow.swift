@@ -29,7 +29,13 @@ final class SettingsWindow: NSObject {
         window.contentView = scroll
     }
 
+    /// Builds the window's content, unless it's what is already built. The
+    /// panel draws on every click and scan, and building and drawing this tall
+    /// view takes about 100 ms, so opening Settings, or scrolling it right
+    /// after, used to stutter. It's laid out as soon as it's built, so the
+    /// first opening has little left to do.
     func render(_ settings: Tab) {
+        guard settings != self.settings else { return }
         self.settings = settings
         root.subviews.forEach { $0.removeFromSuperview() }
         let height = PanelLayout.settingsHeight(settings)
@@ -38,6 +44,7 @@ final class SettingsWindow: NSObject {
         hosting.frame = NSRect(x: 0, y: 0, width: PanelLayout.width, height: height)
         root.addSubview(hosting)
         setHeight(height)
+        hosting.layoutSubtreeIfNeeded()
     }
 
     private func setHeight(_ height: CGFloat) {
