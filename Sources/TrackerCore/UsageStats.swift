@@ -333,14 +333,19 @@ public enum UsageStats {
     }
 
     /// Merge a subfolder's tokens into its parent when the parent is also a
-    /// project (e.g. "~/game/tools" into "~/game").
+    /// project (e.g. "~/game/tools" into "~/game"). "~" and "/" (and "~/",
+    /// which is "~" without its slash) are never parents: they would
+    /// otherwise swallow every other project, and keep their own row.
     static func foldSubfolders(_ totals: [String: Int]) -> [String: Int] {
         var folded = [String: Int]()
         // Shortest first, so a parent is always in `folded` before its
         // subfolders; ties by name only to make the order fixed.
         let byLength = totals.keys.sorted { $0.count != $1.count ? $0.count < $1.count : $0 < $1 }
         for project in byLength {
-            let parent = folded.keys.first { project.hasPrefix(trimmingTrailingSlashes($0) + "/") }
+            let parent = folded.keys.first {
+                let trimmed = trimmingTrailingSlashes($0)
+                return !trimmed.isEmpty && trimmed != "~" && project.hasPrefix(trimmed + "/")
+            }
             folded[parent ?? project, default: 0] += totals[project] ?? 0
         }
         return folded

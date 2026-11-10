@@ -259,6 +259,8 @@ Branch `3.1/05-project-rows`, base `master`, after PR 4. Delivers CUJ 3, CUJ 11.
 - [ ] **Step 4: Run** `./test.sh --filter UsageStatsTests`. Expected: PASS.
 - [ ] **Step 5: Commit** (`projects: home and root are never fold parents`).
 
+**Shipped separately** as `fix/projects-fold-home` (guard: `~`, `/` and empty after trimming slashes). Not repeated in PR 5. The home-directory and `Unknown` checks listed above were dropped because `projectLabel` never produces them.
+
 ### Task 5.2: `ProjectNames`
 
 **Files:** Create `Sources/TrackerCore/ProjectNames.swift`, `Tests/TrackerCoreTests/ProjectNamesTests.swift`.

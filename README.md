@@ -57,7 +57,7 @@ A panel opens with a row of tabs along the top. It always opens on **Overview**;
 - **Overview** -- today's and lifetime totals, a chart of the last 14 days, and yesterday / last 7 days / this month / your biggest day
 - **Token Types** -- today's and lifetime tokens split into input, output, cache write and cache read, each with a bar showing its share
 - **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...)
-- **Projects** -- every folder you used tokens in over the last 7 days, most first: the top 5, and the rest behind **Show more**
+- **Projects** -- every folder you used tokens in over the last 7 days, most first: the top 5, and the rest behind **Show more** (usage in the home folder itself shows as its own "~" row)
 - **Estimated API Cost** -- what your usage would cost at Anthropic's pay-as-you-go API prices. Just for fun: a Pro or Max subscription is flat-rate, so you aren't billed this. Prices live in `Sources/TrackerCore/Pricing.swift` and will drift over time.
 - **Usage Limits** -- how much of your plan's limits you've used, and when to be notified (see [Usage limits and alerts](#usage-limits-and-alerts))
 - **Active Sessions** -- two sections:

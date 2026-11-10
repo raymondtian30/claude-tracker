@@ -243,3 +243,48 @@ private func parts(input: Int = 0, output: Int = 0, cacheWrite5m: Int = 0, cache
 
     #expect(UsageStats.filterDaily(daily) { $0.hasPrefix("gpt") }.isEmpty)
 }
+
+// Folding: `~`, `/` and an empty label are never a parent, so they can't
+// absorb every other label.
+
+private func daily(_ days: [(Day, [String: Int])]) -> JSONObject {
+    var daily = JSONObject()
+    for (day, projects) in days {
+        for (project, tokens) in projects {
+            UsageStats.addUsage(&daily, day: day, model: "claude-opus-5-5", project: project,
+                                parts: ["input_tokens": tokens])
+        }
+    }
+    return daily
+}
+
+private func rows(_ daily: JSONObject) -> [NamedTotal] {
+    UsageStats.topProjects(daily, Day(2026, 11, 1), Day(2026, 11, 9))
+}
+
+@Test func foldSkipsHomeAndRoot() {
+    let data = daily([(Day(2026, 11, 8), ["~": 1, "~/a": 20, "~/b": 30])])
+    #expect(rows(data) == [NamedTotal("~/b", 30), NamedTotal("~/a", 20), NamedTotal("~", 1)])
+    let root = daily([(Day(2026, 11, 8), ["/": 1, "/x/a": 20, "/y": 30])])
+    #expect(rows(root) == [NamedTotal("/y", 30), NamedTotal("/x/a", 20), NamedTotal("/", 1)])
+}
+
+@Test func homeRowIsSeparate() {
+    let data = daily([(Day(2026, 11, 8), ["~": 5, "~/a": 20, "~/": 1])])
+    #expect(rows(data) == [NamedTotal("~/a", 20), NamedTotal("~", 5), NamedTotal("~/", 1)])
+}
+
+@Test func foldStillFoldsRealSubfolders() {
+    let data = daily([(Day(2026, 11, 8), ["~/a": 10, "~/a/b": 5, "~/ab": 1])])
+    #expect(rows(data) == [NamedTotal("~/a", 15), NamedTotal("~/ab", 1)])
+}
+
+@Test func topProjectsOverAWeekWithAHomeDay() {
+    let data = daily([
+        (Day(2026, 11, 3), ["~/Downloads/game": 300]),
+        (Day(2026, 11, 6), ["~/Desktop/comp": 100]),
+        (Day(2026, 11, 8), ["~": 2]),
+    ])
+    #expect(rows(data) == [NamedTotal("~/Downloads/game", 300), NamedTotal("~/Desktop/comp", 100),
+                           NamedTotal("~", 2)])
+}
