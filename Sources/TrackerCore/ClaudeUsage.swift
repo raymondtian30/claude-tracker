@@ -115,10 +115,67 @@ public enum ClaudeUsage {
                 "resets_at": JSON.truthy(resetsAt) ? try unixTime(resetsAt!) : NSNull(),
             ])
         }
+        parsed += scopedLimits(JSON.object(data)?.array("limits"), taken: Set(parsed.compactMap { $0.string("kind") }))
         if parsed.isEmpty {
             throw HTTP.UnexpectedAnswer(description: "no limits in the answer")
         }
         return parsed
+    }
+
+    /// The longest model name kept from Anthropic's `limits` list.
+    static let longestScopedName = 24
+
+    /// Model-scoped weekly limits (Fable) from the answer's `limits` list:
+    /// items with `kind` "weekly_scoped" and a model name. Their kind is
+    /// "weekly_" plus the name in lowercase letters and digits, which is how
+    /// Limits.displayName finds the name again. Items that don't look as
+    /// expected are skipped, never an error, so a change in this undocumented
+    /// list can't blank the limits that parsed fine. `taken` holds the kinds
+    /// already found; a repeat is skipped.
+    static func scopedLimits(_ list: [Any]?, taken: Set<String>) -> [JSONObject] {
+        var taken = taken
+        var found: [JSONObject] = []
+        for case let item as JSONObject in list ?? [] {
+            guard item.string("kind") == "weekly_scoped",
+                  let shown = item.object("scope")?.object("model")?.string("display_name"),
+                  let percent = JSON.double(item["percent"])
+            else { continue }
+            let name = String(shown.trimmingCharacters(in: .whitespacesAndNewlines).prefix(longestScopedName))
+            let slug = kindSuffix(name)
+            let resetsAt: Any
+            if JSON.isNull(item["resets_at"]) {
+                resetsAt = NSNull()
+            } else if let text = item["resets_at"] as? String, let time = LocalTime.parseISO(text) {
+                resetsAt = time
+            } else if let number = JSON.double(item["resets_at"]) {
+                resetsAt = number
+            } else {
+                continue
+            }
+            guard !slug.isEmpty, taken.insert("weekly_" + slug).inserted else { continue }
+            found.append(["kind": "weekly_" + slug, "window": "weekly", "label": "Weekly · " + name,
+                          "percent": percent, "resets_at": resetsAt])
+        }
+        return found
+    }
+
+    /// "GPT-5 Pro" -> "gpt_5_pro": lowercase letters and digits (any script),
+    /// each run of anything else as one underscore, none at either end.
+    private static func kindSuffix(_ name: String) -> String {
+        var text = ""
+        var broken = false
+        for character in name.lowercased() {
+            if character.isLetter || character.isNumber {
+                if broken && !text.isEmpty {
+                    text.append("_")
+                }
+                broken = false
+                text.append(character)
+            } else {
+                broken = true
+            }
+        }
+        return text
     }
 
     private static func describe(_ error: Error) -> String {

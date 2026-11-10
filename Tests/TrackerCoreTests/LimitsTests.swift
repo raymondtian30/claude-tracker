@@ -435,3 +435,20 @@ private func claudeState(percentages: Bool, limits: [JSONObject]) -> JSONObject 
     let (messages, _) = Limits.alertsToSend([monthly], thresholds: [75], windowsOn: ["monthly"], above: [], now: NOW)
     #expect(messages == ["Codex (Monthly) usage is at 80%. Resets on Nov 20."])
 }
+
+@Test func savedFableLimitAlertsUnderItsOwnName() {
+    let fable: JSONObject = ["kind": "weekly_fable", "window": "weekly", "label": "Weekly · Fable",
+                             "percent": 80.0, "resets_at": NSNull()]
+    let state: JSONObject = ["claude_usage": claudeUsage(["limits": [fable]])]
+    let levels = Limits.planLevels(state, toolKeys: ["claude_code"], now: NOW)
+    #expect(levels.map(\.id) == ["claude_code:weekly_fable"])
+    #expect(Limits.displayName(levels[0]) == "Claude Code (Weekly, Fable)")
+    let (messages, _) = Limits.alertsToSend(levels, thresholds: [75], windowsOn: ["weekly"], above: [], now: NOW)
+    #expect(messages == ["Claude Code (Weekly, Fable) usage is at 80%."])
+}
+
+@Test func displayNameCapitalizesEveryWordOfAModelKind() {
+    let level = Level(id: "claude_code:weekly_fable_pro", name: "Claude Code", kind: "weekly_fable_pro",
+                      window: "weekly", label: "Weekly", percent: 1, resetsAt: nil)
+    #expect(Limits.displayName(level) == "Claude Code (Weekly, Fable Pro)")
+}

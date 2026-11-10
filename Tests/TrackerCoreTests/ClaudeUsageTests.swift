@@ -180,3 +180,101 @@ func fetchUsageWithoutAConnectionSaysPercentageUnavailable(_ failure: UsageFailu
     #expect(results.count == 128)
     #expect(results.allSatisfy { $0.status == 0 && $0.stdout.hasPrefix("out") && $0.stderr.hasPrefix("err") })
 }
+
+// The `limits` list: Anthropic's newer answer lists model-scoped limits
+// (Fable) there, not as a `seven_day_*` key.
+
+private func scoped(_ name: Any?, percent: Any? = 0, resetsAt: Any? = "2026-11-10T19:00:00+00:00",
+                    kind: String = "weekly_scoped") -> JSONObject {
+    ["kind": kind, "group": "weekly", "percent": percent as Any, "severity": "normal",
+     "resets_at": resetsAt as Any, "scope": ["model": ["id": NSNull(), "display_name": name as Any],
+                                             "surface": NSNull()] as JSONObject,
+     "is_active": false]
+}
+
+private func answer(adding items: [JSONObject]) -> JSONObject {
+    var answer = ANSWER
+    answer["limits"] = items
+    return answer
+}
+
+private func fableLimit(_ name: String = "Fable", kind: String = "weekly_fable", percent: Double = 0.0) -> JSONObject {
+    ["kind": kind, "window": "weekly", "label": "Weekly · \(name)", "percent": percent,
+     "resets_at": LocalTime.parseISO("2026-11-10T19:00:00Z")!]
+}
+
+@Test func fableFromTheLimitsList() throws {
+    let parsed = try ClaudeUsage.parseUsage(answer(adding: [scoped("Fable")]))
+    #expect(parsed.count == 4)
+    #expect(jsonEqual(Array(parsed.suffix(1)), [fableLimit()]))
+}
+
+@Test func sessionAndWeeklyAllItemsAddNothing() throws {
+    let items = [["kind": "session", "group": "session", "percent": 26, "resets_at": "2026-11-10T01:29:59+00:00",
+                  "scope": NSNull()] as JSONObject,
+                 ["kind": "weekly_all", "group": "weekly", "percent": 91, "resets_at": "2026-11-10T18:59:59+00:00",
+                  "scope": NSNull()] as JSONObject]
+    #expect(try ClaudeUsage.parseUsage(answer(adding: items)).count == 3)
+}
+
+@Test func scopedItemWithoutAModelIsSkipped() throws {
+    let noModel: JSONObject = ["kind": "weekly_scoped", "percent": 5, "resets_at": NSNull(),
+                               "scope": ["model": NSNull(), "surface": "web"] as JSONObject]
+    let items = [noModel, scoped(NSNull()), scoped(""), scoped(5)]
+    #expect(try ClaudeUsage.parseUsage(answer(adding: items)).count == 3)
+}
+
+@Test func aBadItemSkipsOnlyThatItem() throws {
+    let items = [scoped("Fable", percent: "x"), scoped("Mist", resetsAt: "not a time"), scoped("Ember", percent: true),
+                 scoped("Opal")]
+    let parsed = try ClaudeUsage.parseUsage(answer(adding: items))
+    #expect(parsed.count == 4)
+    #expect(parsed.last?.string("kind") == "weekly_opal")
+}
+
+@Test func numericStringPercentIsSkipped() throws {
+    #expect(try ClaudeUsage.parseUsage(answer(adding: [scoped("Fable", percent: "12")])).count == 3)
+}
+
+@Test func nullResetTimeIsKept() throws {
+    let parsed = try ClaudeUsage.parseUsage(answer(adding: [scoped("Fable", percent: 40, resetsAt: NSNull())]))
+    #expect(jsonEqual(Array(parsed.suffix(1)), [["kind": "weekly_fable", "window": "weekly",
+                                                 "label": "Weekly · Fable", "percent": 40.0,
+                                                 "resets_at": NSNull()]]))
+}
+
+@Test func scopedItemMatchingAnExistingKindIsSkipped() throws {
+    var legacy = ANSWER
+    legacy["seven_day_opus"] = ["utilization": 7.0, "resets_at": NSNull()]
+    legacy["limits"] = [scoped("Opus")]
+    let kinds = try ClaudeUsage.parseUsage(legacy).map { $0.string("kind") }
+    #expect(kinds.filter { $0 == "weekly_opus" }.count == 1)
+}
+
+@Test func twoItemsWithTheSameKindKeepTheFirst() throws {
+    let parsed = try ClaudeUsage.parseUsage(answer(adding: [scoped("Fable", percent: 10), scoped("fable", percent: 20)]))
+    #expect(parsed.filter { $0.string("kind") == "weekly_fable" }.map { $0.double("percent") } == [10.0])
+}
+
+@Test func limitsMissingOrNotAListParsesAsBefore() throws {
+    #expect(try ClaudeUsage.parseUsage(ANSWER).count == 3)
+    var notAList = ANSWER
+    notAList["limits"] = "nope"
+    #expect(try ClaudeUsage.parseUsage(notAList).count == 3)
+    var onlyAList: JSONObject = ["limits": [scoped("Fable")]]
+    #expect(try ClaudeUsage.parseUsage(onlyAList).count == 1)
+    onlyAList["limits"] = [scoped("!!!")]
+    #expect(throws: HTTP.UnexpectedAnswer.self) { try ClaudeUsage.parseUsage(onlyAList) }
+}
+
+@Test func nameBecomesKind() throws {
+    func kind(_ name: String) throws -> String? {
+        try ClaudeUsage.parseUsage(answer(adding: [scoped(name)])).last?.string("kind")
+    }
+    #expect(try kind("Fable!") == "weekly_fable")
+    #expect(try kind("GPT-5 Pro") == "weekly_gpt_5_pro")
+    #expect(try kind("  Mist  ") == "weekly_mist")
+    let cut = try ClaudeUsage.parseUsage(answer(adding: [scoped(String(repeating: "a", count: 40))])).last
+    #expect(cut?.string("kind") == "weekly_" + String(repeating: "a", count: 24))
+    #expect(cut?.string("label") == "Weekly · " + String(repeating: "a", count: 24))
+}
