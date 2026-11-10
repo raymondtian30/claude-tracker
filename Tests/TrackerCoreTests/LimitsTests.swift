@@ -109,7 +109,7 @@ private func level(id: String = "codex:five_hour", window: String = "five_hour",
 @Test func alertOnceWhenCrossingTheThreshold() {
     var (messages, above) = Limits.alertsToSend([level()], thresholds: [75], windowsOn: ["five_hour"], above: [])
 
-    #expect(messages == ["Codex: 5-hour usage is at 80%."])
+    #expect(messages == ["Codex (5-hour) usage is at 80%."])
     #expect(above == ["codex:five_hour@75"])
 
     (messages, above) = Limits.alertsToSend([level(percent: 90.0)], thresholds: [75], windowsOn: ["five_hour"],
@@ -124,7 +124,7 @@ private func level(id: String = "codex:five_hour", window: String = "five_hour",
 @Test func alertAgainAtEachHigherThreshold() {
     var (messages, above) = Limits.alertsToSend([level(percent: 76.0)], thresholds: [75, 90],
                                                 windowsOn: ["five_hour"], above: [])
-    #expect(messages == ["Codex: 5-hour usage is at 76%."])
+    #expect(messages == ["Codex (5-hour) usage is at 76%."])
 
     (messages, above) = Limits.alertsToSend([level(percent: 85.0)], thresholds: [75, 90],
                                             windowsOn: ["five_hour"], above: above)
@@ -132,7 +132,7 @@ private func level(id: String = "codex:five_hour", window: String = "five_hour",
 
     (messages, above) = Limits.alertsToSend([level(percent: 91.0)], thresholds: [75, 90],
                                             windowsOn: ["five_hour"], above: above)
-    #expect(messages == ["Codex: 5-hour usage is at 91%."])
+    #expect(messages == ["Codex (5-hour) usage is at 91%."])
     #expect(above.sorted() == ["codex:five_hour@75", "codex:five_hour@90"])
 
     (messages, above) = Limits.alertsToSend([level(percent: 80.0)], thresholds: [75, 90],
@@ -144,7 +144,7 @@ private func level(id: String = "codex:five_hour", window: String = "five_hour",
     let (messages, above) = Limits.alertsToSend([level(percent: 95.0)], thresholds: [75, 90],
                                                 windowsOn: ["five_hour"], above: [])
 
-    #expect(messages == ["Codex: 5-hour usage is at 95%."])
+    #expect(messages == ["Codex (5-hour) usage is at 95%."])
     #expect(above.sorted() == ["codex:five_hour@75", "codex:five_hour@90"])
 }
 
@@ -179,11 +179,11 @@ private func level(id: String = "codex:five_hour", window: String = "five_hour",
 
     var (messages, _) = Limits.alertsToSend([level(resetsAt: today)], thresholds: [75],
                                             windowsOn: ["five_hour"], above: [], now: NOW)
-    #expect(messages == ["Codex: 5-hour usage is at 80%. Resets at 3:30 PM."])
+    #expect(messages == ["Codex (5-hour) usage is at 80%. Resets at 3:30 PM."])
 
     (messages, _) = Limits.alertsToSend([level(resetsAt: later)], thresholds: [75],
                                         windowsOn: ["five_hour"], above: [], now: NOW)
-    #expect(messages == ["Codex: 5-hour usage is at 80%. Resets on Nov 20."])
+    #expect(messages == ["Codex (5-hour) usage is at 80%. Resets on Nov 20."])
 }
 
 private func codexState(used: Double = 83.0, resetsAt: Double = NOW + 600, windowMinutes: Int = 300) -> JSONObject {
@@ -401,4 +401,37 @@ private func claudeState(percentages: Bool, limits: [JSONObject]) -> JSONObject 
     noCodex["sources"] = nil
     #expect(Limits.unknownIDPrefixes(noCodex, now: NOW).contains("codex:"))
     #expect(!Limits.unknownIDPrefixes(on, now: NOW).contains("codex:"))
+}
+
+@Test func displayNameAllTools() {
+    func name(_ id: String, _ tool: String = "", _ kind: String? = nil, _ window: String,
+              _ label: String = "Saved") -> String {
+        Limits.displayName(Level(id: id, name: tool, kind: kind, window: window, label: label,
+                                 percent: 1, resetsAt: nil))
+    }
+    #expect(name("claude_code:five_hour", "Claude Code", "five_hour", "five_hour") == "Claude Code (5-hour)")
+    #expect(name("claude_code:weekly", "Claude Code", "weekly", "weekly") == "Claude Code (Weekly)")
+    #expect(name("claude_code:weekly_opus", "Claude Code", "weekly_opus", "weekly") == "Claude Code (Weekly, Opus)")
+    #expect(name("claude_code:weekly_sonnet", "Claude Code", "weekly_sonnet", "weekly") == "Claude Code (Weekly, Sonnet)")
+    #expect(name("claude_code:foo", "Claude Code", "foo", "weekly") == "Claude Code (Weekly)")
+    #expect(name("codex:monthly", "Codex", nil, "monthly") == "Codex (Monthly)")
+    #expect(name("codex:weekly", "Codex", nil, "weekly") == "Codex (Weekly)")
+    #expect(name("codex:weekly", "", nil, "weekly") == "Codex (Weekly)")
+    #expect(name("mystery:weekly", "", nil, "weekly") == "mystery (Weekly)")
+    #expect(name("codex:x", "Codex", nil, "odd", "Odd window") == "Codex (Odd window)")
+}
+
+@Test func savedLabelAndLevelIdUnchanged() {
+    let levels = Limits.planLevels(["claude_usage_enabled": false,
+                                    "claude_limit_hits": ["seven_day_opus": NOW + 60]], toolKeys: ["claude_code"],
+                                   now: NOW)
+    #expect(levels.map(\.id) == ["claude_code:weekly_opus"])
+    #expect(levels.map(\.label) == ["Weekly"])
+}
+
+@Test func notificationTextMonthly() {
+    let monthly = Level(id: "codex:monthly", name: "Codex", window: "monthly", label: "Monthly", percent: 80,
+                        resetsAt: LocalTime.timestamp(2026, 11, 20, 18, 46))
+    let (messages, _) = Limits.alertsToSend([monthly], thresholds: [75], windowsOn: ["monthly"], above: [], now: NOW)
+    #expect(messages == ["Codex (Monthly) usage is at 80%. Resets on Nov 20."])
 }
