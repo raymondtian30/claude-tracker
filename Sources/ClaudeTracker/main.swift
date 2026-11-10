@@ -6,10 +6,14 @@ import TrackerCore
 // The LaunchAgent starts it with `--foreground` (a leftover from the Python
 // app's launcher); arguments are accepted and ignored.
 
-let files = AppState.Files(projectDir: AppState.projectDirectory(
+// The folder the app was built in, unless it was moved or renamed since: then
+// the project is found again (see ProjectLocator), so the app keeps saving and
+// can still update.
+let configuredDir = AppState.projectDirectory(
     infoValue: Bundle.main.object(forInfoDictionaryKey: AppState.projectDirKey) as? String,
     environment: ProcessInfo.processInfo.environment,
-    currentDirectory: FileManager.default.currentDirectoryPath))
+    currentDirectory: FileManager.default.currentDirectoryPath)
+let files = AppState.Files(projectDir: ProjectLocator.resolve(configured: configuredDir).dir)
 
 let instanceLock: InstanceLock
 do {
