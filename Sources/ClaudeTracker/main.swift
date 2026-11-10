@@ -6,14 +6,23 @@ import TrackerCore
 // The LaunchAgent starts it with `--foreground` (a leftover from the Python
 // app's launcher); arguments are accepted and ignored.
 
-// The folder the app was built in, unless it was moved or renamed since: then
-// the project is found again (see ProjectLocator), so the app keeps saving and
-// can still update.
-let configuredDir = AppState.projectDirectory(
-    infoValue: Bundle.main.object(forInfoDictionaryKey: AppState.projectDirKey) as? String,
-    environment: ProcessInfo.processInfo.environment,
-    currentDirectory: FileManager.default.currentDirectoryPath)
-let files = AppState.Files(projectDir: ProjectLocator.resolve(configured: configuredDir).dir)
+// The app keeps its totals in its own folder (see ProjectLocator.dataDirectory),
+// not in the code's folder. A scratch or test build, or CLAUDE_TRACKER_PROJECT_DIR,
+// names a folder of its own instead. The first launch of an installed app
+// copies the totals over from the folder it was built in, wherever that is now.
+// A bare executable (`swift run`, no app bundle) works in the current folder.
+let explicitDir = AppState.explicitDataDirectory(
+    infoValue: Bundle.main.object(forInfoDictionaryKey: AppState.dataDirKey) as? String,
+    environment: ProcessInfo.processInfo.environment)
+    ?? (Bundle.main.bundleURL.pathExtension == "app" ? nil
+        : URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true))
+let files = AppState.Files(projectDir: ProjectLocator.dataDirectory(
+    explicit: explicitDir, home: UsageStats.homeDirectory,
+    previous: {
+        ProjectLocator.resolve(configured: AppState.projectDirectory(
+            infoValue: Bundle.main.object(forInfoDictionaryKey: AppState.projectDirKey) as? String,
+            environment: [:], currentDirectory: FileManager.default.currentDirectoryPath)).dir
+    }))
 
 let instanceLock: InstanceLock
 do {

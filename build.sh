@@ -3,8 +3,9 @@
 #
 # Compiles the Swift sources in this folder with Apple's compiler (from
 # Xcode's Command Line Tools), then puts the bundle together: the app
-# itself, its icon, an Info.plist that points back at this folder (where
-# state.json and the logs stay), and an ad hoc signature.
+# itself, its icon, an Info.plist that records this folder (the app copies
+# its totals from here the first time, then keeps its own), and an ad hoc
+# signature.
 #
 # Usage:
 #     ./build.sh [--dest DIR]
@@ -155,8 +156,16 @@ set_string LSMinimumSystemVersion "${MIN_MACOS_MAJOR}.0"
 set_bool LSUIElement YES
 set_bool NSHighResolutionCapable YES
 set_string NSHumanReadableCopyright "Original app by ${ORIGINAL_AUTHOR}. Redesign and new features by ${FORK_AUTHOR}."
-# Where state.json, friends.json and the logs live: this git clone.
+# The folder the app was built in. The installed app keeps its data in its own
+# folder (~/Library/Application Support/Claude Tracker) and only looks here to
+# copy its totals the first time.
 set_string ClaudeTrackerProjectDir "$PROJECT_DIR"
+# A copy built anywhere but an Applications folder (a scratch or test build)
+# keeps its data beside its code, so it never touches the installed app's.
+HOME_REAL="$(cd "$HOME" && pwd -P)"
+if [ "$DEST" != "/Applications" ] && [ "$DEST" != "$HOME_REAL/Applications" ]; then
+    set_string ClaudeTrackerDataDir "$PROJECT_DIR"
+fi
 
 # Ad hoc signature, so it covers Info.plist. macOS only lets the app post
 # notifications if the signature carries the bundle's identifier ("Allow

@@ -23,7 +23,19 @@ extension AppState {
         return URL(fileURLWithPath: found, isDirectory: true).standardizedFileURL
     }
 
-    /// The files the app keeps in the project folder.
+    /// The Info.plist key a scratch or test build gets (see build.sh), so it
+    /// keeps its data beside its code instead of in the app's own folder.
+    public static let dataDirKey = "ClaudeTrackerDataDir"
+
+    /// A data folder chosen on purpose: the environment variable, else the
+    /// bundle's `ClaudeTrackerDataDir`. nil for the installed app, which
+    /// keeps its data in its own folder (`ProjectLocator.dataDirectory`).
+    public static func explicitDataDirectory(infoValue: String?, environment: [String: String]) -> URL? {
+        let found = [environment[projectDirEnvironment], infoValue].compactMap { $0 }.first { !$0.isEmpty }
+        return found.map { URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL }
+    }
+
+    /// The files the app keeps in its data folder.
     public struct Files {
         public let projectDir: URL
         public var state: URL { projectDir.appendingPathComponent("state.json") }

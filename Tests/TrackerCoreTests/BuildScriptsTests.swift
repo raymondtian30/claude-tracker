@@ -189,6 +189,8 @@ func buildMakesASignedBundle() throws {
     #expect(info["NSHumanReadableCopyright"] as? String
             == "Original app by \(Version.originalAuthor). Redesign and new features by \(Version.forkAuthor).")
     #expect(samePath(info["ClaudeTrackerProjectDir"] as? String ?? "", project))
+    // Built outside an Applications folder: a scratch build keeps its data beside its code.
+    #expect(samePath(info["ClaudeTrackerDataDir"] as? String ?? "", project))
 
     let icon = bundle.appendingPathComponent("Contents/Resources/AppIcon.icns")
     #expect(fileSize(icon) > 10_000)
