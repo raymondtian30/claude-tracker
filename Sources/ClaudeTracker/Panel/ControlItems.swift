@@ -111,3 +111,56 @@ struct SwitchItem: View {
         }
     }
 }
+
+/// "From" and "To" date fields side by side. They are plain text fields with
+/// a stepper (no pop-up calendar, which the panel can't hold open); typing a
+/// date or stepping it sends the new day. Nothing after `latest` can be set.
+struct DateRangeItem: View {
+    let from: Day
+    let to: Day
+    let latest: Day
+    let onAction: ActionHandler
+
+    var body: some View {
+        HStack(spacing: 6) {
+            LabelText(text: "From").frame(width: 34, alignment: .leading)
+            DateField(day: from, latest: latest) { onAction("chart_from", .text($0.iso)) }
+            LabelText(text: "To").frame(width: 20, alignment: .leading).padding(.leading, 4)
+            DateField(day: to, latest: latest) { onAction("chart_to", .text($0.iso)) }
+        }
+        .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26, alignment: .leading)
+    }
+}
+
+/// One date field. Typing a date changes it a digit at a time, and every
+/// change redraws the panel (which would end the typing), so the new day is
+/// sent once the field has been still for a moment.
+private struct DateField: View {
+    let day: Day
+    let latest: Day
+    let picked: (Day) -> Void
+    @State private var typed: Date?
+    @State private var waiting: DispatchWorkItem?
+
+    private static let stillSeconds = 0.7
+
+    private static func date(_ day: Day) -> Date {
+        Calendar.current.date(from: DateComponents(year: day.year, month: day.month, day: day.day)) ?? Date()
+    }
+
+    var body: some View {
+        DatePicker("", selection: Binding(
+            get: { typed ?? Self.date(day) },
+            set: { new in
+                typed = new
+                waiting?.cancel()
+                let send = DispatchWorkItem { picked(Day(timestamp: new.timeIntervalSince1970)) }
+                waiting = send
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.stillSeconds, execute: send)
+            }),
+                   in: ...Self.date(latest), displayedComponents: .date)
+            .datePickerStyle(.field)
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+    }
+}

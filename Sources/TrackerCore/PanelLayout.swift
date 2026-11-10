@@ -26,6 +26,7 @@ public enum PanelLayout {
         "segmented": 30,
         "popup": 30,
         "switch": 30,
+        "daterange": 30,
         "alert": 17,
         "tags": 22,
         "choices": 52,
@@ -277,4 +278,6 @@ public enum ActionValue: Equatable {
     case index(Int)
     case indices([Int])
     case bool(Bool)
+    /// A date field's new date, as "2026-07-29".
+    case text(String)
 }

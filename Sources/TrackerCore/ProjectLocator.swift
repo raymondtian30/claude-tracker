@@ -69,6 +69,37 @@ public enum ProjectLocator {
         return result
     }
 
+    // MARK: - The app's own data folder
+
+    /// Where the app keeps state.json, friends.json and its lock: its own
+    /// folder in Application Support, so nothing depends on where the code
+    /// is. `explicit` (a scratch or test build) is used as it is. The first
+    /// time, the totals are copied from `previous` (the old project folder,
+    /// asked for only then); the old files stay where they are, so an older
+    /// version still has them. A copy is made under another name and renamed,
+    /// so a stop half way never leaves a cut-off state.json.
+    public static func dataDirectory(explicit: URL?, home: String, previous: () -> URL?,
+                                     manager: FileManager = .default) -> URL {
+        if let explicit = explicit {
+            return explicit
+        }
+        let dir = supportDirectory(home: home)
+        try? manager.createDirectory(at: dir, withIntermediateDirectories: true)
+        guard !manager.fileExists(atPath: dir.appendingPathComponent("state.json").path),
+              let old = previous(), old.standardizedFileURL != dir.standardizedFileURL
+        else { return dir }
+        for name in ["state.json", "friends.json"] {
+            let from = old.appendingPathComponent(name)
+            let temporary = dir.appendingPathComponent(name + ".copying")
+            try? manager.removeItem(at: temporary)
+            if manager.fileExists(atPath: from.path),
+               (try? manager.copyItem(at: from, to: temporary)) != nil {
+                try? manager.moveItem(at: temporary, to: dir.appendingPathComponent(name))
+            }
+        }
+        return dir
+    }
+
     // MARK: - The remembered place
 
     public static func remembered(home: String) -> String? {

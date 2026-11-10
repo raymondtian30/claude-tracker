@@ -458,6 +458,50 @@ public enum UsageStats {
         )
     }
 
+    /// One point of a chart: the tokens used from `start` to `end`, both
+    /// included (a single day when they are the same).
+    public struct RangePoint: Equatable {
+        public let start: Day
+        public let end: Day
+        public let tokens: Int
+        public init(_ start: Day, _ end: Day, _ tokens: Int) {
+            self.start = start
+            self.end = end
+            self.tokens = tokens
+        }
+    }
+
+    /// The oldest day with a bucket, or nil when there is none.
+    public static func earliestDay(_ daily: JSONObject) -> Day? {
+        daily.keys.compactMap { Day(iso: $0) }.min()
+    }
+
+    /// Tokens per day from `from` to `to`, oldest first, 0 for days with no
+    /// usage. A range longer than `maxPoints` days is grouped into equal runs
+    /// of days (the last may be shorter), so a long history stays readable;
+    /// every token still lands in exactly one point. Empty when `to` is
+    /// before `from`. One pass over the saved days, however long the range.
+    public static func rangeSeries(_ daily: JSONObject, from: Day, to: Day, maxPoints: Int = 60) -> [RangePoint] {
+        let count = from.days(to: to) + 1
+        guard count > 0 else { return [] }
+        let run = Swift.max((count + maxPoints - 1) / maxPoints, 1)
+        var tokens = [Int](repeating: 0, count: (count + run - 1) / run)
+        for (iso, value) in daily {
+            guard let day = Day(iso: iso), from <= day, day <= to else { continue }
+            let models = JSON.object(value)?.object("models") ?? [:]
+            let used = models.values.reduce(0) { total, parts in
+                let parts = JSON.object(parts) ?? [:]
+                return total + categories.reduce(0) { $0 + (parts.int($1) ?? 0) }
+            }
+            tokens[from.days(to: day) / run] += used
+        }
+        return tokens.enumerated().map { index, used in
+            let start = from.adding(days: index * run)
+            let end = Swift.min(start.adding(days: run - 1), to)
+            return RangePoint(start, end, used)
+        }
+    }
+
     /// [(date, tokens)] for each of the `days` days ending on `end`, oldest
     /// first, with 0 for days that have no usage.
     public static func dailySeries(_ daily: JSONObject, _ end: Day, _ days: Int) -> [DayTotal] {

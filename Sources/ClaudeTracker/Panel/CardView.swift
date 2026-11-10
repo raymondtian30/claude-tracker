@@ -82,6 +82,8 @@ struct ItemView: View {
             PopupItem(label: label, options: options, selected: selected, action: action, onAction: onAction)
         case let .switch(label, isOn, action):
             SwitchItem(label: label, isOn: isOn, action: action, onAction: onAction)
+        case let .dateRange(from, to, latest):
+            DateRangeItem(from: from, to: to, latest: latest, onAction: onAction)
         case let .choices(label, options, selected, action):
             ChoicesItem(label: label, options: options, selected: selected, action: action, onAction: onAction)
         }

@@ -7,9 +7,21 @@ extension PanelModel {
     static func overviewTab(_ d: PanelData) -> Tab {
         let stats = UsageStats.history(d.daily, today: d.today)
         let lifetime = UsageStats.categoryTotals(d.lifetimeModels)
-        let chartDays = PanelModel.chartDays(from: d.state)
-        let series = UsageStats.dailySeries(d.daily, d.today, chartDays)
+        let range = PanelModel.chartRange(from: d.state, today: d.today, earliest: UsageStats.earliestDay(d.daily))
+        let (first, last, title, selectedRange): (Day, Day, String, Int)
+        switch range {
+        case let .days(days):
+            (first, last, title) = (d.today.adding(days: -(days - 1)), d.today, "Last \(days) days")
+            selectedRange = chartRanges.firstIndex(of: days) ?? 1
+        case let .allTime(from):
+            (first, last, title, selectedRange) = (from, d.today, "All time", chartRanges.count)
+        case let .custom(from, to):
+            (first, last, title, selectedRange) = (from, to, "\(formatShortDate(from)) – \(formatShortDate(to))",
+                                                   chartRanges.count + 1)
+        }
+        let series = UsageStats.rangeSeries(d.daily, from: first, to: last)
         let peak = series.map(\.tokens).max() ?? 0
+        let run = (series.first.map { $0.start.days(to: $0.end) } ?? 0) + 1
         var historyItems: [Item] = [
             .row(label: "Yesterday", value: TokenMath.formatCount(stats.yesterday)),
             .row(label: "Last 7 days", value: TokenMath.formatCount(stats.last7Days)),
@@ -29,12 +41,19 @@ extension PanelModel {
                 Item.Tile("Lifetime", TokenMath.formatCount(d.grandTotal), "infinity"),
             ]),
         ])
-        let chart = Card(title: "Last \(chartDays) days", items: [
-            .segmented(label: nil, options: chartRanges.map { "\($0) days" },
-                       selected: chartRanges.firstIndex(of: chartDays) ?? 1, action: "chart_days"),
-            .chart(values: series.map(\.tokens), caption: "Peak \(TokenMath.formatCount(peak))",
-                   labels: series.map { formatShortDate($0.day) }),
-        ])
+        var chartItems: [Item] = [
+            .segmented(label: nil, options: chartRanges.map { "\($0) days" } + ["All", "Custom"],
+                       selected: selectedRange, action: "chart_days"),
+        ]
+        if case let .custom(from, to) = range {
+            chartItems.append(.dateRange(from: from, to: to, latest: d.today))
+        }
+        chartItems.append(.chart(
+            values: series.map(\.tokens),
+            caption: "Peak \(TokenMath.formatCount(peak))" + (run > 1 ? " per \(run) days" : ""),
+            labels: series.map { $0.start == $0.end ? formatShortDate($0.start)
+                : "\(formatShortDate($0.start)) – \(formatShortDate($0.end))" }))
+        let chart = Card(title: title, items: chartItems)
         return Tab(key: "overview", title: "Overview", short: "Home", icon: "square.grid.2x2",
                    cards: [tiles] + accountCards(d) + [chart, Card(title: "History", items: historyItems)]
                        + accountInvite(d))
@@ -183,8 +202,7 @@ extension PanelModel {
         var cards = [modelsCard("Today", d.todayModels, efforts: todayEfforts), lifetime]
         if hasEfforts {
             cards.insert(Card(title: nil, items: [
-                .segmented(label: nil, options: ["With effort", "Without effort"], selected: showEffort ? 0 : 1,
-                           action: "show_effort"),
+                .switch(label: "Show effort", isOn: showEffort, action: "show_effort"),
             ]), at: 0)
         }
         return Tab(key: "models", title: "Models", short: "Models", icon: "brain", cards: cards)
@@ -458,11 +476,21 @@ extension PanelModel {
             }
             groups[key, default: []].append(session)
         }
+        // Just the folder's name, as in Projects; two folders with one name
+        // also show their parent ("app · b").
+        let parts = order.map { folderParts(groups[$0]?.first?.label ?? $0) }
+        var nameCounts = [String: Int]()
+        for part in parts { nameCounts[part.name, default: 0] += 1 }
         var items = [Item]()
-        for key in order {
+        for (position, key) in order.enumerated() {
             let group = groups[key] ?? []
             let counted = group.compactMap(\.tokens)
-            let label = group.count > 1 ? "\(group[0].label) · \(group.count) sessions" : group[0].label
+            let part = parts[position]
+            var name = part.name
+            if nameCounts[name, default: 0] > 1, let parent = part.parent {
+                name = "\(name) · \(parent)"
+            }
+            let label = group.count > 1 ? "\(name) · \(group.count) sessions" : name
             items.append(.row(label: label,
                               value: counted.isEmpty ? "running" : TokenMath.formatCount(counted.reduce(0, +))))
             var tags = [Item.Tag]()

@@ -23,6 +23,7 @@ private func entry(model: String = "claude-opus-5-5", ts: String = "2026-07-29T1
 
 private typealias NamedTotal = UsageStats.NamedTotal
 private typealias DayTotal = UsageStats.DayTotal
+private typealias RangePoint = UsageStats.RangePoint
 
 @Test func splitUsageSeparates1hCacheWrites() {
     let parts = UsageStats.splitUsage([
@@ -386,4 +387,44 @@ private func claudeEfforts(_ daily: JSONObject) -> Any? {
     let total = UsageStats.modelTotals(UsageStats.modelsInRange(daily, july29, july29)).first!.tokens
     #expect(total == 17)  // the 2 without an effort are the remainder
     #expect(UsageStats.effortsInRange(daily, Day(2026, 7, 30), Day(2026, 7, 30)).isEmpty)
+}
+
+// MARK: - Chart ranges
+
+private func dailyWith(_ tokensByDay: [(String, Int)]) -> JSONObject {
+    var daily = JSONObject()
+    for (iso, tokens) in tokensByDay {
+        UsageStats.recordEntry(&daily, entry(ts: "\(iso)T12:00:00.000Z", ["input_tokens": tokens]))
+    }
+    return daily
+}
+
+@Test func earliestDayIsTheOldestBucket() {
+    #expect(UsageStats.earliestDay(JSONObject()) == nil)
+    #expect(UsageStats.earliestDay(dailyWith([("2026-07-29", 1), ("2026-03-02", 1), ("bad", 1)])) == Day(2026, 3, 2))
+}
+
+@Test func rangeSeriesIsOnePointPerDayWhenItFits() {
+    let daily = dailyWith([("2026-07-28", 4)])
+    let series = UsageStats.rangeSeries(daily, from: Day(2026, 7, 27), to: Day(2026, 7, 29))
+    #expect(series == [RangePoint(Day(2026, 7, 27), Day(2026, 7, 27), 0), RangePoint(Day(2026, 7, 28), Day(2026, 7, 28), 4),
+                       RangePoint(Day(2026, 7, 29), Day(2026, 7, 29), 0)])
+}
+
+@Test func rangeSeriesGroupsLongRangesAndKeepsEveryToken() {
+    let first = Day(2026, 1, 1)
+    let daily = dailyWith([("2026-01-01", 5), ("2026-04-10", 7), ("2026-07-29", 11)])
+    let series = UsageStats.rangeSeries(daily, from: first, to: Day(2026, 7, 29), maxPoints: 60)
+    #expect(series.count <= 60 && series.count > 20)
+    #expect(series.first?.start == first && series.last?.end == Day(2026, 7, 29))
+    #expect(series.reduce(0) { $0 + $1.tokens } == 23)
+    // Groups follow each other with no gap and no overlap.
+    for (a, b) in zip(series, series.dropFirst()) { #expect(a.end.adding(days: 1) == b.start) }
+}
+
+@Test func rangeSeriesOfOneDayAndOfAnEmptyRange() {
+    let daily = dailyWith([("2026-07-29", 3)])
+    #expect(UsageStats.rangeSeries(daily, from: Day(2026, 7, 29), to: Day(2026, 7, 29))
+            == [RangePoint(Day(2026, 7, 29), Day(2026, 7, 29), 3)])
+    #expect(UsageStats.rangeSeries(daily, from: Day(2026, 7, 30), to: Day(2026, 7, 29)).isEmpty)
 }

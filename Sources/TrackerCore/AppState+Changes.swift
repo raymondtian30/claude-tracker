@@ -17,6 +17,38 @@ extension AppState {
         return order.filter(set.contains)
     }
 
+    // MARK: - Chart range
+
+    /// What a Home chart choice does to state.json (any other action does
+    /// nothing). Custom starts as the last 30 days the first time; after that
+    /// it keeps the dates picked. The dates stay in order and not after `today`.
+    public static func applyChart(_ action: AppAction, to state: inout JSONObject, today: Day) {
+        func day(_ key: String) -> Day? { state.string(key).flatMap { Day(iso: $0) } }
+        switch action {
+        case .chartDays(let days):
+            state["chart_mode"] = "days"
+            state["chart_days"] = days
+        case .chartAll:
+            state["chart_mode"] = "all"
+        case .chartCustom:
+            state["chart_mode"] = "custom"
+            if day("chart_from") == nil || day("chart_to") == nil {
+                state["chart_from"] = today.adding(days: -29).iso
+                state["chart_to"] = today.iso
+            }
+        case .chartFrom(let picked):
+            let from = Swift.min(picked, today)
+            state["chart_from"] = from.iso
+            state["chart_to"] = Swift.max(day("chart_to") ?? today, from).iso
+        case .chartTo(let picked):
+            let to = Swift.min(picked, today)
+            state["chart_to"] = to.iso
+            state["chart_from"] = Swift.min(day("chart_from") ?? to, to).iso
+        default:
+            break
+        }
+    }
+
     // MARK: - AIs
 
     /// Turn a tool on or off in Settings, keeping `Tools.tools` order.

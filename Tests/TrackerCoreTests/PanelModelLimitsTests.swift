@@ -242,7 +242,7 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
     let (sessionsCard, pluginsCard) = (tab.cards[0], tab.cards[1])
     #expect(sessionsCard.title == "Sessions (1)")
     #expect(sessionsCard.items == [
-        .row(label: "~/proj", value: "1.5K"),
+        .row(label: "proj", value: "1.5K"),
         .tags([Item.Tag("superpowers", true), Item.Tag("caveman", false)]),
     ])
     #expect(pluginsCard.title == "Plugins (2 enabled)")
@@ -260,7 +260,7 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
                                      plugins: nil, now: 0)
 
     #expect(tab.cards.map(\.title) == ["Sessions (1)"])
-    #expect(tab.cards[0].items == [.row(label: "~/g", value: "running")])
+    #expect(tab.cards[0].items == [.row(label: "g", value: "running")])
 }
 
 @Test func liveTabWithNoPluginsSaysSo() {
@@ -358,7 +358,7 @@ private func sessionRows(_ sessions: [ActiveSessions.Session]) -> [Item] {
     let items = sessionRows(sessions)
 
     #expect(items.filter { if case .row = $0 { return true } else { return false } }
-            == [.row(label: "~/proj · 3 sessions", value: "2.0K"), .row(label: "~/other", value: "100")])
+            == [.row(label: "proj · 3 sessions", value: "2.0K"), .row(label: "other", value: "100")])
     // The tags of the folder's sessions, once each; one that runs anywhere runs.
     var tags = [Item.Tag]()
     for item in items {
@@ -368,18 +368,38 @@ private func sessionRows(_ sessions: [ActiveSessions.Session]) -> [Item] {
     #expect(tags.first { $0.text == "caveman" }?.isOn == true)
 }
 
+@Test func sessionRowsShowOnlyTheFolderName() {
+    let rows = sessionRows([
+        ActiveSessions.Session(label: "~/Desktop/claude-token-counter", tokens: 10, cwd: "/Users/me/Desktop/claude-token-counter"),
+        ActiveSessions.Session(label: "~", tokens: nil),
+        ActiveSessions.Session(label: "/opt/tool/", tokens: nil),
+    ])
+
+    #expect(rows == [.row(label: "claude-token-counter", value: "10"), .row(label: "~", value: "running"),
+                     .row(label: "tool", value: "running")])
+}
+
+@Test func sessionFoldersWithOneNameShowTheirParent() {
+    let rows = sessionRows([
+        ActiveSessions.Session(label: "~/a/app", tokens: 2, cwd: "/Users/me/a/app"),
+        ActiveSessions.Session(label: "~/b/app", tokens: 1, cwd: "/Users/me/b/app"),
+    ])
+
+    #expect(rows == [.row(label: "app · a", value: "2"), .row(label: "app · b", value: "1")])
+}
+
 @Test func theSessionCountStillCountsEveryProcess() {
     let sessions = (0..<5).map { _ in ActiveSessions.Session(label: "~/p", tokens: nil, cwd: "/p") }
     let tab = PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), sessions, plugins: nil, now: 0)
 
     #expect(tab.cards[0].title == "Sessions (5)")
-    #expect(tab.cards[0].items == [.row(label: "~/p · 5 sessions", value: "running")])
+    #expect(tab.cards[0].items == [.row(label: "p · 5 sessions", value: "running")])
 }
 
 @Test func aLoneSessionIsUnchanged() {
     let items = sessionRows([ActiveSessions.Session(label: "~/p", tokens: nil, cwd: "/p")])
 
-    #expect(items == [.row(label: "~/p", value: "running")])
+    #expect(items == [.row(label: "p", value: "running")])
 }
 
 @Test func sessionsWithoutAFolderAreGroupedByLabel() {
@@ -388,5 +408,5 @@ private func sessionRows(_ sessions: [ActiveSessions.Session]) -> [Item] {
                              ActiveSessions.Session(label: "~/g", tokens: nil),
                              ActiveSessions.Session(label: "~/h", tokens: nil)])
 
-    #expect(items == [.row(label: "~/g · 2 sessions", value: "running"), .row(label: "~/h", value: "running")])
+    #expect(items == [.row(label: "g · 2 sessions", value: "running"), .row(label: "h", value: "running")])
 }
