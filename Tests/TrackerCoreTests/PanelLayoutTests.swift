@@ -82,6 +82,24 @@ private let tab = Tab(key: "overview", title: "Overview", short: "Home", icon: "
     #expect(PanelLayout.clickCloses(settingsWindow, panel: panelWindow, statusItem: statusWindow))
 }
 
+// A date field's pop-up is a window of its own. A click in it is a click in the panel.
+@Test func clicksInAPopupOfThePanelDoNotClose() {
+    final class Window {}
+    let statusWindow = Window(), panelWindow = Window(), popupWindow = Window(), otherWindow = Window()
+
+    #expect(!PanelLayout.clickCloses(popupWindow, panel: panelWindow, statusItem: statusWindow,
+                                     partOfPanel: { $0 === popupWindow }))
+    #expect(PanelLayout.clickCloses(otherWindow, panel: panelWindow, statusItem: statusWindow,
+                                    partOfPanel: { $0 === popupWindow }))
+}
+
+@Test func popoverWindowsAreRecognisedByTheirClass() {
+    #expect(PanelLayout.isPopoverWindowClass("_NSPopoverWindow"))
+    #expect(PanelLayout.isPopoverWindowClass("NSPopoverWindow"))
+    #expect(!PanelLayout.isPopoverWindowClass("NSWindow"))
+    #expect(!PanelLayout.isPopoverWindowClass("NSPanel"))
+}
+
 @Test func animationSpeeds() {
     #expect(PanelSpeeds.animationSpeeds.map { "\($0.key) \($0.label) \($0.seconds)" }
             == ["off Off 0.0", "fast Fast 0.12", "normal Normal 0.22", "slow Slow 0.4"])
