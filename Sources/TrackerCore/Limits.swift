@@ -263,7 +263,9 @@ public enum Limits {
         let prefix = level.id.firstIndex(of: ":").map { String(level.id[..<$0]) } ?? level.id
         let tool = [level.name, Tools.toolNames[prefix] ?? "", prefix].first { !$0.isEmpty } ?? ""
         var window = windowLabels[level.window] ?? level.label
-        if let kind = level.kind, kind != level.window, kind.hasPrefix(level.window + "_") {
+        // A window the app doesn't know has its limit's name in its label already.
+        if windowLabels[level.window] != nil, let kind = level.kind, kind != level.window,
+           kind.hasPrefix(level.window + "_") {
             let words = kind.dropFirst(level.window.count + 1).split(separator: "_")
             if !words.isEmpty {
                 window += ", " + words.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
