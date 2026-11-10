@@ -64,6 +64,10 @@ public enum CodexSource {
     }
 
     /// (per-day buckets, latest rate limits) for one session file.
+    /// Bumped when a newer app reads more from a file, so each file saved by
+    /// an older one is read once more. 2: the effort level.
+    static let fileVersion = 2
+
     static func readCodex(_ path: String) throws -> (daily: JSONObject, limits: JSONObject?) {
         let entries = try completeEntries(path)
         if !entries.isEmpty, !entries.contains(where: { knownTypes.contains($0.string("type") ?? "") }) {
@@ -74,6 +78,7 @@ public enum CodexSource {
         let hasRecords = entries.contains { $0.string("type") == "token_usage_record" }
         var daily = JSONObject()
         var model = "unknown"
+        var effort: String?
         var cwd: String?
         // Response ids already counted; a missing id counts as one id, as
         // Python's None does.
@@ -86,6 +91,12 @@ public enum CodexSource {
             if kind == "session_meta" || kind == "turn_context" {
                 cwd = nonEmpty(payload.string("cwd")) ?? cwd
                 model = nonEmpty(payload.string("model")) ?? model
+                if kind == "turn_context" {
+                    // The level can change between turns; a turn with none keeps the last.
+                    effort = UsageStats.normalizeEffort(payload["effort"])
+                        ?? UsageStats.normalizeEffort(payload.object("collaboration_mode")?.object("settings")?["reasoning_effort"])
+                        ?? effort
+                }
                 continue
             }
             guard let timestamp = nonEmpty(entry.string("timestamp")) else { continue }
@@ -117,7 +128,7 @@ public enum CodexSource {
             // with an error there).
             if parts.values.reduce(0, +) != 0, let day = UsageStats.localDateOf(timestamp) {
                 UsageStats.addUsage(&daily, day: day, model: model, project: UsageStats.projectLabel(cwd),
-                                    parts: parts)
+                                    parts: parts, effort: effort)
             }
         }
         return (daily, latestRateLimits(entries))
@@ -130,15 +141,16 @@ public enum CodexSource {
         var errors = [String]()
         for path in SourceFile.find(in: sessionsDir, suffixes: [".jsonl"]) {
             guard let stat = SourceFile.Stat(path) else { continue }
-            // Files saved before rate limits were read ("limits" missing) are read
-            // once more for them.
-            if let saved = files.object(path), stat.matches(saved), saved["limits"] != nil {
+            // Files saved before rate limits were read ("limits" missing), or by
+            // an older `fileVersion`, are read once more.
+            if let saved = files.object(path), stat.matches(saved), saved["limits"] != nil,
+               (saved.int("v") ?? 0) >= fileVersion {
                 continue
             }
             do {
                 let (daily, limits) = try readCodex(path)
                 files[path] = ["size": stat.size, "mtime": stat.mtime, "daily": daily,
-                               "limits": limits ?? NSNull()] as JSONObject
+                               "limits": limits ?? NSNull(), "v": fileVersion] as JSONObject
             } catch {
                 errors.append(SourceFile.message(error))
             }

@@ -201,3 +201,100 @@ private func limitsEvent(_ used: Double, at: String = TS) -> JSONObject {
 
     #expect(JSON.double(dig(CodexSource.codexRateLimits(state), "primary", "used_percent")) == 50.0)
 }
+
+// Effort: the model's effort level, from each turn_context.
+
+private func effortTurn(_ effort: String?, collaboration: String? = nil) -> JSONObject {
+    var payload: JSONObject = ["cwd": "/x/proj", "model": "gpt-5.6-luna"]
+    if let effort = effort {
+        payload["effort"] = effort
+    }
+    if let collaboration = collaboration {
+        payload["collaboration_mode"] = ["settings": ["reasoning_effort": collaboration] as JSONObject] as JSONObject
+    }
+    return ["timestamp": TS, "type": "turn_context", "payload": payload]
+}
+
+private func efforts(_ daily: JSONObject) -> Any? {
+    dig(daily, "2026-07-29", "efforts")
+}
+
+@Test func codexEffortSplitsPerTurn() throws {
+    let tmp = TempDir()
+    let path = write(tmp.url("r.jsonl"), [meta(), effortTurn("medium"), record("r1", inputTokens: 10),
+                                          effortTurn("high"), record("r2", inputTokens: 20)])
+
+    let daily = try CodexSource.readCodexFile(path.path)
+
+    #expect(jsonEqual(efforts(daily), ["gpt-5.6-luna": ["medium": 10, "high": 20]]))
+    #expect(sum(dayModels(daily)["gpt-5.6-luna"]) == 30)
+}
+
+@Test func codexAbsentEffortLeavesNoEffortsKey() throws {
+    let tmp = TempDir()
+    let path = write(tmp.url("r.jsonl"), [meta(), turn(), record("r1", inputTokens: 10)])
+
+    #expect(efforts(try CodexSource.readCodexFile(path.path)) == nil)
+}
+
+@Test func codexFallsBackToCollaborationEffort() throws {
+    let tmp = TempDir()
+    let path = write(tmp.url("r.jsonl"), [meta(), effortTurn(nil, collaboration: "high"), record("r1", inputTokens: 10)])
+
+    #expect(jsonEqual(efforts(try CodexSource.readCodexFile(path.path)), ["gpt-5.6-luna": ["high": 10]]))
+}
+
+@Test func codexKeepsTheEffortWhenATurnHasNone() throws {
+    let tmp = TempDir()
+    let path = write(tmp.url("r.jsonl"), [meta(), effortTurn("low"), record("r1", inputTokens: 10),
+                                          effortTurn(nil), record("r2", inputTokens: 5)])
+
+    #expect(jsonEqual(efforts(try CodexSource.readCodexFile(path.path)), ["gpt-5.6-luna": ["low": 15]]))
+}
+
+@Test func normalisesEffort() {
+    #expect(UsageStats.normalizeEffort(" HIGH ") == "high")
+    #expect(UsageStats.normalizeEffort("x-high_2") == "x-high_2")
+    #expect(UsageStats.normalizeEffort("x y") == nil)
+    #expect(UsageStats.normalizeEffort("abcdefghijklm") == nil)  // 13 characters
+    #expect(UsageStats.normalizeEffort("abcdefghijkl") == "abcdefghijkl")  // 12
+    #expect(UsageStats.normalizeEffort("") == nil)
+    #expect(UsageStats.normalizeEffort(5) == nil)
+    #expect(UsageStats.normalizeEffort(NSNull()) == nil)
+}
+
+@Test func modelKeyAndTotalsAreUnchangedByEffort() throws {
+    let tmp = TempDir()
+    let plain = write(tmp.url("a.jsonl"), [meta(), turn(), record("r1", inputTokens: 10)])
+    let withEffort = write(tmp.url("b.jsonl"), [meta(), effortTurn("high"), record("r1", inputTokens: 10)])
+
+    let a = try CodexSource.readCodexFile(plain.path)
+    let b = try CodexSource.readCodexFile(withEffort.path)
+
+    #expect(jsonEqual(dayModels(a), dayModels(b)))
+    #expect(jsonEqual(dig(a, "2026-07-29", "projects"), dig(b, "2026-07-29", "projects")))
+}
+
+@Test func filesSavedBeforeEffortAreReadOnceMore() {
+    let tmp = TempDir()
+    let (sessionsDir, root) = sessions(tmp)
+    write(root.appendingPathComponent("rollout-a.jsonl"), [meta(), effortTurn("high"), record("r1", inputTokens: 10)])
+    var state = JSONObject()
+    CodexSource.scanCodex(&state, sessionsDir: sessionsDir)
+    var files = state.object("files") ?? [:]
+    let path = files.keys.first!
+    var saved = files.object(path)!
+    #expect(saved.int("v") == CodexSource.fileVersion)
+    // As an older version saved it: no version, no efforts.
+    saved["v"] = nil
+    saved["daily"] = ["2026-07-29": ["models": JSONObject(), "projects": JSONObject()] as JSONObject] as JSONObject
+    files[path] = saved
+    state["files"] = files
+
+    CodexSource.scanCodex(&state, sessionsDir: sessionsDir)
+
+    #expect(CodexSource.codexTotal(state) == 10)
+    let again = (state.object("files") ?? [:]).object(path) ?? [:]
+    #expect(again.int("v") == CodexSource.fileVersion)
+    #expect(jsonEqual(dig(again, "daily", "2026-07-29", "efforts"), ["gpt-5.6-luna": ["high": 10]]))
+}

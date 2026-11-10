@@ -112,14 +112,27 @@ public enum UsageStats {
             return
         }
         let model = message.string("model").flatMap { $0.isEmpty ? nil : $0 } ?? "unknown"
+        // `effort` is the level the response ran at; `perTurnEffort` is the
+        // fallback (the two differ on some entries, and `effort` is preferred).
+        let effort = normalizeEffort(entry["effort"]) ?? normalizeEffort(entry["perTurnEffort"])
         addUsage(&daily, day: day, model: model, project: projectLabel(entry.string("cwd")),
-                 parts: parts)
+                 parts: parts, effort: effort)
+    }
+
+    /// An effort level as kept ("high"): lowercase letters, digits, "_" and
+    /// "-", 1 to 12 characters. Anything else is no effort.
+    public static func normalizeEffort(_ value: Any?) -> String? {
+        guard let text = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              (1...12).contains(text.count),
+              text.allSatisfy({ ($0 >= "a" && $0 <= "z") || ($0 >= "0" && $0 <= "9") || $0 == "_" || $0 == "-" })
+        else { return nil }
+        return text
     }
 
     /// Add one response's token `parts` ({category: tokens}) to the buckets
     /// for `day`. `cost` is a dollar amount the tool itself recorded, if any.
     public static func addUsage(_ daily: inout JSONObject, day: Day, model: String, project: String,
-                                parts: [String: Int], cost: Double? = nil) {
+                                parts: [String: Int], cost: Double? = nil, effort: String? = nil) {
         var bucket = daily.object(day.iso) ?? ["models": JSONObject(), "projects": JSONObject()]
         var models = bucket.object("models") ?? [:]
         var modelParts = models.object(model) ?? zeroParts()
@@ -139,6 +152,15 @@ public enum UsageStats {
         perModel[project] = (perModel.int(project) ?? 0) + tokens
         modelProjects[model] = perModel
         bucket["model_projects"] = modelProjects
+
+        // Tokens per model and effort, for the models whose tool says the level.
+        if let effort = effort {
+            var efforts = bucket.object("efforts") ?? [:]
+            var perEffort = efforts.object(model) ?? [:]
+            perEffort[effort] = (perEffort.int(effort) ?? 0) + tokens
+            efforts[model] = perEffort
+            bucket["efforts"] = efforts
+        }
 
         if let cost = cost {
             var costs = bucket.object("recorded_cost") ?? [:]
@@ -203,6 +225,14 @@ public enum UsageStats {
                     }
                     into["model_projects"] = intoPerModel
                 }
+                if let efforts = bucket.object("efforts"), !efforts.isEmpty {
+                    var intoEfforts = into.object("efforts") ?? [:]
+                    for (model, perEffort) in efforts {
+                        intoEfforts[model] = combineNumbers(intoEfforts.object(model) ?? [:],
+                                                            JSON.object(perEffort) ?? [:], start: 0, combine)
+                    }
+                    into["efforts"] = intoEfforts
+                }
                 merged[iso] = into
             }
         }
@@ -251,6 +281,10 @@ public enum UsageStats {
             let costs = (bucket.object("recorded_cost") ?? [:]).filter { models[$0.key] != nil }
             if !costs.isEmpty {
                 out["recorded_cost"] = costs
+            }
+            let efforts = (bucket.object("efforts") ?? [:]).filter { models[$0.key] != nil }
+            if !efforts.isEmpty {
+                out["efforts"] = efforts
             }
             filtered[iso] = out
         }
@@ -303,6 +337,28 @@ public enum UsageStats {
             }
         }
         return totals
+    }
+
+    /// {model: {effort: tokens}} over [start, end], for the responses whose
+    /// effort is known. A model's total in `modelsInRange` can be larger (the
+    /// rest has no known effort), never meant to be smaller. Anything in the
+    /// saved maps that isn't a count reads as none.
+    public static func effortsInRange(_ daily: JSONObject, _ start: Day, _ end: Day) -> [String: [String: Int]] {
+        var totals = [String: [String: Int]]()
+        for bucket in daysInRange(daily, start, end) {
+            for (model, value) in bucket.object("efforts") ?? [:] {
+                for (effort, tokens) in JSON.object(value) ?? [:] {
+                    if let count = JSON.int(tokens), count > 0 {
+                        totals[model, default: [:]][effort, default: 0] += count
+                    }
+                }
+            }
+        }
+        return totals
+    }
+
+    public static func effortsAllTime(_ daily: JSONObject) -> [String: [String: Int]] {
+        effortsInRange(daily, .min, .max)
     }
 
     public static func modelsAllTime(_ daily: JSONObject) -> Models {
