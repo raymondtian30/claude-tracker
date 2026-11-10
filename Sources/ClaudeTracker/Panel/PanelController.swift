@@ -140,9 +140,6 @@ final class PanelController: NSObject {
         popover.appearance = NSApp.effectiveAppearance
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         if popover.isShown {
-            DispatchQueue.main.async { [weak self] in
-                onMain { if let self = self { self.redraw(self.root) } }
-            }
             startMonitors()
             if animationSeconds > 0 {
                 animate(unfolding: true)
@@ -195,6 +192,9 @@ final class PanelController: NSObject {
     }
 
     var isShown: Bool { popover.isShown }
+
+    /// Whether the panel is unfolding or folding up right now.
+    var isAnimating: Bool { animation != nil }
 
     // MARK: - Outside clicks and Esc
 
@@ -266,12 +266,20 @@ final class PanelController: NSObject {
     func render(tabs: [Tab], footer: String, toolChoices: [(key: String, name: String)] = [],
                 selectedTool: String? = nil, welcome: Tab? = nil,
                 subtitle: String = "for Claude Code", logo: NSImage? = nil) {
+        // Most draws (every click and scan) change nothing that shows. Drawing
+        // again would rebuild every view for nothing, and stutter whatever
+        // the panel is doing, such as unfolding.
+        let picker = PanelLayout.toolPicker(toolChoices, selected: selectedTool)
+        if !self.tabs.isEmpty, self.tabs == tabs, self.footer == footer, self.welcome == welcome,
+           self.subtitle == subtitle, self.logo === logo, toolPicker == picker {
+            return
+        }
         self.tabs = tabs
         self.footer = footer
         self.welcome = welcome
         self.subtitle = subtitle
         self.logo = logo
-        toolPicker = PanelLayout.toolPicker(toolChoices, selected: selectedTool)
+        toolPicker = picker
         selection.update(keys: tabs.map(\.key))
         draw()
     }
@@ -334,8 +342,7 @@ final class PanelController: NSObject {
             let content = TabContentView(tab: tab, footer: footer, onAction: onAction)
             let view = hosting(content, y: contentTop, height: height)
             view.wantsLayer = true  // so it can fade in smoothly
-            // Built now, not when first drawn: a switch made while the tab is
-            // still invisible could otherwise stay undrawn until it was clicked.
+            // Laid out now, not when first drawn, so showing it has little left to do.
             view.layoutSubtreeIfNeeded()
             return view
         }
@@ -349,26 +356,13 @@ final class PanelController: NSObject {
         setHeight(contentTop + height + PanelLayout.pad)
         if fade && animationSeconds > 0 {
             view.alphaValue = 0
-            NSAnimationContext.runAnimationGroup({ context in
+            NSAnimationContext.runAnimationGroup { context in
                 context.duration = PanelLayout.tabFadeSeconds
                 view.animator().alphaValue = 1
-            }, completionHandler: { [weak self, weak view] in
-                onMain { if let view = view { self?.redraw(view) } }
-            })
+            }
         } else {
             view.alphaValue = 1
-            DispatchQueue.main.async { [weak self, weak view] in
-                onMain { if let view = view { self?.redraw(view) } }
-            }
         }
-    }
-
-    /// Asks a view and everything in it to draw again. Some controls (the
-    /// switches) can come up blank the first time their tab is shown.
-    func redraw(_ view: NSView) {
-        view.needsDisplay = true
-        view.layer?.setNeedsDisplay()
-        view.subviews.forEach(redraw)
     }
 
     private func setHeight(_ height: CGFloat) {

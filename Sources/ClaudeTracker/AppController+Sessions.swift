@@ -24,25 +24,43 @@ extension AppController {
         send(.quit, to: [pid], verb: "quit")
     }
 
+    /// How long a quit session gets to shut down before it counts as still there.
+    private static let quitSeconds = 3.0
+
     private func send(_ action: SessionControl.Action, to pids: [Int32], verb: String) {
         let known = livePids
+        let patience = Self.quitSeconds
+        // Anything the Live tab learned before this click may now be wrong; a
+        // search already running must not put the old list back.
+        liveGeneration += 1
         inBackground({
             // One at a time, each checked against the sessions that were listed.
-            pids.map { SessionControl.send(action, to: $0, among: known) }
-        }, then: { [weak self] outcomes in
-            guard let self = self else { return }
-            let done = Set(zip(pids, outcomes).filter { $0.1 == .done }.map(\.0))
-            self.live.apply(action, to: done)
-            self.renderPanel()
-            // The next search confirms it (a quit process can take a moment to go).
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                onMain { self?.searchLive() }
+            pids.map { pid -> (pid: Int32, outcome: SessionControl.Outcome, gone: Bool) in
+                let outcome = SessionControl.send(action, to: pid, among: known)
+                // A quit session takes a moment to shut down; wait, so the list
+                // is right when it is drawn, not 15 seconds later.
+                let gone = action == .quit && outcome == .done
+                    && SessionControl.waitUntilGone(pid, timeout: patience)
+                return (pid, outcome, gone)
             }
-            if let reason = outcomes.compactMap({ outcome -> String? in
-                if case .refused(let reason) = outcome { return reason } else { return nil }
-            }).first {
+        }, then: { [weak self] results in
+            guard let self = self else { return }
+            let worked = Set(results.filter { $0.outcome == .done && (action != .quit || $0.gone) }.map(\.pid))
+            self.live.apply(action, to: worked)
+            self.liveGeneration += 1
+            self.renderPanel()
+            self.searchLive()  // confirms it, and refreshes the plugin counts
+            var problem: String?
+            for result in results {
+                if case .refused(let reason) = result.outcome {
+                    problem = reason
+                } else if action == .quit && !result.gone {
+                    problem = "It didn't close within \(Int(Self.quitSeconds)) seconds. It may be busy; try again."
+                }
+            }
+            if let problem = problem {
                 self.panel.close()
-                Dialogs.alert("Couldn't \(verb) it", reason)
+                Dialogs.alert("Couldn't \(verb) it", problem)
             }
         })
     }

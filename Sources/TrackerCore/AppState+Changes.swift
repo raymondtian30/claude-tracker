@@ -21,8 +21,8 @@ extension AppState {
 
     /// What a Home chart choice does to state.json (any other action does
     /// nothing). Custom starts as the last 30 days the first time; after that
-    /// it keeps the dates picked. The dates stay in order, not after `today`
-    /// and not before `earliest` (the first day with usage, when there is one).
+    /// it keeps the dates applied. The dates are put in order, and kept not
+    /// after `today` and not before `earliest` (the first day with usage, when there is one).
     public static func applyChart(_ action: AppAction, to state: inout JSONObject, today: Day,
                                   earliest: Day? = nil) {
         let low = Swift.min(earliest ?? Day.min, today)
@@ -39,14 +39,10 @@ extension AppState {
                 state["chart_from"] = today.adding(days: -29).iso
                 state["chart_to"] = today.iso
             }
-        case .chartFrom(let picked):
-            let from = Swift.min(Swift.max(picked, low), today)
-            state["chart_from"] = from.iso
-            state["chart_to"] = Swift.max(day("chart_to") ?? today, from).iso
-        case .chartTo(let picked):
-            let to = Swift.min(Swift.max(picked, low), today)
-            state["chart_to"] = to.iso
-            state["chart_from"] = Swift.min(day("chart_from") ?? to, to).iso
+        case .chartRange(let a, let b):
+            let (from, to) = (Swift.min(Swift.max(a, low), today), Swift.min(Swift.max(b, low), today))
+            state["chart_from"] = Swift.min(from, to).iso
+            state["chart_to"] = Swift.max(from, to).iso
         default:
             break
         }

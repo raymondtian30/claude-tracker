@@ -89,35 +89,37 @@ struct PopUpControl: NSViewRepresentable {
     }
 }
 
-/// A small NSSwitch.
-struct SwitchControl: NSViewRepresentable {
+/// A switch, drawn in SwiftUI. (The AppKit NSSwitch could come up without its
+/// knob or colour the first time a tab was shown, until it was clicked.)
+struct SwitchControl: View {
     let isOn: Bool
     let changed: (Bool) -> Void
+    @State private var on: Bool
 
-    func makeNSView(context: Context) -> NSSwitch {
-        let control = NSSwitch()
-        control.controlSize = .small
-        control.state = isOn ? .on : .off
-        control.target = context.coordinator
-        control.action = #selector(Coordinator.changed(_:))
-        return control
+    init(isOn: Bool, changed: @escaping (Bool) -> Void) {
+        self.isOn = isOn
+        self.changed = changed
+        _on = State(initialValue: isOn)
     }
 
-    func updateNSView(_ control: NSSwitch, context: Context) {
-        context.coordinator.parent = self
-        control.state = isOn ? .on : .off
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    final class Coordinator: NSObject {
-        var parent: SwitchControl
-
-        init(_ parent: SwitchControl) { self.parent = parent }
-
-        @objc func changed(_ sender: NSSwitch) {
-            parent.changed(sender.state == .on)
+    var body: some View {
+        ZStack(alignment: on ? .trailing : .leading) {
+            Capsule().fill(on ? Color.accent : Color.faint(0.25))
+            Circle()
+                .fill(Color.white)
+                .shadow(color: .black.opacity(0.25), radius: 0.8, x: 0, y: 0.5)
+                .padding(2)
         }
+        .frame(width: 34, height: 20)
+        .contentShape(Capsule())
+        .onTapGesture {
+            on.toggle()
+            changed(on)
+        }
+        .animation(.easeOut(duration: 0.12), value: on)
+        .accessibilityElement()
+        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(on ? "on" : "off")
     }
 }
 

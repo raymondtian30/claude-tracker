@@ -451,7 +451,7 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
     let tab = claudeTab([ActiveSessions.Session(label: "~/p", tokens: nil, cwd: "/p", log: "x", pid: 7)])
 
     #expect(tab.cards[0].items == [.buttons([button("Stop all", "pause.circle", "sessions_stop_all")])])
-    #expect(tab.cards[1].items.first == .row(label: "p", value: "running"))
+    #expect(tab.cards[1].items.first == .row(label: "p", value: "0"))
 }
 
 @Test func foldersWithOneNameShowTheirParentOnProcessCards() {
@@ -486,4 +486,21 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
 
     #expect(tab.cards[0].items.contains(.row(label: "app", value: "running")))
     #expect(tab.cards[1].items.first == .row(label: "app", value: "5"))
+}
+
+@Test func eachProcessSaysWhetherItIsBusyOrIdle() {
+    let now = 1_000_000.0
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), [
+        ActiveSessions.Session(label: "~/a", tokens: 9, cwd: "/a", log: "x", pid: 2, status: "busy", since: now - 5),
+        ActiveSessions.Session(label: "~/b", tokens: 8, cwd: "/b", log: "y", pid: 3, status: "idle", since: now - 7200),
+        ActiveSessions.Session(label: "~/c", tokens: nil, cwd: "/c", pid: 4, status: "idle", since: now - 30),
+        ActiveSessions.Session(label: "~/d", tokens: 7, cwd: "/d", log: "z", pid: 5, stopped: true, status: "busy"),
+    ], plugins: nil, now: now)
+
+    func note(_ card: Int) -> Item { tab.cards[card].items[1] }
+    #expect(note(1) == .note("Process 2 · busy now"))
+    #expect(note(2) == .note("Process 3 · idle for 2 hr"))
+    #expect(note(3) == .note("Process 4 · idle, no messages yet"))
+    #expect(note(4) == .note("Process 5 · paused"))
+    #expect(tab.cards[3].items[0] == .row(label: "c", value: "0"))
 }

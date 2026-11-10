@@ -96,10 +96,12 @@ import Testing
     #expect(AppAction.parse("chart_days", .index(3)) == .chartAll)
     #expect(AppAction.parse("chart_days", .index(4)) == .chartCustom)
     #expect(AppAction.parse("chart_days", .index(5)) == nil)
-    #expect(AppAction.parse("chart_from", .text("2026-07-01")) == .chartFrom(Day(2026, 7, 1)))
-    #expect(AppAction.parse("chart_to", .text("2026-07-20")) == .chartTo(Day(2026, 7, 20)))
-    #expect(AppAction.parse("chart_from", .text("tomorrow")) == nil)
-    #expect(AppAction.parse("chart_to", .none) == nil)
+    // Both dates at once, when the check mark is clicked.
+    #expect(AppAction.parse("chart_range", .text("2026-07-01,2026-07-20")) == .chartRange(Day(2026, 7, 1), Day(2026, 7, 20)))
+    for bad in ["2026-07-01", "tomorrow,2026-07-20", "2026-07-01,", ",", "2026-07-01,2026-07-20,2026-07-21", ""] {
+        #expect(AppAction.parse("chart_range", .text(bad)) == nil, "\(bad)")
+    }
+    #expect(AppAction.parse("chart_range", .none) == nil)
     #expect(AppAction.parse("currency", .index(0)) == .currency("USD"))
     #expect(AppAction.parse("currency", .index(Pricing.currencies.count)) == nil)
     #expect(AppAction.parse("currency", .none) == nil)

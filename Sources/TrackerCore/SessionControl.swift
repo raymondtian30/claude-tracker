@@ -35,9 +35,7 @@ public enum SessionControl {
         guard pid > 1, known.contains(pid) else {
             return .refused("That isn't one of the sessions listed.")
         }
-        let found = run(["ps", "-p", String(pid), "-o", "comm="], nil)
-        let name = found.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard found.status == 0, ActiveSessions.basename(name) == program else {
+        guard isClaude(pid, run: run) else {
             return .refused("That process is no longer a Claude session.")
         }
         // A paused process only acts on SIGTERM once it is continued.
@@ -51,6 +49,27 @@ public enum SessionControl {
             return .refused("Couldn't reach that process (error \(errno)).")
         }
         return .done
+    }
+
+    /// Whether `pid` is a running `claude` process right now.
+    static func isClaude(_ pid: Int32, run: Subprocess.Runner) -> Bool {
+        let found = run(["ps", "-p", String(pid), "-o", "comm="], nil)
+        return found.status == 0
+            && ActiveSessions.basename(found.stdout.trimmingCharacters(in: .whitespacesAndNewlines)) == program
+    }
+
+    /// Waits until `pid` is no longer a `claude` process (it can take a moment
+    /// to shut down after Quit), up to `timeout` seconds. False if it is still there.
+    public static func waitUntilGone(_ pid: Int32, timeout: Double = 3, interval: Double = 0.1,
+                                     run: Subprocess.Runner = Subprocess.run,
+                                     sleep: (Double) -> Void = { Thread.sleep(forTimeInterval: $0) }) -> Bool {
+        var waited = 0.0
+        while isClaude(pid, run: run) {
+            if waited >= timeout - 0.000_001 { return false }
+            sleep(interval)
+            waited += interval
+        }
+        return true
     }
 
     public struct Tally: Equatable {

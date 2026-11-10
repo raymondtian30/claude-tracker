@@ -39,6 +39,10 @@ final class AppController {
     var live = LiveSnapshot()
     private var searchingLive = false
     private var searchLiveAgain = false
+    /// Counts the changes made to the sessions by hand (Stop, Quit): a search
+    /// that began before one is out of date when it ends.
+    var liveGeneration = 0
+    private var renderWaiting = false
     /// Rows whose detail is open, by row id. Not saved: opening the panel or
     /// changing tab closes them all.
     var openRows: [String: Bool] = [:]
@@ -130,6 +134,14 @@ final class AppController {
 
     /// The scan timer's tick.
     func refresh() {
+        // Reading new log lines takes a moment, and a frame that waits for it
+        // shows as lag: let the panel finish unfolding first.
+        if panel.isAnimating {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                onMain { self?.refresh() }
+            }
+            return
+        }
         scan()
         save()
         checkAlerts()
@@ -199,6 +211,20 @@ final class AppController {
     }
 
     func renderPanel() {
+        // Not while the panel unfolds or folds up: drawing takes a moment, and
+        // a frame that has to wait for it shows as lag. It draws right after.
+        if panel.isAnimating {
+            if !renderWaiting {
+                renderWaiting = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                    onMain {
+                        self?.renderWaiting = false
+                        self?.renderPanel()
+                    }
+                }
+            }
+            return
+        }
         let detected = Tools.detectTools()
         let view = AppState.currentView(state, detected: detected)
         let enabled = AppState.strings(state["enabled_tools"])
@@ -257,6 +283,7 @@ final class AppController {
         let enabled = AppState.strings(state["enabled_tools"])
         let tools = AppState.sessionTools(view.key, enabled: enabled)
         let withPlugins = AppState.showsPlugins(view.key, enabled: enabled)
+        let generation = liveGeneration
         inBackground({
             LiveSnapshot.find(tools: tools, withPlugins: withPlugins) {
                 FileHandle.standardError.write(Data("\($0)\n".utf8))
@@ -264,6 +291,10 @@ final class AppController {
         }, then: { [weak self] found in
             guard let self = self else { return }
             self.searchingLive = false
+            if generation != self.liveGeneration {
+                self.searchLive()  // it began before a Stop or Quit: look again
+                return
+            }
             let changed = self.live.differs(from: found)
             self.live = found
             if self.searchLiveAgain {
@@ -352,7 +383,7 @@ final class AppController {
         case .showEffort(let on):
             state["show_effort"] = on
             save()
-        case .chartDays, .chartAll, .chartCustom, .chartFrom, .chartTo:
+        case .chartDays, .chartAll, .chartCustom, .chartRange:
             let earliest = UsageStats.earliestDay(AppState.currentView(state, detected: Tools.detectTools()).daily)
             AppState.applyChart(parsed, to: &state, today: Day.today(), earliest: earliest)
             save()

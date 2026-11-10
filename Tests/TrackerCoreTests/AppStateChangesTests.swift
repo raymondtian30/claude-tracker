@@ -336,43 +336,35 @@ private struct Offline: Error {}
     AppState.applyChart(.chartAll, to: &state, today: today)
     #expect(state["chart_mode"] as? String == "all" && state["chart_days"] as? Int == 30)
 
-    // Custom starts as the last 30 days, and keeps what was picked after that.
+    // Custom starts as the last 30 days, and keeps what was applied after that.
     AppState.applyChart(.chartCustom, to: &state, today: today)
     #expect(state["chart_mode"] as? String == "custom")
     #expect(state["chart_from"] as? String == "2026-06-30" && state["chart_to"] as? String == "2026-07-29")
-    AppState.applyChart(.chartFrom(Day(2026, 7, 1)), to: &state, today: today)
+    AppState.applyChart(.chartRange(Day(2026, 7, 1), Day(2026, 7, 10)), to: &state, today: today)
     AppState.applyChart(.chartAll, to: &state, today: today)
     AppState.applyChart(.chartCustom, to: &state, today: today)
-    #expect(state["chart_from"] as? String == "2026-07-01")
+    #expect(state["chart_from"] as? String == "2026-07-01" && state["chart_to"] as? String == "2026-07-10")
 }
 
-@Test func customDatesStayInOrderAndNotInTheFuture() {
-    let today = Day(2026, 7, 29)
-    var state: JSONObject = ["chart_mode": "custom", "chart_from": "2026-07-10", "chart_to": "2026-07-20"]
+@Test func appliedDatesStayInOrderAndInsideTheDaysWithUsage() {
+    let today = Day(2026, 7, 29), first = Day(2026, 7, 10)
+    var state: JSONObject = ["chart_mode": "custom"]
 
-    AppState.applyChart(.chartFrom(Day(2026, 7, 25)), to: &state, today: today)  // past the end: the end follows
-    #expect(state["chart_from"] as? String == "2026-07-25" && state["chart_to"] as? String == "2026-07-25")
-
-    AppState.applyChart(.chartTo(Day(2026, 7, 5)), to: &state, today: today)  // before the start: the start follows
-    #expect(state["chart_from"] as? String == "2026-07-05" && state["chart_to"] as? String == "2026-07-05")
-
-    AppState.applyChart(.chartTo(Day(2027, 1, 1)), to: &state, today: today)
+    // Backwards dates swap; the end stops at today.
+    AppState.applyChart(.chartRange(Day(2026, 7, 25), Day(2026, 7, 12)), to: &state, today: today)
+    #expect(state["chart_from"] as? String == "2026-07-12" && state["chart_to"] as? String == "2026-07-25")
+    AppState.applyChart(.chartRange(Day(2026, 7, 12), Day(2027, 1, 1)), to: &state, today: today)
     #expect(state["chart_to"] as? String == "2026-07-29")
+
+    // Nothing before the first day with usage.
+    AppState.applyChart(.chartRange(Day(2025, 10, 8), Day(2026, 7, 20)), to: &state, today: today, earliest: first)
+    #expect(state["chart_from"] as? String == "2026-07-10" && state["chart_to"] as? String == "2026-07-20")
+    AppState.applyChart(.chartRange(Day(2025, 10, 8), Day(2025, 11, 8)), to: &state, today: today, earliest: first)
+    #expect(state["chart_from"] as? String == "2026-07-10" && state["chart_to"] as? String == "2026-07-10")
 }
 
 @Test func chartActionsLeaveOtherActionsAlone() {
     var state: JSONObject = ["a": 1]
     AppState.applyChart(.quit, to: &state, today: Day(2026, 7, 29))
     #expect(state.count == 1)
-}
-
-@Test func customDatesNeverGoBeforeTheFirstDay() {
-    let today = Day(2026, 7, 29), first = Day(2026, 7, 10)
-    var state: JSONObject = ["chart_mode": "custom", "chart_from": "2026-07-15", "chart_to": "2026-07-20"]
-
-    AppState.applyChart(.chartTo(Day(2025, 10, 8)), to: &state, today: today, earliest: first)
-    #expect(state["chart_from"] as? String == "2026-07-10" && state["chart_to"] as? String == "2026-07-10")
-
-    AppState.applyChart(.chartFrom(Day(2025, 10, 8)), to: &state, today: today, earliest: first)
-    #expect(state["chart_from"] as? String == "2026-07-10")
 }

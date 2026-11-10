@@ -105,46 +105,79 @@ struct SwitchItem: View {
         ZStack(alignment: .topTrailing) {
             ControlLabel(text: label)
             SwitchControl(isOn: isOn) { onAction(action, .bool($0)) }
-                .controlSize(.small)
-                .frame(width: 40, height: 22)
-                .padding(.top, 3)
+                .frame(width: 34, height: 20)
+                .padding(.top, 4)
         }
     }
 }
 
-/// "From" and "To" date fields side by side. They are plain text fields with
-/// a stepper (no pop-up calendar, which the panel can't hold open); typing a
-/// date or stepping it sends the new day. Nothing after `latest` can be set.
+/// What was typed into the date fields but not applied yet. A redraw (new
+/// numbers arriving, say) rebuilds the fields, which must not lose it.
+@MainActor
+enum DateDraft {
+    private static var base: (from: Day, to: Day)?
+    private static var from: Day?
+    private static var to: Day?
+
+    /// The dates to show: the draft if the applied dates are still the ones it
+    /// was made from, else the applied ones (and the draft starts again).
+    static func dates(from applied: (from: Day, to: Day)) -> (from: Day, to: Day) {
+        if let base = base, base.from == applied.from, base.to == applied.to, let from = from, let to = to {
+            return (from, to)
+        }
+        base = applied
+        (from, to) = (applied.from, applied.to)
+        return applied
+    }
+
+    static func set(from newFrom: Day? = nil, to newTo: Day? = nil) {
+        from = newFrom ?? from
+        to = newTo ?? to
+    }
+}
+
+/// "From" and "To" date fields and a check mark. The fields are plain text
+/// fields with a stepper (no pop-up calendar, which the panel can't hold
+/// open). Nothing changes until the check mark is clicked: typing a date takes
+/// a few keystrokes, and the chart must not jump around meanwhile.
 struct DateRangeItem: View {
-    let from: Day
-    let to: Day
+    let applied: (from: Day, to: Day)
     let earliest: Day
     let latest: Day
     let onAction: ActionHandler
+    @State private var from: Day
+    @State private var to: Day
+
+    init(from: Day, to: Day, earliest: Day, latest: Day, onAction: @escaping ActionHandler) {
+        applied = (from, to)
+        self.earliest = earliest
+        self.latest = latest
+        self.onAction = onAction
+        let draft = DateDraft.dates(from: (from, to))
+        _from = State(initialValue: draft.from)
+        _to = State(initialValue: draft.to)
+    }
 
     var body: some View {
         HStack(spacing: 6) {
-            LabelText(text: "From").frame(width: 34, alignment: .leading)
-            DateField(day: from, earliest: earliest, latest: latest) { onAction("chart_from", .text($0.iso)) }
-            LabelText(text: "To").frame(width: 20, alignment: .leading).padding(.leading, 4)
-            DateField(day: to, earliest: earliest, latest: latest) { onAction("chart_to", .text($0.iso)) }
+            LabelText(text: "From").frame(width: 32, alignment: .leading)
+            DateField(day: $from, earliest: earliest, latest: latest) { DateDraft.set(from: $0) }
+            LabelText(text: "To").frame(width: 18, alignment: .leading)
+            DateField(day: $to, earliest: earliest, latest: latest) { DateDraft.set(to: $0) }
+            PushButton(title: "", icon: "checkmark", iconOnly: true, tooltip: "Show this range") {
+                onAction("chart_range", .text("\(from.iso),\(to.iso)"))
+            }
+            .frame(width: 28, height: 24)
         }
         .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26, alignment: .leading)
     }
 }
 
-/// One date field. Typing a date changes it a digit at a time, and every
-/// change redraws the panel (which would end the typing), so the new day is
-/// sent once the field has been still for a moment.
 private struct DateField: View {
-    let day: Day
+    @Binding var day: Day
     let earliest: Day
     let latest: Day
-    let picked: (Day) -> Void
-    @State private var typed: Date?
-    @State private var waiting: DispatchWorkItem?
-
-    private static let stillSeconds = 0.7
+    let changed: (Day) -> Void
 
     private static func date(_ day: Day) -> Date {
         Calendar.current.date(from: DateComponents(year: day.year, month: day.month, day: day.day)) ?? Date()
@@ -152,13 +185,10 @@ private struct DateField: View {
 
     var body: some View {
         DatePicker("", selection: Binding(
-            get: { typed ?? Self.date(day) },
+            get: { Self.date(day) },
             set: { new in
-                typed = new
-                waiting?.cancel()
-                let send = DispatchWorkItem { picked(Day(timestamp: new.timeIntervalSince1970)) }
-                waiting = send
-                DispatchQueue.main.asyncAfter(deadline: .now() + Self.stillSeconds, execute: send)
+                day = Day(timestamp: new.timeIntervalSince1970)
+                changed(day)
             }),
                    in: Self.date(earliest)...Self.date(latest), displayedComponents: .date)
             .datePickerStyle(.field)

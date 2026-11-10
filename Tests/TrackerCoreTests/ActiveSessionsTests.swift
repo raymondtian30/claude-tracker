@@ -223,3 +223,105 @@ private func assistantEntry(_ inputTokens: Int, _ outputTokens: Int) -> JSONObje
 
     #expect(sessions.map(\.pid) == [nil] && sessions.map(\.stopped) == [false])
 }
+
+// MARK: - Claude Code's own record of each process (~/.claude/sessions/<pid>.json)
+
+private let uuid = "32ac5138-6c44-448f-81b7-3d52e5250d48"
+
+private func writeSessionFile(_ dir: URL, pid: Int32, sessionId: String = uuid, cwd: String = "/Users/alice/work",
+                              status: String? = "idle", updatedAt: Double = 1_794_279_065_347,
+                              extra: [String: Any] = [:]) {
+    var body: [String: Any] = ["pid": Int(pid), "sessionId": sessionId, "cwd": cwd, "updatedAt": updatedAt,
+                               "messagingSocketPath": "/tmp/secret.sock", "kind": "interactive"]
+    if let status = status { body["status"] = status }
+    body.merge(extra) { _, new in new }
+    let data = try! JSONSerialization.data(withJSONObject: body)
+    try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    try! data.write(to: dir.appendingPathComponent("\(pid).json"))
+}
+
+@Test func sessionInfoReadsOnlyWhatItNeeds() {
+    let dir = TempDir().url("sessions")
+    writeSessionFile(dir, pid: 42, status: "busy")
+
+    let info = ActiveSessions.sessionInfo(pid: 42, cwd: "/Users/alice/work", sessionsDir: dir)
+
+    #expect(info == ActiveSessions.SessionInfo(sessionId: uuid, status: "busy", updatedAt: 1_794_279_065.347))
+}
+
+@Test func sessionInfoIsIgnoredWhenItIsNotThatProcess() {
+    let dir = TempDir().url("sessions")
+    writeSessionFile(dir, pid: 42)
+    // A leftover file under a reused pid names another pid or folder.
+    writeSessionFile(dir, pid: 43, extra: ["pid": 99])
+    writeSessionFile(dir, pid: 44, cwd: "/Users/alice/elsewhere")
+
+    #expect(ActiveSessions.sessionInfo(pid: 43, cwd: "/Users/alice/work", sessionsDir: dir) == nil)
+    #expect(ActiveSessions.sessionInfo(pid: 44, cwd: "/Users/alice/work", sessionsDir: dir) == nil)
+    #expect(ActiveSessions.sessionInfo(pid: 45, cwd: "/Users/alice/work", sessionsDir: dir) == nil)  // no file
+}
+
+@Test func sessionInfoRefusesAnIdThatCouldEscapeTheFolder() {
+    let dir = TempDir().url("sessions")
+    for (pid, bad) in [(Int32(50), "../../etc/passwd"), (51, "a/b"), (52, ""), (53, "x y")] {
+        writeSessionFile(dir, pid: pid, sessionId: bad)
+        #expect(ActiveSessions.sessionInfo(pid: pid, cwd: "/Users/alice/work", sessionsDir: dir) == nil)
+    }
+}
+
+@Test func aProcessWithARecordGetsItsOwnLogAndStatus() throws {
+    let tmp = TempDir()
+    let project = tmp.mkdir("projects/-Users-alice-work")
+    let mine = project.appendingPathComponent("\(uuid).jsonl")
+    let newer = project.appendingPathComponent("other.jsonl")
+    writeJSONL(mine, [assistantEntry(5, 5)])
+    writeJSONL(newer, [assistantEntry(100, 100)])
+    let now = Date().timeIntervalSince1970
+    setModificationTime(mine, now - 500)
+    setModificationTime(newer, now - 5)
+    let sessionsDir = tmp.url("sessions")
+    writeSessionFile(sessionsDir, pid: 42, status: "idle")
+
+    let sessions = try ActiveSessions.activeSessions(
+        projectsDir: tmp.url("projects"), processes: [.init(pid: 42, cwd: "/Users/alice/work", stopped: false)],
+        sessionsDir: sessionsDir)
+
+    #expect(sessions.count == 1)
+    #expect(sessions[0].tokens == 10 && sessions[0].log == mine.path)  // not the newer log of another chat
+    #expect(sessions[0].pid == 42 && sessions[0].status == "idle")
+}
+
+@Test func aProcessWithNoMessagesYetIsStillListedWithoutTokens() throws {
+    let tmp = TempDir()
+    let sessionsDir = tmp.url("sessions")
+    writeSessionFile(sessionsDir, pid: 42, status: "idle")
+
+    let sessions = try ActiveSessions.activeSessions(
+        projectsDir: tmp.url("projects"), processes: [.init(pid: 42, cwd: "/Users/alice/work", stopped: false)],
+        sessionsDir: sessionsDir)
+
+    #expect(sessions.map(\.pid) == [42] && sessions[0].tokens == nil && sessions[0].log == nil)
+}
+
+@Test func processesWithoutARecordNeverTakeALogAnotherProcessOwns() throws {
+    let tmp = TempDir()
+    let project = tmp.mkdir("projects/-Users-alice-work")
+    let owned = project.appendingPathComponent("\(uuid).jsonl")
+    let free = project.appendingPathComponent("free.jsonl")
+    writeJSONL(owned, [assistantEntry(5, 5)])
+    writeJSONL(free, [assistantEntry(1, 1)])
+    let now = Date().timeIntervalSince1970
+    setModificationTime(owned, now - 5)  // the newest, which the old guess would give to both
+    setModificationTime(free, now - 50)
+    let sessionsDir = tmp.url("sessions")
+    writeSessionFile(sessionsDir, pid: 42)
+
+    let sessions = try ActiveSessions.activeSessions(
+        projectsDir: tmp.url("projects"),
+        processes: [.init(pid: 42, cwd: "/Users/alice/work", stopped: false),
+                    .init(pid: 43, cwd: "/Users/alice/work", stopped: false)],
+        sessionsDir: sessionsDir)
+
+    #expect(Set(sessions.compactMap(\.log)) == [owned.path, free.path])  // no log twice
+    #expect(sessions.first { $0.pid == 43 }?.log == free.path && sessions.first { $0.pid == 43 }?.status == nil)
+}

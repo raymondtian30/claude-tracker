@@ -18,9 +18,16 @@ public enum ActiveSessions {
         /// no Stop or Quit for it).
         public var pid: Int32?
         public var stopped: Bool
+        /// What Claude Code says it is doing: "busy" or "idle" (nil when it
+        /// doesn't say), and since when (Unix seconds).
+        public var status: String?
+        public var since: Double?
 
         public init(label: String, tokens: Int?, cwd: String? = nil, log: String? = nil,
-                    plugins: [Plugins.Tag]? = nil, pid: Int32? = nil, stopped: Bool = false) {
+                    plugins: [Plugins.Tag]? = nil, pid: Int32? = nil, stopped: Bool = false,
+                    status: String? = nil, since: Double? = nil) {
+            self.status = status
+            self.since = since
             self.label = label
             self.tokens = tokens
             self.cwd = cwd
@@ -95,6 +102,35 @@ public enum ActiveSessions {
             }
         }
         return cwds
+    }
+
+    /// Where Claude Code records each running process (`<pid>.json`).
+    public static let claudeSessionsDir = URL(fileURLWithPath: UsageStats.homeDirectory)
+        .appendingPathComponent(".claude/sessions", isDirectory: true)
+
+    /// What Claude Code's record of a process says that is worth showing.
+    public struct SessionInfo: Equatable {
+        public var sessionId: String
+        public var status: String?
+        /// When the status last changed (Unix seconds), if recorded.
+        public var updatedAt: Double?
+    }
+
+    /// Claude Code's record of process `pid` running in `cwd`: its session
+    /// (so its exact log file) and whether it is busy or idle. Only those
+    /// fields are read; the file holds more. nil when there is no record, it
+    /// isn't that process (a leftover under a reused id) or the id isn't a
+    /// plain session id (it becomes part of a file name).
+    public static func sessionInfo(pid: Int32, cwd: String, sessionsDir: URL = claudeSessionsDir) -> SessionInfo? {
+        let url = sessionsDir.appendingPathComponent("\(pid).json")
+        guard let data = try? Data(contentsOf: url),
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? JSONObject,
+              object.int("pid") == Int(pid), object.string("cwd") == cwd,
+              let id = object.string("sessionId"), !id.isEmpty,
+              id.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") })
+        else { return nil }
+        let milliseconds = JSON.double(object["statusUpdatedAt"]) ?? JSON.double(object["updatedAt"])
+        return SessionInfo(sessionId: id, status: object.string("status"), updatedAt: milliseconds.map { $0 / 1000 })
     }
 
     /// A running process: its id, the folder it runs in and whether it is paused.
@@ -224,24 +260,47 @@ public enum ActiveSessions {
         return cwd
     }
 
-    /// Best-effort list of currently running Claude Code terminals.
+    /// The Claude Code sessions running right now.
     ///
-    /// Each running `claude` process is matched to the most-recently-modified
-    /// session file in its project directory (the CLI doesn't expose which exact
-    /// file belongs to which pid). When several processes share a directory, the
-    /// top-N most recently modified files there are used, N being how many
-    /// processes share it.
+    /// With `processes` (what `runningProcesses` found), a process that Claude
+    /// Code has a record of (`sessionInfo`) gets exactly its own log and its
+    /// busy or idle status, and is listed even before its first message.
+    /// Any other process is matched to the most recently written log in its
+    /// folder that no other process owns (the CLI doesn't say which file is
+    /// whose); when several share a folder, the top-N logs there are used and
+    /// paired in order of process id.
+    ///
+    /// Without `processes`, each running `claude` folder (or the given
+    /// `cwds`) is matched that way, with no process attached.
     ///
     /// Returns sessions with label, tokens, cwd and log (the session file's
     /// path), most tokens first.
-    ///
-    /// `processes` (what `runningProcesses` found) gives each session the
-    /// process it runs in. Which log file belongs to which process in one
-    /// folder can't be told, so they are paired in order (lowest process id
-    /// to the most recently written log); either way each process is on one row.
     public static func activeSessions(projectsDir: URL = TokenMath.claudeProjectsDir, cwds: [String]? = nil,
-                                      processes: [Proc]? = nil, run: Run = runCommand) throws -> [Session] {
-        let cwds = try cwds ?? processes?.map(\.cwd) ?? runningClaudeCwds(run: run)
+                                      processes: [Proc]? = nil, sessionsDir: URL = claudeSessionsDir,
+                                      run: Run = runCommand) throws -> [Session] {
+        var sessions = [Session]()
+        var claimed = Set<String>()
+        var unknown = processes
+        if let processes = processes {
+            var stillUnknown = [Proc]()
+            for process in processes {
+                guard let info = sessionInfo(pid: process.pid, cwd: process.cwd, sessionsDir: sessionsDir) else {
+                    stillUnknown.append(process)
+                    continue
+                }
+                let log = projectDirForCwd(process.cwd, projectsDir: projectsDir)
+                    .appendingPathComponent("\(info.sessionId).jsonl").path
+                let exists = FileManager.default.fileExists(atPath: log)
+                if exists { claimed.insert(log) }
+                sessions.append(Session(label: displayName(process.cwd),
+                                        tokens: exists ? try TokenMath.sumUsageSince(log, offset: 0).0 : nil,
+                                        cwd: process.cwd, log: exists ? log : nil, pid: process.pid,
+                                        stopped: process.stopped, status: info.status, since: info.updatedAt))
+            }
+            unknown = stillUnknown
+        }
+
+        let cwds = try cwds ?? unknown?.map(\.cwd) ?? runningClaudeCwds(run: run)
         // Python's Counter: each folder once, in first-seen order, with a count.
         var order = [String]()
         var counts = [String: Int]()
@@ -252,7 +311,6 @@ public enum ActiveSessions {
             counts[cwd, default: 0] += 1
         }
 
-        var sessions = [Session]()
         for cwd in order {
             let projectDir = projectDirForCwd(cwd, projectsDir: projectsDir)
             var isDir: ObjCBool = false
@@ -261,9 +319,10 @@ public enum ActiveSessions {
             let names = (try? FileManager.default.contentsOfDirectory(atPath: projectDir.path)) ?? []
             let files = names.filter { $0.hasSuffix(".jsonl") }
                 .map { projectDir.path + "/" + $0 }
+                .filter { !claimed.contains($0) }
                 .compactMap { path in SourceFile.Stat(path).map { (path, $0.mtime) } }
                 .sorted { $0.1 > $1.1 }
-            let here = (processes ?? []).filter { $0.cwd == cwd }.sorted { $0.pid < $1.pid }
+            let here = (unknown ?? []).filter { $0.cwd == cwd }.sorted { $0.pid < $1.pid }
             for (position, (path, _)) in files.prefix(counts[cwd] ?? 0).enumerated() {
                 let (tokens, _) = try TokenMath.sumUsageSince(path, offset: 0)
                 let process = position < here.count ? here[position] : nil

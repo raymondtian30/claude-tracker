@@ -52,8 +52,8 @@ public enum AppAction: Equatable {
     case chartDays(Int)
     case chartAll
     case chartCustom
-    case chartFrom(Day)
-    case chartTo(Day)
+    /// Both Custom dates, once the check mark is clicked.
+    case chartRange(Day, Day)
     case currency(String)
     case aboutView(showCredits: Bool)
     case checkUpdates
@@ -117,12 +117,11 @@ public enum AppAction: Equatable {
                 return [AppAction.chartAll, .chartCustom][safe: index - PanelModel.chartRanges.count]
             }
             return pick(value, PanelModel.chartRanges).map(AppAction.chartDays)
-        case "chart_from":
-            guard case .text(let text) = value, let day = Day(iso: text) else { return nil }
-            return .chartFrom(day)
-        case "chart_to":
-            guard case .text(let text) = value, let day = Day(iso: text) else { return nil }
-            return .chartTo(day)
+        case "chart_range":
+            guard case .text(let text) = value else { return nil }
+            let days = text.split(separator: ",", omittingEmptySubsequences: false).map { Day(iso: String($0)) }
+            guard days.count == 2, let from = days[0], let to = days[1] else { return nil }
+            return .chartRange(from, to)
         case "currency": return pick(value, Pricing.currencies.map(\.code)).map(AppAction.currency)
         case "about_view":
             return pick(value, [false, true]).map { .aboutView(showCredits: $0) }
