@@ -34,6 +34,11 @@ final class AppController {
     var updateStatus: String?
     /// The Projects tab's "Show more".
     var projectsExpanded = false
+    /// The open sessions and plugin activity, as the last background search
+    /// found them. Clicks draw this; they never search (see `LiveSnapshot`).
+    var live = LiveSnapshot()
+    private var searchingLive = false
+    private var searchLiveAgain = false
     /// Rows whose detail is open, by row id. Not saved: opening the panel or
     /// changing tab closes them all.
     var openRows: [String: Bool] = [:]
@@ -98,6 +103,7 @@ final class AppController {
             self?.openRows = [:]
             self?.projectsExpanded = false  // Projects opens short each time
             self?.renderPanel()
+            self?.searchLive()
         }
         renderPanel()
         updateTitle()
@@ -131,10 +137,11 @@ final class AppController {
         fetchClaudeUsage()
         updateTitle()
         runDailyLeaderboardSync()
-        // Redrawing re-reads open sessions' logs and rebuilds every view, so
-        // only do it for what's on screen; the panel redraws when it opens.
+        // Only draw what's on screen; the panel draws again when it opens.
+        // The sessions are searched for in the background and drawn when found.
         if panel.isShown || settingsWindow.isShown {
             renderPanel()
+            searchLive()
         }
     }
 
@@ -196,9 +203,13 @@ final class AppController {
         let view = AppState.currentView(state, detected: detected)
         let enabled = AppState.strings(state["enabled_tools"])
         let friends = Leaderboard.sortedFriends(loadFriends(), by: state.string("leaderboard_view") ?? "total")
-        var sessions = activeSessions(AppState.sessionTools(view.key, enabled: enabled))
-        // Tags each Claude Code session with the plugins it runs.
-        let plugins = AppState.showsPlugins(view.key, enabled: enabled) ? Plugins.livePlugins(&sessions) : nil
+        // The saved search result, never a new search: that takes over half a
+        // second, and every click draws. Another tool's? Search again.
+        let tools = AppState.sessionTools(view.key, enabled: enabled)
+        let (sessions, plugins) = live.shown(for: tools)
+        if !live.isCurrent(for: tools) {
+            searchLive()
+        }
         let result = PanelModel.buildPanelResult(
             view, state: state, sessions: sessions, friends: friends,
             showLeaderboard: PanelModel.leaderboardEnabled(state) && view.key == "claude_code",
@@ -233,17 +244,36 @@ final class AppController {
         }
     }
 
-    private func activeSessions(_ tools: [String]) -> [ActiveSessions.Session] {
-        var sessions = [ActiveSessions.Session]()
-        for tool in tools {
-            do {
-                sessions += tool == "claude_code" ? try ActiveSessions.activeSessions()
-                    : try ActiveSessions.runningToolSessions(tool)
-            } catch {
-                log("Couldn't list \(tool) sessions: \(error)")
-            }
+    /// Looks for open sessions and plugin activity off the main thread, then
+    /// draws them if that changed anything. One search at a time; one asked
+    /// for during another runs right after it.
+    func searchLive() {
+        guard !searchingLive else {
+            searchLiveAgain = true
+            return
         }
-        return sessions
+        searchingLive = true
+        let view = AppState.currentView(state, detected: Tools.detectTools())
+        let enabled = AppState.strings(state["enabled_tools"])
+        let tools = AppState.sessionTools(view.key, enabled: enabled)
+        let withPlugins = AppState.showsPlugins(view.key, enabled: enabled)
+        inBackground({
+            LiveSnapshot.find(tools: tools, withPlugins: withPlugins) {
+                FileHandle.standardError.write(Data("\($0)\n".utf8))
+            }
+        }, then: { [weak self] found in
+            guard let self = self else { return }
+            self.searchingLive = false
+            let changed = self.live.differs(from: found)
+            self.live = found
+            if self.searchLiveAgain {
+                self.searchLiveAgain = false
+                self.searchLive()
+            }
+            if changed && (self.panel.isShown || self.settingsWindow.isShown) {
+                self.renderPanel()
+            }
+        })
     }
 
     // MARK: - Actions
