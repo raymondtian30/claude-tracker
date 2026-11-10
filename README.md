@@ -36,9 +36,9 @@ By default it never connects to the internet or sends your data anywhere. The on
 
 That's it. It now also starts automatically every time you log in, and **Claude Tracker** is in your Applications folder (Finder, Launchpad and Spotlight) if you ever quit it and want it back. Opening it while it's already running just opens its panel.
 
-The app in Applications is compiled from the code in this folder and keeps your totals in `state.json` here. You can move or rename this folder: the app finds it again on its next launch (it checks where it was last, then your Spotlight index and the usual places for code). If it can't find it at all, it keeps its totals in `~/Library/Application Support/Claude Tracker/` and updates from its own copy of the code there, so **Check for Updates** works wherever the folder is. Running `./install.sh` again from the folder's new place is never required, but it works too.
+The app in Applications holds its own data: your totals (`state.json`) and friends list (`friends.json`) live in `~/Library/Application Support/Claude Tracker/`, so it doesn't matter where this folder is, or whether it is still there. You can move, rename or delete it. The first time 3.3.0 starts it copies your totals over from the folder it was built in (it finds that folder again if it was moved: where it was last, then your Spotlight index and the usual places for code), and leaves the old files where they were. A copy built into any other folder (a test build) keeps its data beside its code, so it never touches the installed app's.
 
-**Updating:** click **Check for Updates** under About in Settings. If GitHub has newer releases, it lists each one with what's new and asks whether to update. Click **Update** and the app downloads the newest into this folder (a `git` fast-forward to the release's tag), recompiles itself and restarts; **Not Now** changes nothing. Your settings and totals live in `state.json` and `friends.json`, which updates never touch. It won't update a copy whose code you've changed or that's on a branch other than `master`, so your own work is never overwritten, and it checks that Swift 5.9 or newer is installed before changing anything. This is the only time the app contacts GitHub besides the opt-in Leaderboard.
+**Updating:** click **Check for Updates** under About in Settings. If GitHub has newer releases, it lists each one with what's new and asks whether to update. Click **Update** and the app downloads the newest into its own copy of the code (`~/Library/Application Support/Claude Tracker/source`, cloned from GitHub the first time), recompiles itself and restarts; **Not Now** changes nothing. Your settings and totals are in `state.json` and `friends.json` next to it, which updates never touch. It won't update a copy whose code has been changed or that's on a branch other than `master`, and it checks that Swift 5.9 or newer is installed before changing anything. This is the only time the app contacts GitHub besides the opt-in Leaderboard.
 
 **Coming from 2.5.0 (the Python version):** Check for Updates works as usual and rebuilds the app in Swift. If this Mac can't compile it (no Command Line Tools, or macOS older than 13), the update puts this folder back on 2.5.0 and your app keeps working; install the Command Line Tools and click Check for Updates again.
 
@@ -54,14 +54,14 @@ The first time you open it, it asks which AI tools you use (Claude Code, Codex, 
 
 A panel opens with a row of tabs along the top. It always opens on **Overview**; click an icon to switch tabs:
 
-- **Overview** -- today's and lifetime totals, a chart of the last 7, 14 or 30 days (pick the range above it; move the pointer over the chart to see a day's date and tokens), and yesterday / last 7 days / this month / your biggest day
+- **Overview** -- today's and lifetime totals, a chart of the last 7, 14 or 30 days, **All** your history, or a **Custom** range with a From and a To date (pick it above the chart; long ranges are grouped, for example by week, so they stay readable; move the pointer over the chart to see a day's or group's date and tokens), and yesterday / last 7 days / this month / your biggest day
 - **Token Types** -- today's and lifetime tokens split into input, output, cache write and cache read, each with a bar showing its share
-- **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...), split by effort level where the tool records it, for example "Sonnet 5.5 (High)" and "Sonnet 5.5 (Medium)" (history from before this was added shows as a plain model row). A **With effort | Without effort** switch at the top turns the split off to see one row per model
-- **Projects** -- every folder you used tokens in over the last 7 days, most first: the top 5, and the rest behind **Show more** (usage in the home folder itself shows as its own "~" row). Each row shows only the folder's name, with the full path as its tooltip; two folders with the same name also show their parent folder, for example "app · work"
+- **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...), split by effort level where the tool records it, for example "Sonnet 5.5 (High)" and "Sonnet 5.5 (Medium)" (history from before this was added shows as a plain model row). A **Show effort** switch at the top turns the split off to see one row per model
+- **Projects** -- every folder you used tokens in over the last 7 days, most first: the top 5, and the rest behind **Show more** (it opens short every time; usage in the home folder itself shows as its own "~" row). Each row shows only the folder's name, with the full path as its tooltip; two folders with the same name also show their parent folder, for example "app · work"
 - **Estimated API Cost** -- what your usage would cost at Anthropic's pay-as-you-go API prices. Just for fun: a Pro or Max subscription is flat-rate, so you aren't billed this. Prices live in `Sources/TrackerCore/Pricing.swift` and will drift over time.
 - **Usage Limits** -- how much of your plan's limits you've used, and when to be notified (see [Usage limits and alerts](#usage-limits-and-alerts))
 - **Active Sessions** -- two sections:
-  - **Sessions:** the Claude Code terminals and chats you currently have open, one row per folder ("~/app · 3 sessions" when several run in the same one, such as each chat in VS Code), with the tokens they have used and tags for the plugins running there (crossed out if that project turns a plugin off)
+  - **Sessions:** the Claude Code terminals and chats you currently have open, one row per folder, showing just the folder's name ("app · 3 sessions" when several run in the same one, such as each chat in VS Code; two folders with one name also show their parent), with the tokens they have used and tags for the plugins running there (crossed out if that project turns a plugin off)
   - **Plugins:** every Claude Code plugin you have enabled, how many open sessions run it, the last thing it did (ran a skill, started an agent, used an MCP tool, ran a hook, added context to your prompt) and how often today. Two installs of a plugin with the same name can't be told apart in the logs, so their activity is shown on the first one in your settings
 - **Leaderboard (Beta)** -- hidden unless you turn it on in Settings; see below, this one's still a work in progress
 
@@ -105,7 +105,7 @@ Here is exactly what it does, in order, when you click "Set Up Leaderboard":
 
 **Adding a friend** ("Add Friend by Code") just means pasting in the ID of their Gist -- that ID is their "friend code." Reading a friend's Gist is a plain, unauthenticated read of a known URL; no token or permission exchange happens between you and them.
 
-**Where things live locally:** your GitHub token is Keychain-only. Your Gist ID and display name are in `state.json`. Your friends' cached scores are in `friends.json`. All three are gitignored -- none of this is ever part of the git history of this project, and none of it is sent to any server other than `api.github.com`, which GitHub itself runs.
+**Where things live locally:** your GitHub token is Keychain-only. Your Gist ID and display name are in `state.json`, in `~/Library/Application Support/Claude Tracker/`. Your friends' cached scores are in `friends.json`. All three are gitignored -- none of this is ever part of the git history of this project, and none of it is sent to any server other than `api.github.com`, which GitHub itself runs.
 
 **Honest caveat:** since every person's own client reports its own numbers, there's no way for anyone to verify a score is real. This is an honor-system leaderboard for fun among friends, not a tamper-proof one -- which is exactly what the disclaimer inside the menu itself says.
 
@@ -115,7 +115,7 @@ Here is exactly what it does, in order, when you click "Set Up Leaderboard":
 ./uninstall.sh
 ```
 
-This removes it from starting at login and deletes **Claude Tracker** from your Applications folder. Your accumulated total (`state.json`) is left on disk in case you reinstall later -- delete that file yourself if you want to reset to zero.
+This removes it from starting at login and deletes **Claude Tracker** from your Applications folder. Your accumulated total (`state.json` in `~/Library/Application Support/Claude Tracker/`) is left on disk in case you reinstall later -- delete that folder yourself if you want to reset to zero.
 
 ## How it works
 
@@ -129,7 +129,7 @@ This removes it from starting at login and deletes **Claude Tracker** from your 
 
 ## Version and credits
 
-Current version: **3.2.3**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
+Current version: **3.3.0**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
 
 - Original app by Brody Kretz ([BrodyKretz](https://github.com/BrodyKretz/claude-token-counter))
 - Redesign, new features and the Swift rewrite by Raymond Tian ([raymondtian30](https://github.com/raymondtian30/claude-tracker))
@@ -166,6 +166,7 @@ Sources/TrackerCore/         the app's logic, plain Swift with no AppKit, so it 
   Credits.swift              who made the app, for Settings > About > Credits (generated by scripts/update-credits.sh)
   Updater.swift              Check for Updates: lists newer GitHub releases, installs the newest if you say so
   ActiveSessions.swift       matches running `claude` processes to their sessions
+  LiveSnapshot.swift         the last background search for open sessions, so a click never waits for it
   Plugins.swift              enabled Claude Code plugins and what each did in open sessions
   Leaderboard.swift          Leaderboard (Beta) -- local friends-list storage and sorting
   GistSync.swift             Leaderboard (Beta) -- Keychain token storage + GitHub Gist API calls

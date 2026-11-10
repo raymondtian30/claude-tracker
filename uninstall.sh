@@ -14,4 +14,4 @@ for APP in "/Applications/Claude Tracker.app" "${HOME:?}/Applications/Claude Tra
     fi
 done
 
-echo "Uninstalled. Your token totals in state.json are untouched -- delete that file too if you want a clean slate."
+echo "Uninstalled. Your token totals (state.json in ~/Library/Application Support/Claude Tracker) are untouched -- delete that folder too if you want a clean slate."

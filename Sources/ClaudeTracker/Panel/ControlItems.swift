@@ -132,10 +132,17 @@ struct DateRangeItem: View {
     }
 }
 
+/// One date field. Typing a date changes it a digit at a time, and every
+/// change redraws the panel (which would end the typing), so the new day is
+/// sent once the field has been still for a moment.
 private struct DateField: View {
     let day: Day
     let latest: Day
     let picked: (Day) -> Void
+    @State private var typed: Date?
+    @State private var waiting: DispatchWorkItem?
+
+    private static let stillSeconds = 0.7
 
     private static func date(_ day: Day) -> Date {
         Calendar.current.date(from: DateComponents(year: day.year, month: day.month, day: day.day)) ?? Date()
@@ -143,8 +150,14 @@ private struct DateField: View {
 
     var body: some View {
         DatePicker("", selection: Binding(
-            get: { Self.date(day) },
-            set: { picked(Day(timestamp: $0.timeIntervalSince1970)) }),
+            get: { typed ?? Self.date(day) },
+            set: { new in
+                typed = new
+                waiting?.cancel()
+                let send = DispatchWorkItem { picked(Day(timestamp: new.timeIntervalSince1970)) }
+                waiting = send
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.stillSeconds, execute: send)
+            }),
                    in: ...Self.date(latest), displayedComponents: .date)
             .datePickerStyle(.field)
             .labelsHidden()
