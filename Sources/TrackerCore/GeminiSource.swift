@@ -42,7 +42,7 @@ public enum GeminiSource {
             }
             return [session] + (JSON.array(messages) ?? []).compactMap { JSON.object($0) }
         }
-        return TokenMath.completeLines(data).compactMap { JSON.parseObject($0) }
+        return TokenMath.completeLines(data).compactMap { line in autoreleasepool { JSON.parseObject(line) } }
     }
 
     /// This session file's per-day buckets, filed under `project` (a folder

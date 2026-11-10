@@ -135,7 +135,7 @@ extension PanelModel {
                    cards: [breakdownCard("Today", d.todayModels, extra: 0), lifetime])
     }
 
-    /// One bar per model, or per model and effort ("Opus 5.5 (HIGH)") when the
+    /// One bar per model, or per model and effort ("Opus 5.5 (High)") when the
     /// tool recorded the effort. A model's effort rows are largest first, and
     /// their sum is clamped to the model's total (merged or backfilled maps can
     /// hold more than the model has); what's left over, when there is any,
@@ -155,7 +155,7 @@ extension PanelModel {
             let known = (efforts[total.name] ?? [:]).sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
             for (effort, tokens) in known where left > 0 {
                 let shown = Swift.min(tokens, left)
-                items.append(shareBar("\(name) (\(effort.uppercased()))", shown, whole))
+                items.append(shareBar("\(name) (\(effort.prefix(1).uppercased() + effort.dropFirst()))", shown, whole))
                 left -= shown
                 shownAny = true
             }

@@ -82,6 +82,9 @@ final class AppController {
         attempt("backfill efforts") { try TokenMath.backfillEfforts(&state) }
         scan()
         save()
+        // The first launch after an update re-reads the logs; hand what that
+        // used back to the system instead of keeping it as a footprint.
+        malloc_zone_pressure_relief(nil, 0)
         fetchAccounts()
         fetchClaudeUsage()
         if state.removeValue(forKey: "updated_to") != nil {

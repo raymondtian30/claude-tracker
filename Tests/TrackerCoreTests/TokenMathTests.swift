@@ -322,3 +322,49 @@ private func effortAssistant(_ tokens: Int, effort: String?, timestamp: String =
     #expect(state.bool("efforts_backfilled") == true)
     #expect(dig(state, "daily", "2026-07-29", "efforts") == nil)
 }
+
+// Reading a log in pieces: the same lines as reading it whole, at any piece size.
+
+private func streamedLines(_ bytes: [UInt8], chunk: Int, from offset: Int = 0, upTo stopAt: Int? = nil) throws
+    -> (lines: [Data], consumed: Int) {
+    let tmp = TempDir()
+    let path = tmp.url("s.jsonl")
+    try Data(bytes).write(to: path)
+    var lines = [Data]()
+    let consumed = try TokenMath.forEachCompleteLine(path.path, from: offset, upTo: stopAt, chunk: chunk) { lines.append($0) }
+    return (lines, consumed)
+}
+
+@Test func streamingGivesTheSameLinesAsReadingWhole() throws {
+    let samples: [String] = [
+        "a\nbb\r\nccc\n", "a\nbb\r\nccc\npartial", "a\n\n\nb\n", "a\r\nb\rc\n", "x\r", "x\r\n", "\r\n\r\n",
+        "", "no newline", "one\n", "é\n日本語\n", String(repeating: "line\n", count: 50) + "tail",
+    ]
+    for sample in samples {
+        let bytes = Array(sample.utf8)
+        let whole = TokenMath.completeLines(Data(bytes))
+        for chunk in [1, 2, 3, 5, 7, 64, 1 << 20] {
+            let (lines, consumed) = try streamedLines(bytes, chunk: chunk)
+            #expect(lines == whole, "\(sample.debugDescription) chunk \(chunk)")
+            #expect(consumed == whole.reduce(0) { $0 + $1.count })
+        }
+    }
+}
+
+@Test func streamingHonoursTheOffsetAndTheStop() throws {
+    let bytes = Array("aaa\nbbb\nccc\nddd\n".utf8)
+    let (lines, consumed) = try streamedLines(bytes, chunk: 3, from: 4, upTo: 12)
+    #expect(lines.map { String(decoding: $0, as: UTF8.self) } == ["bbb\n", "ccc\n"])
+    #expect(consumed == 8)
+    // A stop in the middle of a line leaves that line out.
+    let cut = try streamedLines(bytes, chunk: 3, from: 0, upTo: 6)
+    #expect(cut.lines.count == 1 && cut.consumed == 4)
+}
+
+@Test func aLargeLogIsReadInPiecesNotAllAtOnce() throws {
+    // 3 MB of lines read with 64 KB pieces: every line comes out, in order.
+    let line = String(repeating: "x", count: 99) + "\n"
+    let bytes = Array(String(repeating: line, count: 30_000).utf8)
+    let (lines, consumed) = try streamedLines(bytes, chunk: 64 * 1024)
+    #expect(lines.count == 30_000 && consumed == bytes.count)
+}
