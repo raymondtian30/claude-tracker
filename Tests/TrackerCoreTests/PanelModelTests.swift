@@ -842,7 +842,7 @@ private let july29 = Day(2026, 7, 29)
     #expect(caption.hasPrefix("Peak "))
 }
 
-@Test func overviewChartCustomShowsTwoDateFields() {
+@Test func overviewChartCustomHasAChangeDatesButton() {
     var daily = JSONObject()
     UsageStats.recordEntry(&daily, panelEntry("2026-07-10T12:00:00.000Z", ["input_tokens": 9]))
     UsageStats.recordEntry(&daily, panelEntry("2026-07-29T12:00:00.000Z", ["input_tokens": 15]))
@@ -852,10 +852,56 @@ private let july29 = Day(2026, 7, 29)
 
     #expect(card.items[0] == .segmented(label: nil, options: ["7 days", "14 days", "30 days", "All", "Custom"],
                                         selected: 4, action: "chart_days"))
-    #expect(card.items[1] == .dateRange(from: Day(2026, 7, 10), to: Day(2026, 7, 14),
-                                        earliest: Day(2026, 7, 10), latest: july29))
+    // The dates are picked on a page of their own; this opens it again.
+    #expect(card.items[1] == .buttons([Item.Button("Change dates", "calendar", "chart_edit")]))
     guard case let .chart(values, _, _) = card.items[2] else { Issue.record("no chart"); return }
     #expect(values == [9, 0, 0, 0, 0])
+}
+
+@Test func otherRangesHaveNoChangeDatesButton() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, panelEntry("2026-07-29T12:00:00.000Z", ["input_tokens": 15]))
+    for state: JSONObject in [[:], ["chart_mode": "all"], ["chart_days": 30]] {
+        let items = itemsOf(tabsFor(daily, state: state)["overview"]!)
+        #expect(!items.contains { if case .buttons = $0 { return true } else { return false } })
+    }
+}
+
+// MARK: - The Custom range page
+
+@Test func theCustomRangePageIsATabOnlyWhileItIsOpen() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, panelEntry("2026-07-10T12:00:00.000Z", ["input_tokens": 9]))
+    let view = viewOf(daily, name: "Claude Code", key: "claude_code")
+    let state: JSONObject = ["chart_mode": "custom", "chart_from": "2026-07-12", "chart_to": "2026-07-20"]
+
+    let closed = PanelModel.buildPanel(view, state: state, sessions: [], friends: [], showLeaderboard: false, today: july29)
+    let open = PanelModel.buildPanel(view, state: state, sessions: [], friends: [], showLeaderboard: false, today: july29,
+                                     rangeOpen: true)
+
+    #expect(!closed.map(\.key).contains("range"))
+    #expect(open.map(\.key) == ["overview", "range"] + closed.map(\.key).dropFirst())  // right after Home
+    let page = open[1]
+    #expect(page.title == "Custom Range" && page.short == "Range" && page.icon == "calendar")
+    #expect(page.cards.count == 1 && page.cards[0].title == "Custom range")
+    #expect(page.cards[0].items.first == .rangePicker(from: Day(2026, 7, 12), to: Day(2026, 7, 20),
+                                                      earliest: Day(2026, 7, 10), latest: july29))
+    #expect(page.cards[0].items.contains(.note("Usage is recorded from Jul 10th.")))
+}
+
+@Test func theCustomRangePageStartsFromTheShownRange() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, panelEntry("2026-07-01T12:00:00.000Z", ["input_tokens": 9]))
+    let view = viewOf(daily, name: "Claude Code", key: "claude_code")
+    func page(_ state: JSONObject) -> Item? {
+        PanelModel.buildPanel(view, state: state, sessions: [], friends: [], showLeaderboard: false, today: july29,
+                              rangeOpen: true)[1].cards[0].items.first
+    }
+
+    // Not custom yet: the range the chart shows (the last 14 days unless picked otherwise, or all of it).
+    #expect(page([:]) == .rangePicker(from: Day(2026, 7, 16), to: july29, earliest: Day(2026, 7, 1), latest: july29))
+    #expect(page(["chart_days": 7]) == .rangePicker(from: Day(2026, 7, 23), to: july29, earliest: Day(2026, 7, 1), latest: july29))
+    #expect(page(["chart_mode": "all"]) == .rangePicker(from: Day(2026, 7, 1), to: july29, earliest: Day(2026, 7, 1), latest: july29))
 }
 
 @Test func aCustomRangeNeverStartsBeforeTheFirstDay() {

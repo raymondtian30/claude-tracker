@@ -252,10 +252,10 @@ public enum PanelModel {
                                   sessions: [ActiveSessions.Session], friends: [JSONObject],
                                   showLeaderboard: Bool, today: Day? = nil, now: Double? = nil,
                                   projectsExpanded: Bool = false,
-                                  plugins: [Plugins.Row]? = nil) -> [Tab] {
+                                  plugins: [Plugins.Row]? = nil, rangeOpen: Bool = false) -> [Tab] {
         buildPanelResult(view, state: state, sessions: sessions, friends: friends,
                          showLeaderboard: showLeaderboard, today: today, now: now,
-                         projectsExpanded: projectsExpanded, plugins: plugins).tabs
+                         projectsExpanded: projectsExpanded, plugins: plugins, rangeOpen: rangeOpen).tabs
     }
 
     /// `buildPanel`, plus what the app needs to know about rows by id (their
@@ -265,7 +265,7 @@ public enum PanelModel {
                                         sessions: [ActiveSessions.Session], friends: [JSONObject],
                                         showLeaderboard: Bool, today: Day? = nil, now: Double? = nil,
                                         projectsExpanded: Bool = false,
-                                        plugins: [Plugins.Row]? = nil,
+                                        plugins: [Plugins.Row]? = nil, rangeOpen: Bool = false,
                                         context: PanelContext = PanelContext())
         -> (tabs: [Tab], rows: [String: RowInfo]) {
         let d = PanelData(view, today: today ?? Day.today(), state: state)
@@ -277,6 +277,10 @@ public enum PanelModel {
             costTab(d),
             limitsTab(d, now: now ?? Date().timeIntervalSince1970),
         ]
+        // The Custom range page is a tab while it's open, right after Home.
+        if rangeOpen {
+            tabs.insert(rangeTab(d), at: 1)
+        }
         // A running session can't be tied to one provider, so provider views
         // have no Live tab.
         if Providers.providerNames[view.key] == nil {

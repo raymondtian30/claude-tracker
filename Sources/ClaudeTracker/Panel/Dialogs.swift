@@ -37,6 +37,20 @@ enum Dialogs {
 }
 
 extension Dialogs {
+    /// An "are you sure" box for something that can't be undone. Cancel is the
+    /// default button (Return and Esc both cancel); `confirm` goes ahead, in red.
+    /// True if the user clicks `confirm`.
+    static func confirmDestructive(title: String, message: String, confirm: String) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: confirm).hasDestructiveAction = true
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
     /// rumps.alert: `title` in bold, `message` under it. With `cancel`, two
     /// buttons; true if the user clicks `ok`.
     @discardableResult

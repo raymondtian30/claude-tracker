@@ -45,10 +45,9 @@ extension PanelModel {
             .segmented(label: nil, options: chartRanges.map { "\($0) days" } + ["All", "Custom"],
                        selected: selectedRange, action: "chart_days"),
         ]
-        if case let .custom(from, to) = range {
-            chartItems.append(.dateRange(from: from, to: to,
-                                         earliest: Swift.min(UsageStats.earliestDay(d.daily) ?? d.today, d.today),
-                                         latest: d.today))
+        if case .custom = range {
+            // The dates are picked on a page of their own (rangeTab).
+            chartItems.append(.buttons([Item.Button("Change dates", "calendar", "chart_edit")]))
         }
         chartItems.append(.chart(
             values: series.map(\.tokens),
@@ -60,6 +59,24 @@ extension PanelModel {
         return Tab(key: "overview", title: "Overview", short: "Home", icon: "square.grid.2x2",
                    cards: [tiles] + accountCards(d) + [chart, Card(title: "History", items: historyItems)]
                        + accountInvite(d))
+    }
+
+    /// The Custom range page: two calendars side by side, From and To. It
+    /// starts from the range the chart shows (or the last 30 days).
+    static func rangeTab(_ d: PanelData) -> Tab {
+        let earliest = Swift.min(UsageStats.earliestDay(d.daily) ?? d.today, d.today)
+        let (from, to): (Day, Day)
+        switch chartRange(from: d.state, today: d.today, earliest: earliest) {
+        case let .custom(a, b): (from, to) = (a, b)
+        case let .allTime(a): (from, to) = (a, d.today)
+        case let .days(days): (from, to) = (Swift.max(d.today.adding(days: -(days - 1)), earliest), d.today)
+        }
+        return Tab(key: "range", title: "Custom Range", short: "Range", icon: "calendar", cards: [
+            Card(title: "Custom range", items: [
+                .rangePicker(from: from, to: to, earliest: earliest, latest: d.today),
+                .note("Usage is recorded from \(formatShortDate(earliest))."),
+            ]),
+        ])
     }
 
     /// For a provider view: numbers from the provider's own API, kept apart
@@ -520,11 +537,11 @@ extension PanelModel {
         let processes = sessions.filter { $0.pid != nil }
         var items = [Item]()
         if !processes.isEmpty {
-            var all = [Item.Button("Stop all", "pause.circle", "sessions_stop_all")]
+            items.append(.buttons([Item.Button("Stop all", "pause.circle", "sessions_stop_all"),
+                                   Item.Button("Quit all", "xmark.circle", "sessions_quit_all")]))
             if processes.contains(where: \.stopped) {
-                all.append(Item.Button("Resume all", "play.circle", "sessions_resume_all"))
+                items.append(.buttons([Item.Button("Resume all", "play.circle", "sessions_resume_all")]))
             }
-            items.append(.buttons(all))
         }
 
         // The rest: one row per folder, since several can run in one. The
@@ -556,12 +573,22 @@ extension PanelModel {
             guard let pid = session.pid else { continue }
             let pause = session.stopped ? Item.Button("Resume", "play.circle", "session_resume:\(pid)")
                 : Item.Button("Stop", "pause.circle", "session_stop:\(pid)")
-            cards.append(Card(title: nil, items: [
-                .row(label: name(session), value: TokenMath.formatCount(session.tokens ?? 0)),
-                .note("Process \(pid) · " + processState(session, now: now ?? Date().timeIntervalSince1970)),
-            ] + tagItems([session]) + [
-                .buttons([pause, Item.Button("Quit", "xmark.circle", "session_quit:\(pid)")]),
-            ]))
+            // The chat's title (as the editor shows it) tells the cards apart;
+            // without one, the folder's name does.
+            var items: [Item] = [
+                .row(label: session.title ?? name(session), value: TokenMath.formatCount(session.tokens ?? 0)),
+            ]
+            if session.stopped {
+                items.append(.alert(text: "Paused · click Resume to continue", showIcon: true))
+            } else {
+                let state = processState(session, now: now ?? Date().timeIntervalSince1970)
+                items.append(.note([session.kind, state].compactMap { $0 }.joined(separator: " · ")))
+            }
+            items.append(.note([session.title != nil ? name(session) : nil, "process \(pid)"]
+                .compactMap { $0 }.joined(separator: " · ")))
+            items += tagItems([session])
+            items.append(.buttons([pause, Item.Button("Quit", "xmark.circle", "session_quit:\(pid)")]))
+            cards.append(Card(title: nil, items: items))
         }
         if let plugins = plugins {
             cards.append(pluginsCard(plugins, now: now ?? Date().timeIntervalSince1970))

@@ -13,6 +13,8 @@ public enum SessionControl {
         case resume
         /// End it (SIGTERM, the same as closing it from a terminal).
         case quit
+        /// End it for certain (SIGKILL), when it ignored `quit`.
+        case forceQuit
     }
 
     public enum Outcome: Equatable {
@@ -44,6 +46,7 @@ public enum SessionControl {
         case .stop: signals = [SIGSTOP]
         case .resume: signals = [SIGCONT]
         case .quit: signals = [SIGTERM, SIGCONT]
+        case .forceQuit: signals = [SIGKILL]
         }
         for signal in signals where kill(pid, signal) != 0 {
             return .refused("Couldn't reach that process (error \(errno)).")
@@ -70,6 +73,76 @@ public enum SessionControl {
             waited += interval
         }
         return true
+    }
+
+    /// How ending a session went.
+    public enum QuitOutcome: Equatable {
+        /// It shut down when asked.
+        case closed
+        /// It ignored the request for `patience` seconds, so it was force-quit.
+        case forced
+        /// Nothing ended it.
+        case stuck
+        /// Nothing was sent: not one of the listed sessions, or no longer Claude.
+        case refused(String)
+    }
+
+    /// Ends the sessions with these process ids. Each is asked to quit (like
+    /// closing it from a terminal); the ones still there after `patience`
+    /// seconds, all waited for together, are force-quit, then given two more
+    /// seconds. Only a listed, still-running `claude` process is ever signalled.
+    public static func quit(_ pids: [Int32], among known: [Int32], patience: Double = 3, interval: Double = 0.1,
+                            run: Subprocess.Runner = Subprocess.run, kill: Kill = { Darwin.kill($0, $1) },
+                            sleep: (Double) -> Void = { Thread.sleep(forTimeInterval: $0) }) -> [Int32: QuitOutcome] {
+        var results = [Int32: QuitOutcome]()
+        var asked = [Int32]()
+        for pid in pids {
+            switch send(.quit, to: pid, among: known, run: run, kill: kill) {
+            case .done: asked.append(pid)
+            case .refused(let reason): results[pid] = .refused(reason)
+            }
+        }
+        /// The ones of `pids` still running `claude` after up to `timeout` seconds.
+        func stillThere(_ pids: [Int32], _ timeout: Double) -> [Int32] {
+            var remaining = pids
+            var waited = 0.0
+            while true {
+                remaining = remaining.filter { isClaude($0, run: run) }
+                if remaining.isEmpty || waited >= timeout - 0.000_001 { return remaining }
+                sleep(interval)
+                waited += interval
+            }
+        }
+        let ignored = stillThere(asked, patience)
+        for pid in asked where !ignored.contains(pid) { results[pid] = .closed }
+        if !ignored.isEmpty {
+            for pid in ignored { _ = send(.forceQuit, to: pid, among: known, run: run, kill: kill) }
+            let survivors = stillThere(ignored, 2)
+            for pid in ignored { results[pid] = survivors.contains(pid) ? .stuck : .forced }
+        }
+        return results
+    }
+
+    /// The "are you sure" box for ending `sessions`: its title, what it says
+    /// and what the button that goes ahead is called.
+    public static func quitQuestion(_ sessions: [ActiveSessions.Session]) -> (title: String, message: String, confirm: String) {
+        func describe(_ session: ActiveSessions.Session) -> String {
+            let folder = PanelModel.folderParts(session.label).name
+            let details = [session.kind, session.pid.map { "process \($0)" }].compactMap { $0 }.joined(separator: ", ")
+            return "\(session.title ?? folder) (\(details))"
+        }
+        if sessions.count == 1, let only = sessions.first {
+            return ("Quit this session?",
+                    "\(describe(only)) will be closed.\n\nAnything Claude is in the middle of is lost. "
+                        + "If it doesn't close within 3 seconds, it is force-quit.",
+                    "Quit Session")
+        }
+        let listed = sessions.prefix(8).map { "• " + describe($0) }
+        let more = sessions.count > 8 ? ["…and \(sessions.count - 8) more"] : []
+        return ("Quit all \(sessions.count) sessions?",
+                (listed + more).joined(separator: "\n") + "\n\nAnything Claude is in the middle of is lost. "
+                    + "Any that don't close within 3 seconds are force-quit.",
+                "Quit All")
     }
 
     public struct Tally: Equatable {

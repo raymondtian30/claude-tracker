@@ -47,11 +47,16 @@ public enum AppAction: Equatable {
     case sessionResume(Int32)
     case sessionQuit(Int32)
     case sessionsStopAll
+    case sessionsQuitAll
     case sessionsResumeAll
     case showEffort(Bool)
     case chartDays(Int)
     case chartAll
     case chartCustom
+    /// "Change dates": opens the Custom range page again.
+    case chartEdit
+    /// Cancel on the Custom range page.
+    case chartCancel
     /// Both Custom dates, once the check mark is clicked.
     case chartRange(Day, Day)
     case currency(String)
@@ -109,6 +114,7 @@ public enum AppAction: Equatable {
         case "leaderboard_enabled": return .leaderboardEnabled(isOn)
         case "projects_expand": return .projectsExpand
         case "sessions_stop_all": return .sessionsStopAll
+        case "sessions_quit_all": return .sessionsQuitAll
         case "sessions_resume_all": return .sessionsResumeAll
         case "show_effort": return .showEffort(isOn)
         case "chart_days":
@@ -117,6 +123,8 @@ public enum AppAction: Equatable {
                 return [AppAction.chartAll, .chartCustom][safe: index - PanelModel.chartRanges.count]
             }
             return pick(value, PanelModel.chartRanges).map(AppAction.chartDays)
+        case "chart_edit": return .chartEdit
+        case "chart_cancel": return .chartCancel
         case "chart_range":
             guard case .text(let text) = value else { return nil }
             let days = text.split(separator: ",", omittingEmptySubsequences: false).map { Day(iso: String($0)) }
@@ -168,7 +176,8 @@ public enum AppAction: Equatable {
     /// Dialogs can't sit on top of the popover, so these close it first.
     public var opensDialog: Bool {
         switch self {
-        case .leaderboardSetup, .leaderboardShare, .leaderboardAdd, .providerKey, .providerKeyRemove, .sessionQuit:
+        case .leaderboardSetup, .leaderboardShare, .leaderboardAdd, .providerKey, .providerKeyRemove, .sessionQuit,
+             .sessionsQuitAll:
             return true
         default:
             return false
