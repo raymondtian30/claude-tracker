@@ -100,6 +100,12 @@ Here is exactly what it does, in order, when you click "Set Up Leaderboard":
 
 **Honest caveat:** since every person's own client reports its own numbers, there's no way for anyone to verify a score is real. This is an honor-system leaderboard for fun among friends, not a tamper-proof one -- which is exactly what the disclaimer inside the menu itself says.
 
+## Desktop pet
+
+On this test branch a black cat sits on the desktop. It is Byte's pet — click for a happy hop, drag to move, wander to a screen edge, sleep after a few quiet minutes — drawn as a new pixel cat. A live coding session keeps it awake. While you type it comes over and taps a paw; deleting makes it sad; music and a video app get a short line.
+
+Typing and delete reactions need Accessibility for Claude Tracker. The cat only hears "a key" or "delete". It does not keep what you typed. Turn any of this off under **Show the cat** in Settings.
+
 ## Uninstalling
 
 ```bash
@@ -147,6 +153,10 @@ notifications.py             macOS notifications (UNUserNotificationCenter)
 version.py                   app name, version number and credits
 updater.py                   Check for Updates: lists newer GitHub releases, installs the newest if you say so
 active_sessions.py           matches running `claude` processes to their sessions
+pet_logic.py                 desktop cat: click, drag, wander, sleep, typing, music, video
+pet_activity.py              typing/delete pulses and music/video labels (no key logging)
+pet_view.py                  transparent always-on-top cat window
+assets/pet/                  black cat pixel frames (assets/pet/draw_cat.py draws them)
 leaderboard.py               Leaderboard (Beta) -- local friends-list storage and sorting
 gist_sync.py                 Leaderboard (Beta) -- Keychain token storage + GitHub Gist API calls
 build_app.py                 builds "Claude Tracker.app" (launcher, a copy of Python, Info.plist, icon) for Applications

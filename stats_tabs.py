@@ -651,6 +651,12 @@ def settings_tab(state, interval_choices, detected, update_status=None):
                 "title": "General",
                 "items": [
                     ("switch", "Start at login", state.get("start_at_login", True), "login"),
+                    ("switch", "Show the cat", state.get("pet_enabled", True), "pet_enabled"),
+                    ("switch", "React to typing", state.get("pet_typing", True), "pet_typing"),
+                    ("switch", "React to deleting", state.get("pet_deleting", True), "pet_deleting"),
+                    ("switch", "Music and video", state.get("pet_media", True), "pet_media"),
+                    ("note", "The cat wanders, sleeps, and reacts the way Byte's pet does."),
+                    ("note", "Typing reactions need Accessibility. What you type is not saved."),
                     ("switch", "Show Leaderboard (Beta)", leaderboard_enabled(state),
                      "leaderboard_enabled"),
                     *([("switch", "Percentages from Anthropic",

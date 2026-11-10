@@ -34,6 +34,7 @@ from leaderboard import load_friends, save_friends, sorted_friends
 from notifications import SETTINGS_URL, Notifier
 from panel_speeds import ANIMATION_SPEEDS, DEFAULT_ANIMATION, animation_seconds
 from panel_view import Panel, SettingsWindow, confirm_with_details
+from pet_view import DesktopPet
 from single_instance import acquire_lock, observe_show_requests, request_show_panel
 from stats_tabs import (
     DEFAULT_MENU_BAR_FONT_SIZE,
@@ -163,6 +164,10 @@ class TokenCounterApp(rumps.App):
         self.state.setdefault("alert_windows", [w for w, _ in WINDOWS])
         self.state.setdefault("alerts_above", [])
         self.state.setdefault("claude_usage_enabled", True)
+        self.state.setdefault("pet_enabled", True)
+        self.state.setdefault("pet_typing", True)
+        self.state.setdefault("pet_deleting", True)
+        self.state.setdefault("pet_media", True)
         self.state.pop("budgets", None)  # token budgets, since removed
         self.state.pop("stats_tab", None)  # from the earlier in-menu tabs
         self.state.pop("panel_tab", None)  # the panel always opens on Home now
@@ -180,6 +185,7 @@ class TokenCounterApp(rumps.App):
             save_state(self.state, STATE_FILE)
             self.notifier.send(f"Updated to {__version__}. Your settings are unchanged.")
 
+        self.pet = DesktopPet(on_move=self._save_pet_origin)
         self.panel = Panel(on_action=self.handle_action)
         self.panel.animation_seconds = animation_seconds(self.state["panel_animation"])
         self.settings_window = SettingsWindow(on_action=self.handle_action)
@@ -197,6 +203,7 @@ class TokenCounterApp(rumps.App):
         # Opening the app again (e.g. from Finder) asks this copy to show its panel.
         self._show_observer = observe_show_requests(self.panel.show)
         self._update_title()
+        self._sync_pet()
         if not self.state["onboarding_done"]:
             self.panel.show()  # first run: ask which tools to track
 
@@ -352,6 +359,14 @@ class TokenCounterApp(rumps.App):
         elif action == "leaderboard_enabled":
             self.state["leaderboard_enabled"] = value
             save_state(self.state, STATE_FILE)
+        elif action == "pet_enabled":
+            self.state["pet_enabled"] = value
+            save_state(self.state, STATE_FILE)
+            self._sync_pet()
+        elif action in ("pet_typing", "pet_deleting", "pet_media"):
+            self.state[action] = value
+            save_state(self.state, STATE_FILE)
+            self._sync_pet()
         elif action == "check_updates":
             self.check_for_updates()
         elif action == "open_repo":
@@ -745,8 +760,36 @@ class TokenCounterApp(rumps.App):
         for message in messages:
             self.notifier.send(message)
 
+    def _save_pet_origin(self, x, y):
+        self.state["pet_origin"] = [x, y]
+        save_state(self.state, STATE_FILE)
+
+    def _sync_pet(self):
+        try:
+            self.pet.set_senses(
+                self.state.get("pet_typing", True),
+                self.state.get("pet_deleting", True),
+                self.state.get("pet_media", True),
+            )
+            if self.state.get("pet_enabled", True):
+                self.pet.show(self.state.get("pet_origin"))
+            else:
+                self.pet.hide()
+        except Exception as exc:
+            print(f"desktop pet: {exc}", file=sys.stderr)
+
+    def _note_pet_session(self):
+        busy = False
+        for key in self.state.get("enabled_tools", []):
+            sessions = active_sessions() if key == "claude_code" else running_tool_sessions(key)
+            if sessions:
+                busy = True
+                break
+        self.pet.note_session(busy)
+
     def refresh(self, _):
         self._scan()
+        self._note_pet_session()
         self._save_fetched_accounts()
         save_state(self.state, STATE_FILE)
         self._check_alerts()
