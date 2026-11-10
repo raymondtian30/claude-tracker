@@ -147,8 +147,6 @@ public enum ClaudeUsage {
                 resetsAt = NSNull()
             } else if let text = item["resets_at"] as? String, let time = LocalTime.parseISO(text) {
                 resetsAt = time
-            } else if let number = JSON.double(item["resets_at"]) {
-                resetsAt = number
             } else {
                 continue
             }

@@ -278,3 +278,10 @@ private func fableLimit(_ name: String = "Fable", kind: String = "weekly_fable",
     #expect(cut?.string("kind") == "weekly_" + String(repeating: "a", count: 24))
     #expect(cut?.string("label") == "Weekly · " + String(repeating: "a", count: 24))
 }
+
+@Test func numericResetTimeIsSkipped() throws {
+    // Only an ISO time or null: a number (or one too big for a date) skips the item.
+    for resetsAt: Any in [1794337200.0, 1e20, -1e20, true] {
+        #expect(try ClaudeUsage.parseUsage(answer(adding: [scoped("Fable", resetsAt: resetsAt)])).count == 3)
+    }
+}
