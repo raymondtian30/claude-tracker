@@ -22,12 +22,18 @@ public enum ActiveSessions {
         /// doesn't say), and since when (Unix seconds).
         public var status: String?
         public var since: Double?
+        /// The chat's title, as the editor shows it, to tell sessions apart.
+        public var title: String?
+        /// Where it runs: "VS Code" or "Terminal", when Claude Code says.
+        public var kind: String?
 
         public init(label: String, tokens: Int?, cwd: String? = nil, log: String? = nil,
                     plugins: [Plugins.Tag]? = nil, pid: Int32? = nil, stopped: Bool = false,
-                    status: String? = nil, since: Double? = nil) {
+                    status: String? = nil, since: Double? = nil, title: String? = nil, kind: String? = nil) {
             self.status = status
             self.since = since
+            self.title = title
+            self.kind = kind
             self.label = label
             self.tokens = tokens
             self.cwd = cwd
@@ -84,15 +90,19 @@ public enum ActiveSessions {
     // the script in the command line instead (tool key -> script name).
     public static let nodeScripts = ["gemini_cli": "gemini"]
 
+    /// The process ids of the running processes whose executable is `name`
+    /// (or, for a Node-based tool in `nodeScripts`, that runs its script).
+    static func toolPids(_ name: String, _ run: Run) throws -> [String] {
+        if let script = nodeScripts[name] {
+            return pidsRunningScript(try checkedOutput(["ps", "-eo", "pid,args"], run), script)
+        }
+        return pidsNamed(try checkedOutput(["ps", "-eo", "pid,comm"], run), name)
+    }
+
     /// Working directory of each running process whose executable is `name`
     /// (or, for a Node-based tool in `nodeScripts`, that runs its script).
     public static func runningCwds(_ name: String, run: Run = runCommand) throws -> [String] {
-        let pids: [String]
-        if let script = nodeScripts[name] {
-            pids = pidsRunningScript(try checkedOutput(["ps", "-eo", "pid,args"], run), script)
-        } else {
-            pids = pidsNamed(try checkedOutput(["ps", "-eo", "pid,comm"], run), name)
-        }
+        let pids = try toolPids(name, run)
 
         var cwds = [String]()
         for pid in pids {
@@ -114,6 +124,8 @@ public enum ActiveSessions {
         public var status: String?
         /// When the status last changed (Unix seconds), if recorded.
         public var updatedAt: Double?
+        /// Where it was started from ("claude-vscode", "cli"...), if recorded.
+        public var entrypoint: String? = nil
     }
 
     /// Claude Code's record of process `pid` running in `cwd`: its session
@@ -130,7 +142,53 @@ public enum ActiveSessions {
               id.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") })
         else { return nil }
         let milliseconds = JSON.double(object["statusUpdatedAt"]) ?? JSON.double(object["updatedAt"])
-        return SessionInfo(sessionId: id, status: object.string("status"), updatedAt: milliseconds.map { $0 / 1000 })
+        return SessionInfo(sessionId: id, status: object.string("status"), updatedAt: milliseconds.map { $0 / 1000 },
+                           entrypoint: object.string("entrypoint"))
+    }
+
+    /// What to call where a session runs, for the entrypoints Claude Code
+    /// records; nil for any other.
+    public static func kindLabel(entrypoint: String?) -> String? {
+        switch entrypoint {
+        case "claude-vscode": return "VS Code"
+        case "cli": return "Terminal"
+        default: return nil
+        }
+    }
+
+    /// How much of the end of a log is searched for the chat's title.
+    static let titleTailBytes = 512 * 1024
+
+    /// The chat's title: the one the user typed, else the generated one, as the
+    /// editor shows it on the chat's tab. Claude Code writes it into the log
+    /// again and again, so only the end of the log is read. One short line, or
+    /// nil when there is none. Shown on the Live tab only, never saved.
+    public static func chatTitle(log path: String) -> String? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        guard let size = try? handle.seekToEnd() else { return nil }
+        let start = size > UInt64(titleTailBytes) ? size - UInt64(titleTailBytes) : 0
+        guard (try? handle.seek(toOffset: start)) != nil, let data = try? handle.readToEnd() else { return nil }
+        var lines = String(decoding: data, as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: true)
+        if start > 0, !lines.isEmpty { lines.removeFirst() }  // it begins part way through a line
+        var generated: String?
+        for line in lines.reversed() where line.contains("-title") {
+            guard let object = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? JSONObject else { continue }
+            if object.string("type") == "custom-title", let title = oneLine(object.string("customTitle")) {
+                return title
+            }
+            if generated == nil, object.string("type") == "ai-title" {
+                generated = oneLine(object.string("aiTitle"))
+            }
+        }
+        return generated
+    }
+
+    /// `text` on one line of at most 60 characters, or nil if nothing is left.
+    private static func oneLine(_ text: String?) -> String? {
+        let words = (text ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        if words.isEmpty { return nil }
+        return words.count > 60 ? String(words.prefix(59)) + "…" : words
     }
 
     /// A running process: its id, the folder it runs in and whether it is paused.
@@ -295,7 +353,9 @@ public enum ActiveSessions {
                 sessions.append(Session(label: displayName(process.cwd),
                                         tokens: exists ? try TokenMath.sumUsageSince(log, offset: 0).0 : nil,
                                         cwd: process.cwd, log: exists ? log : nil, pid: process.pid,
-                                        stopped: process.stopped, status: info.status, since: info.updatedAt))
+                                        stopped: process.stopped, status: info.status, since: info.updatedAt,
+                                        title: exists ? chatTitle(log: log) : nil,
+                                        kind: kindLabel(entrypoint: info.entrypoint)))
             }
             unknown = stillUnknown
         }
@@ -337,14 +397,60 @@ public enum ActiveSessions {
             .map(\.element)
     }
 
+    /// Subcommands that start a server instead of a session someone works in
+    /// (Codex's app server and its daemon, opencode's server), by tool.
+    public static let serverSubcommands: [String: Set<String>] = [
+        "codex": ["app-server", "mcp-server"],
+        "opencode": ["serve", "web", "acp"],
+    ]
+
+    /// Options that take the next word as their value, so that word is not
+    /// the subcommand (`codex -c key=value app-server`).
+    private static let optionsWithValue: [String: Set<String>] = [
+        "codex": ["-c", "--config", "-m", "--model", "-p", "--profile", "-s", "--sandbox", "-a",
+                  "--ask-for-approval", "-C", "--cd", "-i", "--image", "--add-dir"],
+    ]
+
+    /// Whether a process of `tool` with command line `args` is a background
+    /// server: the first word after the program that isn't an option is a
+    /// server subcommand. Anything unclear counts as a session, so a real one
+    /// is never hidden.
+    public static func isBackgroundServer(_ tool: String, args: String) -> Bool {
+        guard let servers = serverSubcommands[tool] else { return false }
+        let program = nodeScripts[tool] ?? tool
+        let words = args.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let at = words.firstIndex(where: { basename($0) == program }) else { return false }
+        var skipNext = false
+        for word in words[(at + 1)...] {
+            if skipNext {
+                skipNext = false
+            } else if word.hasPrefix("-") {
+                skipNext = optionsWithValue[tool]?.contains(word) == true
+            } else {
+                return servers.contains(word)
+            }
+        }
+        return false
+    }
+
     /// Running sessions of a tool that has no per-session token counts
     /// (Codex, opencode): one row per process, labeled by its folder.
+    /// Background servers are not sessions and are left out (see
+    /// `isBackgroundServer`), nor are processes in "/" (an editor extension's
+    /// helpers). `cwds` stands in for the search, in tests.
     public static func runningToolSessions(_ name: String, home: String? = nil, cwds: [String]? = nil,
                                            run: Run = runCommand) throws -> [Session] {
-        // Processes sitting in "/" are background helpers (e.g. an editor
-        // extension's server), not sessions someone started in a project.
-        try (cwds ?? runningCwds(name, run: run))
-            .filter { $0 != "/" }
-            .map { Session(label: displayName($0, home: home), tokens: nil) }
+        var folders = cwds ?? []
+        if cwds == nil {
+            for pid in try toolPids(name, run) {
+                let args = (try? run(["ps", "-p", pid, "-o", "args="]))?.stdout ?? ""
+                if isBackgroundServer(name, args: args) { continue }
+                let result = try run(["lsof", "-a", "-p", pid, "-d", "cwd", "-Fn"])
+                for line in pythonLines(result.stdout) where line.hasPrefix("n") {
+                    folders.append(String(line.dropFirst()))
+                }
+            }
+        }
+        return folders.filter { $0 != "/" }.map { Session(label: displayName($0, home: home), tokens: nil) }
     }
 }

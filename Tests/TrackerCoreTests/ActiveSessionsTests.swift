@@ -325,3 +325,136 @@ private func writeSessionFile(_ dir: URL, pid: Int32, sessionId: String = uuid, 
     #expect(Set(sessions.compactMap(\.log)) == [owned.path, free.path])  // no log twice
     #expect(sessions.first { $0.pid == 43 }?.log == free.path && sessions.first { $0.pid == 43 }?.status == nil)
 }
+
+// MARK: - Background servers are not sessions
+
+@Test func serversAreToldFromSessionsByTheirSubcommand() {
+    // What `ps` shows for the real processes found on a Mac with the Codex app and opencode installed.
+    let servers = [
+        ("codex", "/Users/me/.codex/packages/app-server-daemon/releases/0.167.0/bin/codex app-server --listen unix:// --managed-daemon"),
+        ("codex", "/Users/me/.codex/packages/app-server-daemon/releases/0.167.0/bin/codex app-server daemon pid-update-loop"),
+        ("codex", "/ext/openai.chatgpt-26/bin/codex -c features.code_mode_host=true -c features.x=true app-server --analytics-default-enabled"),
+        ("opencode", "/opt/homebrew/Cellar/opencode/2.2.5/bin/opencode serve --service"),
+        ("opencode", "/opt/homebrew/bin/opencode web --port 4000"),
+    ]
+    for (tool, args) in servers {
+        #expect(ActiveSessions.isBackgroundServer(tool, args: args), "\(args)")
+    }
+    let sessions = [
+        ("codex", "/Users/me/.local/bin/codex"),
+        ("codex", "/Users/me/.local/bin/codex resume --last"),
+        ("codex", "/Users/me/.local/bin/codex -c model=x \"fix the app-server tests\""),
+        ("opencode", "/opt/homebrew/bin/opencode"),
+        ("opencode", "/opt/homebrew/bin/opencode run \"how do I serve static files\""),
+        ("gemini_cli", "node /usr/local/bin/gemini"),
+    ]
+    for (tool, args) in sessions {
+        #expect(!ActiveSessions.isBackgroundServer(tool, args: args), "\(args)")
+    }
+}
+
+@Test func runningToolSessionsLeavesOutTheServers() throws {
+    let argsByPid = [
+        "7": "/Users/me/.codex/bin/codex app-server --listen unix://",
+        "8": "/Users/me/.local/bin/codex",
+        "9": "/Users/me/.codex/bin/codex app-server daemon pid-update-loop",
+    ]
+    let run: ActiveSessions.Run = { arguments in
+        switch arguments[0] {
+        case "ps" where arguments[1] == "-eo":
+            return .init(status: 0, stdout: "  PID COMM\n  7 /Users/me/.codex/bin/codex\n  8 /Users/me/.local/bin/codex\n  9 /Users/me/.codex/bin/codex\n")
+        case "ps":
+            return .init(status: 0, stdout: (argsByPid[arguments[2]] ?? "") + "\n")
+        default:
+            return .init(status: 0, stdout: "p\(arguments[3])\nfcwd\nn/Users/me/work\(arguments[3])\n")
+        }
+    }
+
+    let rows = try ActiveSessions.runningToolSessions("codex", home: "/Users/me", run: run)
+
+    #expect(rows.map(\.label) == ["~/work8"])  // only the one someone is working in
+}
+
+// MARK: - The chat's title, as the editor shows it, and what kind of session it is
+
+private func titleLog(_ lines: [JSONObject]) -> URL {
+    let url = TempDir().url("session.jsonl")
+    writeJSONL(url, lines)
+    return url
+}
+
+@Test func theLastTitleInTheLogIsTheChatsTitle() {
+    let url = titleLog([
+        ["type": "user", "message": "hi"],
+        ["type": "ai-title", "aiTitle": "First idea"],
+        ["type": "assistant", "message": ["usage": ["input_tokens": 1]]],
+        ["type": "ai-title", "aiTitle": "Active plugins"],
+    ])
+
+    #expect(ActiveSessions.chatTitle(log: url.path) == "Active plugins")
+}
+
+@Test func aTitleTheUserTypedWinsOverTheGeneratedOne() {
+    let url = titleLog([
+        ["type": "custom-title", "customTitle": "My name for it"],
+        ["type": "ai-title", "aiTitle": "Generated"],
+    ])
+
+    #expect(ActiveSessions.chatTitle(log: url.path) == "My name for it")
+}
+
+@Test func noTitleMeansNil() {
+    #expect(ActiveSessions.chatTitle(log: titleLog([["type": "user"]]).path) == nil)
+    #expect(ActiveSessions.chatTitle(log: "/nonexistent/file.jsonl") == nil)
+    #expect(ActiveSessions.chatTitle(log: titleLog([["type": "ai-title", "aiTitle": "  \n "]]).path) == nil)
+    #expect(ActiveSessions.chatTitle(log: titleLog([["type": "ai-title", "aiTitle": 5]]).path) == nil)
+}
+
+@Test func aTitleIsOneShortLine() {
+    let messy = ActiveSessions.chatTitle(log: titleLog([["type": "ai-title", "aiTitle": "  Fix\nthe   chart \t now "]]).path)
+    let long = ActiveSessions.chatTitle(log: titleLog([["type": "ai-title", "aiTitle": String(repeating: "word ", count: 30)]]).path)
+
+    #expect(messy == "Fix the chart now")
+    #expect(long?.count == 60 && long?.hasSuffix("…") == true)
+}
+
+@Test func onlyTheEndOfALongLogIsRead() throws {
+    // Titles are written again and again, so the end of the log has one; a
+    // log of megabytes isn't read from the top for it.
+    let url = TempDir().url("big.jsonl")
+    let filler = jsonLine(["type": "user", "message": String(repeating: "x", count: 900)])
+    var text = jsonLine(["type": "ai-title", "aiTitle": "Only at the very start"])
+    text += String(repeating: filler, count: 1200)  // over 1 MB
+    text += jsonLine(["type": "ai-title", "aiTitle": "Near the end"])
+    text += jsonLine(["type": "user", "message": "last"])
+    writeText(url, text)
+
+    #expect(ActiveSessions.chatTitle(log: url.path) == "Near the end")
+
+    var startOnly = jsonLine(["type": "ai-title", "aiTitle": "Only at the very start"])
+    startOnly += String(repeating: filler, count: 1200)
+    writeText(url, startOnly)
+    #expect(ActiveSessions.chatTitle(log: url.path) == nil)  // out of reach, and that is fine
+}
+
+@Test func theKindOfSessionIsNamedForWhereItRuns() {
+    #expect(ActiveSessions.kindLabel(entrypoint: "claude-vscode") == "VS Code")
+    #expect(ActiveSessions.kindLabel(entrypoint: "cli") == "Terminal")
+    #expect(ActiveSessions.kindLabel(entrypoint: "something-new") == nil)
+    #expect(ActiveSessions.kindLabel(entrypoint: nil) == nil)
+}
+
+@Test func aSessionCarriesItsTitleAndKind() throws {
+    let tmp = TempDir()
+    let project = tmp.mkdir("projects/-Users-alice-work")
+    writeJSONL(project.appendingPathComponent("\(uuid).jsonl"),
+               [assistantEntry(5, 5), ["type": "ai-title", "aiTitle": "Prompt-vault skill"]])
+    let sessionsDir = tmp.url("sessions")
+    writeSessionFile(sessionsDir, pid: 42, extra: ["entrypoint": "claude-vscode"])
+
+    let sessions = try ActiveSessions.activeSessions(
+        projectsDir: tmp.url("projects"), processes: [.init(pid: 42, cwd: "/Users/alice/work", stopped: false)],
+        sessionsDir: sessionsDir)
+
+    #expect(sessions[0].title == "Prompt-vault skill" && sessions[0].kind == "VS Code")
+}

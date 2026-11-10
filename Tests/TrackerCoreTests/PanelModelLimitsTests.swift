@@ -413,8 +413,8 @@ private func sessionRows(_ sessions: [ActiveSessions.Session]) -> [Item] {
 
 // MARK: - Stop and Quit for each Claude process
 
-private func claudeTab(_ sessions: [ActiveSessions.Session]) -> Tab {
-    PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), sessions, plugins: nil, now: 0)
+private func claudeTab(_ sessions: [ActiveSessions.Session], now: Double = 1_000_000) -> Tab {
+    PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), sessions, plugins: nil, now: now)
 }
 
 private func button(_ title: String, _ icon: String, _ action: String) -> Item.Button {
@@ -422,41 +422,67 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
 }
 
 @Test func eachClaudeProcessGetsItsOwnCardWithStopAndQuit() {
+    let now = 1_000_000.0
     let tab = claudeTab([
         ActiveSessions.Session(label: "~/a/app", tokens: 1500, cwd: "/Users/me/a/app", log: "x",
-                               plugins: [Plugins.Tag("caveman", true)], pid: 42),
-        ActiveSessions.Session(label: "~/a/app", tokens: 500, cwd: "/Users/me/a/app", log: "y", pid: 43, stopped: true),
-    ])
+                               plugins: [Plugins.Tag("caveman", true)], pid: 42, status: "busy", since: now - 5,
+                               title: "Active plugins", kind: "VS Code"),
+        ActiveSessions.Session(label: "~/a/app", tokens: 500, cwd: "/Users/me/a/app", log: "y", pid: 43,
+                               status: "idle", since: now - 7200, kind: "Terminal"),
+    ], now: now)
 
     expectWellFormed(tab)
     #expect(tab.cards.count == 3)
     #expect(tab.cards[0].title == "Sessions (2)")
-    #expect(tab.cards[0].items == [.buttons([button("Stop all", "pause.circle", "sessions_stop_all"),
-                                             button("Resume all", "play.circle", "sessions_resume_all")])])
+    // The chat's title tells the cards apart; the folder, kind, state and process number are under it.
     #expect(tab.cards[1].title == nil)
     #expect(tab.cards[1].items == [
-        .row(label: "app", value: "1.5K"),
-        .note("Process 42 · running"),
+        .row(label: "Active plugins", value: "1.5K"),
+        .note("VS Code · busy now"),
+        .note("app · process 42"),
         .tags([Item.Tag("caveman", true)]),
         .buttons([button("Stop", "pause.circle", "session_stop:42"), button("Quit", "xmark.circle", "session_quit:42")]),
     ])
     #expect(tab.cards[2].items == [
         .row(label: "app", value: "500"),
-        .note("Process 43 · paused"),
-        .buttons([button("Resume", "play.circle", "session_resume:43"), button("Quit", "xmark.circle", "session_quit:43")]),
+        .note("Terminal · idle for 2 hr"),
+        .note("process 43"),
+        .buttons([button("Stop", "pause.circle", "session_stop:43"), button("Quit", "xmark.circle", "session_quit:43")]),
     ])
 }
 
-@Test func resumeAllOnlyShowsWhenSomethingIsPaused() {
-    let tab = claudeTab([ActiveSessions.Session(label: "~/p", tokens: nil, cwd: "/p", log: "x", pid: 7)])
+@Test func aPausedProcessSaysSoLoudlyAndOffersResume() {
+    let tab = claudeTab([
+        ActiveSessions.Session(label: "~/a", tokens: 7, cwd: "/a", log: "z", pid: 5, stopped: true, status: "busy",
+                               title: "Chart fix", kind: "VS Code"),
+    ])
 
-    #expect(tab.cards[0].items == [.buttons([button("Stop all", "pause.circle", "sessions_stop_all")])])
-    #expect(tab.cards[1].items.first == .row(label: "p", value: "0"))
+    #expect(tab.cards[1].items == [
+        .row(label: "Chart fix", value: "7"),
+        .alert(text: "Paused · click Resume to continue", showIcon: true),
+        .note("a · process 5"),
+        .buttons([button("Resume", "play.circle", "session_resume:5"), button("Quit", "xmark.circle", "session_quit:5")]),
+    ])
+}
+
+@Test func theSummaryCardHasStopAllQuitAllAndResumeAllWhenSomethingIsPaused() {
+    let running = ActiveSessions.Session(label: "~/p", tokens: nil, cwd: "/p", log: "x", pid: 7)
+    let paused = ActiveSessions.Session(label: "~/q", tokens: nil, cwd: "/q", log: "y", pid: 8, stopped: true)
+
+    #expect(claudeTab([running]).cards[0].items == [
+        .buttons([button("Stop all", "pause.circle", "sessions_stop_all"),
+                  button("Quit all", "xmark.circle", "sessions_quit_all")]),
+    ])
+    #expect(claudeTab([running, paused]).cards[0].items == [
+        .buttons([button("Stop all", "pause.circle", "sessions_stop_all"),
+                  button("Quit all", "xmark.circle", "sessions_quit_all")]),
+        .buttons([button("Resume all", "play.circle", "sessions_resume_all")]),
+    ])
 }
 
 @Test func foldersWithOneNameShowTheirParentOnProcessCards() {
     let tab = claudeTab([
-        ActiveSessions.Session(label: "~/a/app", tokens: 2, cwd: "/Users/me/a/app", log: "x", pid: 1 + 1),
+        ActiveSessions.Session(label: "~/a/app", tokens: 2, cwd: "/Users/me/a/app", log: "x", pid: 2),
         ActiveSessions.Session(label: "~/b/app", tokens: 1, cwd: "/Users/me/b/app", log: "y", pid: 3),
     ])
 
@@ -472,8 +498,10 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
     ])
 
     #expect(tab.cards[0].title == "Sessions (3)")
-    #expect(tab.cards[0].items == [.buttons([button("Stop all", "pause.circle", "sessions_stop_all")]),
-                                   .row(label: "g · 2 sessions", value: "running")])
+    #expect(tab.cards[0].items == [
+        .buttons([button("Stop all", "pause.circle", "sessions_stop_all"), button("Quit all", "xmark.circle", "sessions_quit_all")]),
+        .row(label: "g · 2 sessions", value: "running"),
+    ])
     #expect(tab.cards.count == 2)  // and one card for the process
 }
 
@@ -488,19 +516,25 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
     #expect(tab.cards[1].items.first == .row(label: "app", value: "5"))
 }
 
+@Test func aProcessWithNoLogShowsZeroTokensAndSaysItHasNoMessages() {
+    let tab = claudeTab([
+        ActiveSessions.Session(label: "~/c", tokens: nil, cwd: "/c", pid: 4, status: "idle", since: 999_970),
+    ])
+
+    #expect(tab.cards[1].items.prefix(2) == [.row(label: "c", value: "0"), .note("idle, no messages yet")])
+}
+
 @Test func eachProcessSaysWhetherItIsBusyOrIdle() {
     let now = 1_000_000.0
-    let tab = PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), [
+    let tab = claudeTab([
         ActiveSessions.Session(label: "~/a", tokens: 9, cwd: "/a", log: "x", pid: 2, status: "busy", since: now - 5),
         ActiveSessions.Session(label: "~/b", tokens: 8, cwd: "/b", log: "y", pid: 3, status: "idle", since: now - 7200),
-        ActiveSessions.Session(label: "~/c", tokens: nil, cwd: "/c", pid: 4, status: "idle", since: now - 30),
-        ActiveSessions.Session(label: "~/d", tokens: 7, cwd: "/d", log: "z", pid: 5, stopped: true, status: "busy"),
-    ], plugins: nil, now: now)
+        ActiveSessions.Session(label: "~/c", tokens: 7, cwd: "/c", log: "z", pid: 4, status: "idle", since: now - 30),
+        ActiveSessions.Session(label: "~/d", tokens: 6, cwd: "/d", log: "w", pid: 5),
+        ActiveSessions.Session(label: "~/e", tokens: 5, cwd: "/e", log: "v", pid: 6, status: "idle", since: now - 200_000),
+    ], now: now)
 
-    func note(_ card: Int) -> Item { tab.cards[card].items[1] }
-    #expect(note(1) == .note("Process 2 · busy now"))
-    #expect(note(2) == .note("Process 3 · idle for 2 hr"))
-    #expect(note(3) == .note("Process 4 · idle, no messages yet"))
-    #expect(note(4) == .note("Process 5 · paused"))
-    #expect(tab.cards[3].items[0] == .row(label: "c", value: "0"))
+    let states = (1...5).map { tab.cards[$0].items[1] }
+    #expect(states == [.note("busy now"), .note("idle for 2 hr"), .note("idle for under a minute"),
+                       .note("running"), .note("idle for 2 days")])
 }

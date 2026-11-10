@@ -393,7 +393,8 @@ final class AppController {
         case .projectsExpand: projectsExpanded.toggle()
         case .sessionStop(let pid): pauseOrResume(.stop, [pid])
         case .sessionResume(let pid): pauseOrResume(.resume, [pid])
-        case .sessionQuit(let pid): quitSession(pid)
+        case .sessionQuit(let pid): quitSessions([pid])
+        case .sessionsQuitAll: quitSessions(livePids)
         case .sessionsStopAll: pauseOrResume(.stop, livePids)
         case .sessionsResumeAll: pauseOrResume(.resume, live.sessions.filter(\.stopped).compactMap(\.pid))
         case .aboutView(let showCredits): aboutShowsCredits = showCredits

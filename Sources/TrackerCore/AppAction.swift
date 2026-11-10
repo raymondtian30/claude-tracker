@@ -47,6 +47,7 @@ public enum AppAction: Equatable {
     case sessionResume(Int32)
     case sessionQuit(Int32)
     case sessionsStopAll
+    case sessionsQuitAll
     case sessionsResumeAll
     case showEffort(Bool)
     case chartDays(Int)
@@ -109,6 +110,7 @@ public enum AppAction: Equatable {
         case "leaderboard_enabled": return .leaderboardEnabled(isOn)
         case "projects_expand": return .projectsExpand
         case "sessions_stop_all": return .sessionsStopAll
+        case "sessions_quit_all": return .sessionsQuitAll
         case "sessions_resume_all": return .sessionsResumeAll
         case "show_effort": return .showEffort(isOn)
         case "chart_days":
@@ -168,7 +170,8 @@ public enum AppAction: Equatable {
     /// Dialogs can't sit on top of the popover, so these close it first.
     public var opensDialog: Bool {
         switch self {
-        case .leaderboardSetup, .leaderboardShare, .leaderboardAdd, .providerKey, .providerKeyRemove, .sessionQuit:
+        case .leaderboardSetup, .leaderboardShare, .leaderboardAdd, .providerKey, .providerKeyRemove, .sessionQuit,
+             .sessionsQuitAll:
             return true
         default:
             return false

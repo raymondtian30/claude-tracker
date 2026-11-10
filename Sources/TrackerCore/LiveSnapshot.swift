@@ -41,7 +41,7 @@ public struct LiveSnapshot: Equatable {
             for index in sessions.indices where sessions[index].pid.map(pids.contains) == true {
                 sessions[index].stopped = action == .stop
             }
-        case .quit:
+        case .quit, .forceQuit:
             sessions.removeAll { $0.pid.map(pids.contains) == true }
         }
     }
