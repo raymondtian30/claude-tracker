@@ -65,6 +65,12 @@ final class AppController {
             log("Couldn't read \(files.state.path): \(error)")
             exit(1)
         }
+        if let problem = AppState.backupBeforeUpgrade(
+            stateFile: files.state, freshInstall: freshInstall,
+            fileExists: { FileManager.default.fileExists(atPath: $0.path) },
+            copy: { try FileManager.default.copyItem(at: $0, to: $1) }) {
+            log(problem)
+        }
         AppState.applyLaunchDefaults(&state, freshInstall: freshInstall, today: Day.today())
         notifier.requestPermission()
         Appearance.apply(state.string("appearance") ?? PanelSpeeds.defaultAppearance)
@@ -73,6 +79,7 @@ final class AppController {
         // up to the offsets saved by the previous run.
         attempt("backfill daily totals") { try TokenMath.backfillDaily(&state) }
         attempt("backfill limits") { try TokenMath.backfillLimits(&state) }
+        attempt("backfill efforts") { try TokenMath.backfillEfforts(&state) }
         scan()
         save()
         fetchAccounts()

@@ -135,22 +135,44 @@ extension PanelModel {
                    cards: [breakdownCard("Today", d.todayModels, extra: 0), lifetime])
     }
 
-    static func modelsCard(_ title: String, _ models: UsageStats.Models) -> Card {
+    /// One bar per model, or per model and effort ("Opus 5.5 (HIGH)") when the
+    /// tool recorded the effort. A model's effort rows are largest first, and
+    /// their sum is clamped to the model's total (merged or backfilled maps can
+    /// hold more than the model has); what's left over, when there is any,
+    /// stays a plain model row. So the rows always add up to the model's total.
+    static func modelsCard(_ title: String, _ models: UsageStats.Models,
+                           efforts: [String: [String: Int]] = [:]) -> Card {
         let totals = UsageStats.modelTotals(models)
         let whole = totals.reduce(0) { $0 + $1.tokens }
         if totals.isEmpty {
             return Card(title: title, items: [.note("No usage yet")])
         }
-        return Card(title: title, items: totals.map { shareBar(modelDisplayName($0.name), $0.tokens, whole) })
+        var items = [Item]()
+        for total in totals {
+            let name = modelDisplayName(total.name)
+            var left = total.tokens
+            var shownAny = false
+            let known = (efforts[total.name] ?? [:]).sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            for (effort, tokens) in known where left > 0 {
+                let shown = Swift.min(tokens, left)
+                items.append(shareBar("\(name) (\(effort.uppercased()))", shown, whole))
+                left -= shown
+                shownAny = true
+            }
+            if left > 0 || !shownAny {
+                items.append(shareBar(name, left, whole))
+            }
+        }
+        return Card(title: title, items: items)
     }
 
     static func modelsTab(_ d: PanelData) -> Tab {
-        var lifetime = modelsCard("Lifetime", d.lifetimeModels)
+        var lifetime = modelsCard("Lifetime", d.lifetimeModels, efforts: d.lifetimeEfforts)
         if d.earlier != 0 {
             lifetime.items.append(.note("Plus \(TokenMath.formatCount(d.earlier)) older tokens with no model detail"))
         }
         return Tab(key: "models", title: "Models", short: "Models", icon: "brain",
-                   cards: [modelsCard("Today", d.todayModels), lifetime])
+                   cards: [modelsCard("Today", d.todayModels, efforts: d.todayEfforts), lifetime])
     }
 
     // MARK: - Projects

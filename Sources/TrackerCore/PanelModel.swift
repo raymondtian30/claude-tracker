@@ -169,6 +169,8 @@ public enum PanelModel {
         let weekModels: UsageStats.Models
         let monthModels: UsageStats.Models
         let lifetimeModels: UsageStats.Models
+        let todayEfforts: [String: [String: Int]]
+        let lifetimeEfforts: [String: [String: Int]]
         let grandTotal: Int
         let earlier: Int
         let todayTotal: Int
@@ -183,6 +185,8 @@ public enum PanelModel {
             weekModels = UsageStats.modelsInRange(daily, weekStart, today)
             monthModels = UsageStats.modelsInRange(daily, today.firstOfMonth, today)
             lifetimeModels = UsageStats.modelsAllTime(daily)
+            todayEfforts = UsageStats.effortsInRange(daily, today, today)
+            lifetimeEfforts = UsageStats.effortsAllTime(daily)
             let detailed = UsageStats.modelTotals(lifetimeModels).reduce(0) { $0 + $1.tokens }
             grandTotal = view.grandTotal
             earlier = Swift.max(grandTotal - detailed, 0)
