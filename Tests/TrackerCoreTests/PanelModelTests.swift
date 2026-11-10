@@ -735,7 +735,7 @@ private func labels(_ tab: Tab) -> [String] {
     for days in [7, 14, 30] {
         let tab = tabsFor(daily, state: ["chart_days": days])["overview"]!
         let card = tab.cards.first { $0.title == "Last \(days) days" }!
-        #expect(card.items[0] == .segmented(label: nil, options: ["7 days", "14 days", "30 days"],
+        #expect(card.items[0] == .segmented(label: nil, options: ["7 days", "14 days", "30 days", "All", "Custom"],
                                             selected: [7, 14, 30].firstIndex(of: days)!, action: "chart_days"))
         guard case let .chart(values, _, chartLabels) = card.items[1] else { Issue.record("no chart"); return }
         #expect(values.count == days && chartLabels.count == days)
@@ -794,4 +794,65 @@ private func labels(_ tab: Tab) -> [String] {
     #expect(euro.hasPrefix("€"))
     #expect(today(["currency": "XXX"]) == usd)  // unknown reads as dollars
     #expect(today(["currency": 5]) == usd)
+}
+
+// MARK: - Chart range: all time and custom
+
+private let july29 = Day(2026, 7, 29)
+
+@Test func chartRangeReadsTheSavedChoice() {
+    let earliest = Day(2026, 3, 2)
+    func range(_ state: JSONObject) -> PanelModel.ChartRange {
+        PanelModel.chartRange(from: state, today: july29, earliest: earliest)
+    }
+    #expect(range([:]) == .days(14))
+    #expect(range(["chart_days": 30]) == .days(30))
+    #expect(range(["chart_mode": "all"]) == .allTime(from: earliest))
+    #expect(range(["chart_mode": "custom", "chart_from": "2026-07-01", "chart_to": "2026-07-20"])
+            == .custom(from: Day(2026, 7, 1), to: Day(2026, 7, 20)))
+    // Backwards dates swap; a future end stops at today.
+    #expect(range(["chart_mode": "custom", "chart_from": "2026-07-20", "chart_to": "2026-07-01"])
+            == .custom(from: Day(2026, 7, 1), to: Day(2026, 7, 20)))
+    #expect(range(["chart_mode": "custom", "chart_from": "2026-07-01", "chart_to": "2030-01-01"])
+            == .custom(from: Day(2026, 7, 1), to: july29))
+    // Anything unreadable is the 14-day default.
+    #expect(range(["chart_mode": "custom", "chart_from": "nope", "chart_to": "2026-07-20"]) == .days(14))
+    #expect(range(["chart_mode": "custom", "chart_from": 5, "chart_to": NSNull()]) == .days(14))
+    #expect(range(["chart_mode": "sideways", "chart_days": 7]) == .days(7))
+    #expect(range(["chart_mode": 3]) == .days(14))
+}
+
+@Test func allTimeWithNoUsageIsJustToday() {
+    #expect(PanelModel.chartRange(from: ["chart_mode": "all"], today: july29, earliest: nil)
+            == .allTime(from: july29))
+}
+
+@Test func overviewChartAllTimeStartsAtTheFirstDay() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, panelEntry("2026-05-01T12:00:00.000Z", ["input_tokens": 9]))
+    UsageStats.recordEntry(&daily, panelEntry("2026-07-29T12:00:00.000Z", ["input_tokens": 15]))
+    let tab = tabsFor(daily, state: ["chart_mode": "all"])["overview"]!
+    let card = tab.cards.first { $0.title == "All time" }!
+
+    #expect(card.items[0] == .segmented(label: nil, options: ["7 days", "14 days", "30 days", "All", "Custom"],
+                                        selected: 3, action: "chart_days"))
+    guard case let .chart(values, caption, chartLabels) = card.items[1] else { Issue.record("no chart"); return }
+    #expect(values.reduce(0, +) == 24 && values.count <= 60 && values.count == chartLabels.count)
+    #expect(chartLabels.first?.hasPrefix("May 1st") == true && chartLabels.last?.hasSuffix("Jul 29th") == true)
+    #expect(caption.hasPrefix("Peak "))
+}
+
+@Test func overviewChartCustomShowsTwoDateFields() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, panelEntry("2026-07-10T12:00:00.000Z", ["input_tokens": 9]))
+    UsageStats.recordEntry(&daily, panelEntry("2026-07-29T12:00:00.000Z", ["input_tokens": 15]))
+    let state: JSONObject = ["chart_mode": "custom", "chart_from": "2026-07-08", "chart_to": "2026-07-12"]
+    let tab = tabsFor(daily, state: state)["overview"]!
+    let card = tab.cards.first { $0.title == "Jul 8th – Jul 12th" }!
+
+    #expect(card.items[0] == .segmented(label: nil, options: ["7 days", "14 days", "30 days", "All", "Custom"],
+                                        selected: 4, action: "chart_days"))
+    #expect(card.items[1] == .dateRange(from: Day(2026, 7, 8), to: Day(2026, 7, 12), latest: july29))
+    guard case let .chart(values, _, _) = card.items[2] else { Issue.record("no chart"); return }
+    #expect(values == [0, 0, 9, 0, 0])
 }

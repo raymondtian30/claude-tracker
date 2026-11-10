@@ -323,3 +323,45 @@ private struct Offline: Error {}
     #expect(!AppState.leaderboardSyncDue(["my_gist_id": NSNull()], today: today))
     #expect(!AppState.leaderboardSyncDue(["my_gist_id": "g", "leaderboard_enabled": false], today: today))
 }
+
+// MARK: - Chart range
+
+@Test func pickingDaysAllOrCustomSetsTheChartMode() {
+    var state: JSONObject = [:]
+    let today = Day(2026, 7, 29)
+
+    AppState.applyChart(.chartDays(30), to: &state, today: today)
+    #expect(state["chart_mode"] as? String == "days" && state["chart_days"] as? Int == 30)
+
+    AppState.applyChart(.chartAll, to: &state, today: today)
+    #expect(state["chart_mode"] as? String == "all" && state["chart_days"] as? Int == 30)
+
+    // Custom starts as the last 30 days, and keeps what was picked after that.
+    AppState.applyChart(.chartCustom, to: &state, today: today)
+    #expect(state["chart_mode"] as? String == "custom")
+    #expect(state["chart_from"] as? String == "2026-06-30" && state["chart_to"] as? String == "2026-07-29")
+    AppState.applyChart(.chartFrom(Day(2026, 7, 1)), to: &state, today: today)
+    AppState.applyChart(.chartAll, to: &state, today: today)
+    AppState.applyChart(.chartCustom, to: &state, today: today)
+    #expect(state["chart_from"] as? String == "2026-07-01")
+}
+
+@Test func customDatesStayInOrderAndNotInTheFuture() {
+    let today = Day(2026, 7, 29)
+    var state: JSONObject = ["chart_mode": "custom", "chart_from": "2026-07-10", "chart_to": "2026-07-20"]
+
+    AppState.applyChart(.chartFrom(Day(2026, 7, 25)), to: &state, today: today)  // past the end: the end follows
+    #expect(state["chart_from"] as? String == "2026-07-25" && state["chart_to"] as? String == "2026-07-25")
+
+    AppState.applyChart(.chartTo(Day(2026, 7, 5)), to: &state, today: today)  // before the start: the start follows
+    #expect(state["chart_from"] as? String == "2026-07-05" && state["chart_to"] as? String == "2026-07-05")
+
+    AppState.applyChart(.chartTo(Day(2027, 1, 1)), to: &state, today: today)
+    #expect(state["chart_to"] as? String == "2026-07-29")
+}
+
+@Test func chartActionsLeaveOtherActionsAlone() {
+    var state: JSONObject = ["a": 1]
+    AppState.applyChart(.quit, to: &state, today: Day(2026, 7, 29))
+    #expect(state.count == 1)
+}

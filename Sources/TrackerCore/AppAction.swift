@@ -44,6 +44,10 @@ public enum AppAction: Equatable {
     case projectsExpand
     case showEffort(Bool)
     case chartDays(Int)
+    case chartAll
+    case chartCustom
+    case chartFrom(Day)
+    case chartTo(Day)
     case currency(String)
     case aboutView(showCredits: Bool)
     case checkUpdates
@@ -99,7 +103,18 @@ public enum AppAction: Equatable {
         case "leaderboard_enabled": return .leaderboardEnabled(isOn)
         case "projects_expand": return .projectsExpand
         case "show_effort": return .showEffort(isOn)
-        case "chart_days": return pick(value, PanelModel.chartRanges).map(AppAction.chartDays)
+        case "chart_days":
+            // The day counts, then "All", then "Custom".
+            if case .index(let index) = value, index >= PanelModel.chartRanges.count {
+                return [AppAction.chartAll, .chartCustom][safe: index - PanelModel.chartRanges.count]
+            }
+            return pick(value, PanelModel.chartRanges).map(AppAction.chartDays)
+        case "chart_from":
+            guard case .text(let text) = value, let day = Day(iso: text) else { return nil }
+            return .chartFrom(day)
+        case "chart_to":
+            guard case .text(let text) = value, let day = Day(iso: text) else { return nil }
+            return .chartTo(day)
         case "currency": return pick(value, Pricing.currencies.map(\.code)).map(AppAction.currency)
         case "about_view":
             return pick(value, [false, true]).map { .aboutView(showCredits: $0) }
@@ -148,4 +163,8 @@ extension ActionValue {
         if case .bool(let on) = self { return on }
         return false
     }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }

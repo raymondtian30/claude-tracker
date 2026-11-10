@@ -80,3 +80,10 @@ import Testing
     #expect(PanelSpeeds.animationSeconds("off") == 0.0)
     #expect(PanelSpeeds.animationSeconds("nope") == 0.22)
 }
+
+@Test func daysBetweenTwoDays() {
+    #expect(Day(2026, 7, 1).days(to: Day(2026, 7, 29)) == 28)
+    #expect(Day(2024, 2, 28).days(to: Day(2024, 3, 1)) == 2)
+    #expect(Day(2026, 7, 29).days(to: Day(2026, 7, 1)) == -28)
+    #expect(Day(2026, 7, 29).days(to: Day(2026, 7, 29)) == 0)
+}

@@ -54,6 +54,35 @@ public enum PanelModel {
         return days
     }
 
+    /// What the Home chart covers.
+    public enum ChartRange: Equatable {
+        /// The last N days, ending today.
+        case days(Int)
+        /// From the first day with usage (or today, if none) to today.
+        case allTime(from: Day)
+        /// The two days picked, both included, in order and not after today.
+        case custom(from: Day, to: Day)
+    }
+
+    /// The saved range choice (`chart_mode`: "days", "all" or "custom"); a
+    /// custom range whose dates can't be read, and any other value, read as
+    /// the last `chartDays` days.
+    public static func chartRange(from state: JSONObject, today: Day, earliest: Day?) -> ChartRange {
+        switch state.string("chart_mode") {
+        case "all":
+            return .allTime(from: Swift.min(earliest ?? today, today))
+        case "custom":
+            guard let from = state.string("chart_from").flatMap({ Day(iso: $0) }),
+                  let to = state.string("chart_to").flatMap({ Day(iso: $0) })
+            else { break }
+            let (a, b) = (Swift.min(from, today), Swift.min(to, today))
+            return .custom(from: Swift.min(a, b), to: Swift.max(a, b))
+        default:
+            break
+        }
+        return .days(chartDays(from: state))
+    }
+
     /// The currency prices are shown in (an unknown or wrong-typed one reads as dollars).
     public static func currency(from state: JSONObject) -> String {
         guard let code = state.string("currency"), Pricing.currencies.contains(where: { $0.code == code })

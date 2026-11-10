@@ -322,8 +322,8 @@ final class AppController {
         case .showEffort(let on):
             state["show_effort"] = on
             save()
-        case .chartDays(let days):
-            state["chart_days"] = days
+        case .chartDays, .chartAll, .chartCustom, .chartFrom, .chartTo:
+            AppState.applyChart(parsed, to: &state, today: Day.today())
             save()
         case .currency(let code):
             state["currency"] = code

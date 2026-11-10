@@ -58,6 +58,11 @@ public struct Day: Hashable, Comparable, CustomStringConvertible {
         Day.fromOrdinal(ordinal + days)
     }
 
+    /// How many days from this day to `other` (negative when `other` is earlier).
+    public func days(to other: Day) -> Int {
+        other.ordinal - ordinal
+    }
+
     /// The first of this day's month, like `date.replace(day=1)`.
     public var firstOfMonth: Day { Day(year, month, 1) }
 
