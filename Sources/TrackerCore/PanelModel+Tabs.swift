@@ -461,6 +461,29 @@ extension PanelModel {
                     items: items.isEmpty ? [.note("No plugins enabled")] : items)
     }
 
+    /// What a process is doing, for its card: paused, busy now, idle for how
+    /// long, or just running when Claude Code doesn't say.
+    static func processState(_ session: ActiveSessions.Session, now: Double) -> String {
+        if session.stopped { return "paused" }
+        switch session.status {
+        case "busy": return "busy now"
+        case "idle":
+            if session.log == nil { return "idle, no messages yet" }
+            guard let since = session.since else { return "idle" }
+            return "idle for " + formatDuration(Swift.max(now - since, 0))
+        default: return "running"
+        }
+    }
+
+    /// "5 min", "2 hr", "3 days": how long, without "ago".
+    static func formatDuration(_ seconds: Double) -> String {
+        if seconds < 60 { return "under a minute" }
+        if seconds < 3600 { return "\(Int(seconds / 60)) min" }
+        if seconds < 86400 { return "\(Int(seconds / 3600)) hr" }
+        let days = Int(seconds / 86400)
+        return "\(days) day\(days == 1 ? "" : "s")"
+    }
+
     /// Open sessions, then (when `plugins` is given: Claude Code's view or All
     /// AIs) what each plugin did. A Claude Code process gets a card of its
     /// own, with Stop (pause) and Quit; a summary card on top has Stop all.
@@ -534,8 +557,8 @@ extension PanelModel {
             let pause = session.stopped ? Item.Button("Resume", "play.circle", "session_resume:\(pid)")
                 : Item.Button("Stop", "pause.circle", "session_stop:\(pid)")
             cards.append(Card(title: nil, items: [
-                .row(label: name(session), value: session.tokens.map(TokenMath.formatCount) ?? "running"),
-                .note("Process \(pid) · \(session.stopped ? "paused" : "running")"),
+                .row(label: name(session), value: TokenMath.formatCount(session.tokens ?? 0)),
+                .note("Process \(pid) · " + processState(session, now: now ?? Date().timeIntervalSince1970)),
             ] + tagItems([session]) + [
                 .buttons([pause, Item.Button("Quit", "xmark.circle", "session_quit:\(pid)")]),
             ]))

@@ -39,6 +39,9 @@ final class AppController {
     var live = LiveSnapshot()
     private var searchingLive = false
     private var searchLiveAgain = false
+    /// Counts the changes made to the sessions by hand (Stop, Quit): a search
+    /// that began before one is out of date when it ends.
+    var liveGeneration = 0
     /// Rows whose detail is open, by row id. Not saved: opening the panel or
     /// changing tab closes them all.
     var openRows: [String: Bool] = [:]
@@ -257,6 +260,7 @@ final class AppController {
         let enabled = AppState.strings(state["enabled_tools"])
         let tools = AppState.sessionTools(view.key, enabled: enabled)
         let withPlugins = AppState.showsPlugins(view.key, enabled: enabled)
+        let generation = liveGeneration
         inBackground({
             LiveSnapshot.find(tools: tools, withPlugins: withPlugins) {
                 FileHandle.standardError.write(Data("\($0)\n".utf8))
@@ -264,6 +268,10 @@ final class AppController {
         }, then: { [weak self] found in
             guard let self = self else { return }
             self.searchingLive = false
+            if generation != self.liveGeneration {
+                self.searchLive()  // it began before a Stop or Quit: look again
+                return
+            }
             let changed = self.live.differs(from: found)
             self.live = found
             if self.searchLiveAgain {
