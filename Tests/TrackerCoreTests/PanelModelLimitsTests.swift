@@ -242,7 +242,7 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
     let (sessionsCard, pluginsCard) = (tab.cards[0], tab.cards[1])
     #expect(sessionsCard.title == "Sessions (1)")
     #expect(sessionsCard.items == [
-        .row(label: "~/proj", value: "1.5K"),
+        .row(label: "proj", value: "1.5K"),
         .tags([Item.Tag("superpowers", true), Item.Tag("caveman", false)]),
     ])
     #expect(pluginsCard.title == "Plugins (2 enabled)")
@@ -260,7 +260,7 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
                                      plugins: nil, now: 0)
 
     #expect(tab.cards.map(\.title) == ["Sessions (1)"])
-    #expect(tab.cards[0].items == [.row(label: "~/g", value: "running")])
+    #expect(tab.cards[0].items == [.row(label: "g", value: "running")])
 }
 
 @Test func liveTabWithNoPluginsSaysSo() {
@@ -393,13 +393,13 @@ private func sessionRows(_ sessions: [ActiveSessions.Session]) -> [Item] {
     let tab = PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), sessions, plugins: nil, now: 0)
 
     #expect(tab.cards[0].title == "Sessions (5)")
-    #expect(tab.cards[0].items == [.row(label: "~/p · 5 sessions", value: "running")])
+    #expect(tab.cards[0].items == [.row(label: "p · 5 sessions", value: "running")])
 }
 
 @Test func aLoneSessionIsUnchanged() {
     let items = sessionRows([ActiveSessions.Session(label: "~/p", tokens: nil, cwd: "/p")])
 
-    #expect(items == [.row(label: "~/p", value: "running")])
+    #expect(items == [.row(label: "p", value: "running")])
 }
 
 @Test func sessionsWithoutAFolderAreGroupedByLabel() {
@@ -408,5 +408,5 @@ private func sessionRows(_ sessions: [ActiveSessions.Session]) -> [Item] {
                              ActiveSessions.Session(label: "~/g", tokens: nil),
                              ActiveSessions.Session(label: "~/h", tokens: nil)])
 
-    #expect(items == [.row(label: "~/g · 2 sessions", value: "running"), .row(label: "~/h", value: "running")])
+    #expect(items == [.row(label: "g · 2 sessions", value: "running"), .row(label: "h", value: "running")])
 }
