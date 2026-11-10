@@ -46,11 +46,14 @@ extension PanelModel {
                        selected: selectedRange, action: "chart_days"),
         ]
         if case let .custom(from, to) = range {
-            chartItems.append(.dateRange(from: from, to: to, latest: d.today))
+            chartItems.append(.dateRange(from: from, to: to,
+                                         earliest: Swift.min(UsageStats.earliestDay(d.daily) ?? d.today, d.today),
+                                         latest: d.today))
         }
         chartItems.append(.chart(
             values: series.map(\.tokens),
-            caption: "Peak \(TokenMath.formatCount(peak))" + (run > 1 ? " per \(run) days" : ""),
+            caption: peak == 0 ? "No usage in this range"
+                : "Peak \(TokenMath.formatCount(peak))" + (run > 1 ? " per \(run) days" : ""),
             labels: series.map { $0.start == $0.end ? formatShortDate($0.start)
                 : "\(formatShortDate($0.start)) – \(formatShortDate($0.end))" }))
         let chart = Card(title: title, items: chartItems)

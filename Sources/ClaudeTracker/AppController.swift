@@ -353,7 +353,8 @@ final class AppController {
             state["show_effort"] = on
             save()
         case .chartDays, .chartAll, .chartCustom, .chartFrom, .chartTo:
-            AppState.applyChart(parsed, to: &state, today: Day.today())
+            let earliest = UsageStats.earliestDay(AppState.currentView(state, detected: Tools.detectTools()).daily)
+            AppState.applyChart(parsed, to: &state, today: Day.today(), earliest: earliest)
             save()
         case .currency(let code):
             state["currency"] = code

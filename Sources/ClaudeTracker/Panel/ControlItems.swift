@@ -118,15 +118,16 @@ struct SwitchItem: View {
 struct DateRangeItem: View {
     let from: Day
     let to: Day
+    let earliest: Day
     let latest: Day
     let onAction: ActionHandler
 
     var body: some View {
         HStack(spacing: 6) {
             LabelText(text: "From").frame(width: 34, alignment: .leading)
-            DateField(day: from, latest: latest) { onAction("chart_from", .text($0.iso)) }
+            DateField(day: from, earliest: earliest, latest: latest) { onAction("chart_from", .text($0.iso)) }
             LabelText(text: "To").frame(width: 20, alignment: .leading).padding(.leading, 4)
-            DateField(day: to, latest: latest) { onAction("chart_to", .text($0.iso)) }
+            DateField(day: to, earliest: earliest, latest: latest) { onAction("chart_to", .text($0.iso)) }
         }
         .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26, alignment: .leading)
     }
@@ -137,6 +138,7 @@ struct DateRangeItem: View {
 /// sent once the field has been still for a moment.
 private struct DateField: View {
     let day: Day
+    let earliest: Day
     let latest: Day
     let picked: (Day) -> Void
     @State private var typed: Date?
@@ -158,7 +160,7 @@ private struct DateField: View {
                 waiting = send
                 DispatchQueue.main.asyncAfter(deadline: .now() + Self.stillSeconds, execute: send)
             }),
-                   in: ...Self.date(latest), displayedComponents: .date)
+                   in: Self.date(earliest)...Self.date(latest), displayedComponents: .date)
             .datePickerStyle(.field)
             .labelsHidden()
             .frame(maxWidth: .infinity)

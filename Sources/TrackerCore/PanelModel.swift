@@ -66,7 +66,8 @@ public enum PanelModel {
 
     /// The saved range choice (`chart_mode`: "days", "all" or "custom"); a
     /// custom range whose dates can't be read, and any other value, read as
-    /// the last `chartDays` days.
+    /// the last `chartDays` days. A custom range stays between the first day
+    /// with usage (`earliest`) and today.
     public static func chartRange(from state: JSONObject, today: Day, earliest: Day?) -> ChartRange {
         switch state.string("chart_mode") {
         case "all":
@@ -75,7 +76,13 @@ public enum PanelModel {
             guard let from = state.string("chart_from").flatMap({ Day(iso: $0) }),
                   let to = state.string("chart_to").flatMap({ Day(iso: $0) })
             else { break }
-            let (a, b) = (Swift.min(from, today), Swift.min(to, today))
+            let low = Swift.min(earliest ?? Day.min, today)
+            // Entirely before the first usage (a mistyped year): an empty
+            // chart is no use, so the last 30 days.
+            if to < low {
+                return .custom(from: Swift.max(today.adding(days: -29), low), to: today)
+            }
+            let (a, b) = (Swift.min(Swift.max(from, low), today), Swift.min(Swift.max(to, low), today))
             return .custom(from: Swift.min(a, b), to: Swift.max(a, b))
         default:
             break
