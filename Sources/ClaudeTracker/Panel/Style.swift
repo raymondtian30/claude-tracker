@@ -73,3 +73,34 @@ struct Symbol: View {
 final class FlippedView: NSView {
     override var isFlipped: Bool { true }
 }
+
+/// The popover's content view: it gets resized to the size the panel has at
+/// each step of growing or shrinking, and clips what's inside it to that.
+final class PanelWrapperView: NSView {
+    override var isFlipped: Bool { true }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.masksToBounds = true
+        autoresizesSubviews = false  // the stage's size is set, never inherited
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+}
+
+/// Holds the scroll view at the panel's full size. While the panel grows or
+/// shrinks, its frame is smaller than its bounds, which makes AppKit draw
+/// everything inside it scaled down, from its top-left corner.
+final class PanelStageView: NSView {
+    override var isFlipped: Bool { true }
+
+    /// True while the animation runs. Hit-testing follows frames, not the
+    /// scale, so a click would land on the wrong control: ignore them.
+    var isAnimating = false
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isAnimating ? nil : super.hitTest(point)
+    }
+}
