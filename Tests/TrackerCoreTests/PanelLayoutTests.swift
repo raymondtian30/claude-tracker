@@ -193,3 +193,83 @@ private let tab = Tab(key: "overview", title: "Overview", short: "Home", icon: "
     #expect(PanelLayout.labelBudget(kind: "row", hasChevron: false) == 202)
     #expect(PanelLayout.labelBudget(kind: "row", hasChevron: true) == 188)
 }
+
+// foldFrame: the panel grows from, and shrinks to, the menu bar icon, with its
+// contents scaled by the same factor.
+
+private let panelWidth = PanelLayout.width
+
+private func frames(_ unfolding: Bool, from: Double? = nil, height: CGFloat = 600, count: Int = 10)
+    -> [PanelLayout.FoldFrame] {
+    (0...count).map {
+        PanelLayout.foldFrame(progress: Double($0) / Double(count), unfolding: unfolding,
+                              fromShare: from ?? (unfolding ? 0 : 1),
+                              fullSize: CGSize(width: panelWidth, height: height))
+    }
+}
+
+@Test func foldFrameUnfoldsFromTheFloorToFullSize() {
+    for height in [200.0, 600.0] {
+        let steps = frames(true, height: CGFloat(height))
+        let minScale = max(24 / Double(panelWidth), 24 / height)
+        #expect(abs(steps.first!.scale - minScale) < 1e-9)
+        #expect(steps.last!.scale == 1 && steps.last!.share == 1)
+        #expect(steps.map(\.scale) == steps.map(\.scale).sorted())
+        #expect(steps.last!.windowWidth == panelWidth && steps.last!.windowHeight == CGFloat(height))
+    }
+}
+
+@Test func foldFrameNeverGoesBelowTheFloorInEitherDimension() {
+    for height in [200.0, 400.0, 600.0] {
+        for step in frames(false, height: CGFloat(height)) + frames(true, height: CGFloat(height)) {
+            #expect(step.width >= 24 - 1e-9 && step.height >= 24 - 1e-9)
+            #expect(step.windowWidth >= 24 && step.windowHeight >= 24)
+        }
+    }
+}
+
+@Test func foldFrameSizeRatioEqualsTheScale() {
+    for step in frames(true, height: 500) + frames(false, height: 500) {
+        #expect(abs(step.width / panelWidth - step.scale) < 1e-9)
+        #expect(abs(step.height / 500 - step.scale) < 1e-9)
+        #expect(abs(step.windowWidth - step.width) <= 0.5)
+        #expect(abs(step.windowHeight - step.height) <= 0.5)
+    }
+}
+
+@Test func foldFrameFoldsBackToTheFloor() {
+    let steps = frames(false)
+    #expect(steps.first!.scale == 1)
+    #expect(abs(steps.last!.scale - max(24 / Double(panelWidth), 24 / 600)) < 1e-9 && steps.last!.share == 0)
+    #expect(steps.map(\.scale) == steps.map(\.scale).sorted(by: >))
+}
+
+@Test func foldFrameSteppingIsEvenLikeFoldHeight() {
+    let count = 26
+    for unfolding in [true, false] {
+        let widths = frames(unfolding, count: count).map(\.width)
+        let steps = zip(widths, widths.dropFirst()).map { abs($1 - $0) }
+        let average = steps.reduce(0, +) / CGFloat(steps.count)
+        #expect(steps.max()! <= 2 * average, "unfolding: \(unfolding)")
+    }
+}
+
+@Test func foldFrameReversalContinuesFromTheCurrentShare() {
+    // Closing at 40% open: the fold starts where the unfold was, with no jump.
+    let open = PanelLayout.foldFrame(progress: 0.4, unfolding: true, fromShare: 0,
+                                     fullSize: CGSize(width: panelWidth, height: 600))
+    let back = PanelLayout.foldFrame(progress: 0, unfolding: false, fromShare: open.share,
+                                     fullSize: CGSize(width: panelWidth, height: 600))
+    #expect(abs(back.scale - open.scale) < 1e-12 && back.windowWidth == open.windowWidth
+            && back.windowHeight == open.windowHeight)
+    let end = PanelLayout.foldFrame(progress: 1, unfolding: false, fromShare: open.share,
+                                    fullSize: CGSize(width: panelWidth, height: 600))
+    #expect(end.share == 0)
+}
+
+@Test func foldFrameClampsProgress() {
+    let full = CGSize(width: panelWidth, height: 600)
+    #expect(PanelLayout.foldFrame(progress: 1.7, unfolding: true, fromShare: 0, fullSize: full).scale == 1)
+    #expect(PanelLayout.foldFrame(progress: -1, unfolding: true, fromShare: 0, fullSize: full)
+            == PanelLayout.foldFrame(progress: 0, unfolding: true, fromShare: 0, fullSize: full))
+}

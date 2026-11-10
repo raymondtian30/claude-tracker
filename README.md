@@ -65,7 +65,7 @@ A panel opens with a row of tabs along the top. It always opens on **Overview**;
   - **Plugins:** every Claude Code plugin you have enabled, how many open sessions run it, the last thing it did (ran a skill, started an agent, used an MCP tool, ran a hook, added context to your prompt) and how often today. Two installs of a plugin with the same name can't be told apart in the logs, so their activity is shown on the first one in your settings
 - **Leaderboard (Beta)** -- hidden unless you turn it on in Settings; see below, this one's still a work in progress
 
-At the bottom: the date you started tracking, a **Settings** button that opens a separate Settings window (which AIs you use -- coding tools and providers; **Appearance** -- Auto, Light or Dark, where Auto follows macOS; what the menu bar shows -- lifetime total, today's total, or just the icon -- and its text size; the panel's unfold/fold **Animation** -- Off, Fast, Normal or Slow; how often to scan; start at login; show the Leaderboard; and **About**, with a small About | Credits switch: About has the version and Check for Updates, Credits lists everyone who made the app) and **Quit**. Click anywhere outside the panel to close it.
+At the bottom: the date you started tracking, a **Settings** button that opens a separate Settings window (which AIs you use -- coding tools and providers; **Appearance** -- Auto, Light or Dark, where Auto follows macOS; what the menu bar shows -- lifetime total, today's total, or just the icon -- and its text size; the panel's grow/shrink **Animation** -- Off, Fast, Normal or Slow; how often to scan; start at login; show the Leaderboard; and **About**, with a small About | Credits switch: About has the version and Check for Updates, Credits lists everyone who made the app) and **Quit**. Click anywhere outside the panel to close it.
 
 ### OpenAI, DeepSeek, Kimi and other AI companies
 
@@ -153,7 +153,7 @@ Sources/TrackerCore/         the app's logic, plain Swift with no AppKit, so it 
   PanelModel*.swift          what each panel tab shows, as plain data
   PanelItems.swift           the kinds of thing a panel tab can hold (tiles, bars, rows, buttons...)
   PanelLayout.swift          the panel's sizes and the arithmetic behind them
-  PanelSpeeds.swift          the panel's unfold/fold animation speeds
+  PanelSpeeds.swift          the panel's animation speeds
   AppState*.swift            settings added to state.json on launch, changes to it, and the menu bar's text
   AppAction.swift            turns a click in the panel or Settings into what the app should do
   OpenRows.swift             which expandable panel rows are open

@@ -62,11 +62,52 @@ public enum PanelLayout {
     /// a sharper curve front-loads the motion, and its first frames jumped by
     /// over 100 points, which looked choppy.
     public static func foldHeight(_ progress: Double, _ fullHeight: CGFloat, unfolding: Bool) -> CGFloat {
-        let t = min(max(progress, 0.0), 1.0)
-        let eased = (1 - cos(Double.pi * t)) / 2
+        let eased = easedProgress(progress)
         let share = unfolding ? eased : 1 - eased
         // Python's round() rounds halves to even.
         return (foldedHeight + (fullHeight - foldedHeight) * CGFloat(share)).rounded(.toNearestOrEven)
+    }
+
+    /// `progress` (0-1, clamped) eased in and out by a half cosine.
+    private static func easedProgress(_ progress: Double) -> Double {
+        (1 - cos(Double.pi * min(max(progress, 0.0), 1.0))) / 2
+    }
+
+    public static let foldedWidth: CGFloat = 24  // how wide the panel is when fully shrunk
+
+    /// The panel at one moment of growing from or shrinking into the menu bar
+    /// icon: its contents are scaled by `scale`, and the window around them is
+    /// `width` by `height` (`windowWidth` by `windowHeight`, rounded, is what
+    /// the popover gets).
+    public struct FoldFrame: Equatable {
+        public let share: Double  // 0 = fully shrunk, 1 = full size
+        public let scale: Double
+        public let width: CGFloat
+        public let height: CGFloat
+        public let windowWidth: CGFloat
+        public let windowHeight: CGFloat
+    }
+
+    /// The panel `progress` (0-1) of the way through unfolding to `fullSize`,
+    /// or folding from it, starting from `fromShare` (1 when fully open, 0
+    /// when fully shrunk, or where an animation was when it was reversed).
+    /// The scale is one number for both dimensions, so the contents shrink
+    /// evenly; it never goes below the one that leaves the panel
+    /// `foldedWidth` by `foldedHeight`. The eased `share` is what to pass as
+    /// `fromShare` next time.
+    public static func foldFrame(progress: Double, unfolding: Bool, fromShare: Double,
+                                 fullSize: CGSize) -> FoldFrame {
+        let eased = easedProgress(progress)
+        let from = min(max(fromShare, 0.0), 1.0)
+        let share = unfolding ? from + (1 - from) * eased : from * (1 - eased)
+        let minScale = max(Double(foldedWidth / fullSize.width), Double(foldedHeight / fullSize.height))
+        let scale = minScale + (1 - minScale) * share
+        let width = fullSize.width * CGFloat(scale)
+        let height = fullSize.height * CGFloat(scale)
+        // Python's round() rounds halves to even.
+        return FoldFrame(share: share, scale: scale, width: width, height: height,
+                         windowWidth: width.rounded(.toNearestOrEven),
+                         windowHeight: height.rounded(.toNearestOrEven))
     }
 
     /// How tall the panel is: its content, capped so it fits on screen

@@ -6,7 +6,7 @@ import TrackerCore
 /// fresh data; clicks on controls call `onAction(action, value)`, and
 /// picking a tab calls `onTabChange(key)`.
 ///
-/// AppKit runs the popover, its fold animation, outside-click and Esc
+/// AppKit runs the popover, its grow/shrink animation, outside-click and Esc
 /// closing; SwiftUI draws the header, tab bar and each tab's cards. Each
 /// tab's content is its own hosting view, built the first time it's shown
 /// and kept until the next render, so switching tabs only swaps views.
@@ -32,6 +32,10 @@ final class PanelController: NSObject {
     /// taller than the screen allows.
     let root = FlippedView(frame: NSRect(x: 0, y: 0, width: PanelLayout.width, height: 400))
     private let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: PanelLayout.width, height: 400))
+    /// What the popover shows: it clips `stage`, which keeps the panel at its
+    /// full size and is scaled down while the panel grows or shrinks.
+    let wrapper = PanelWrapperView(frame: NSRect(x: 0, y: 0, width: PanelLayout.width, height: 400))
+    let stage = PanelStageView(frame: NSRect(x: 0, y: 0, width: PanelLayout.width, height: 400))
     private var chrome: PanelChrome?
     private var chromeView: NSView?
     private var tabViews = TabViewCache<NSView>()
@@ -42,7 +46,11 @@ final class PanelController: NSObject {
     private var monitors: [Any] = []
     private var lastToggle: TimeInterval = 0
     var fullHeight: CGFloat = 400
-    var animation: (start: TimeInterval, unfolding: Bool, from: CGFloat)?
+    /// `fromShare`: how far open the panel was when the animation started
+    /// (PanelLayout.foldFrame), so reversing one carries on from there.
+    var animation: (start: TimeInterval, unfolding: Bool, fromShare: Double)?
+    /// How far open the panel is: 0 closed, 1 fully open.
+    var lastShare: Double = 0
     var animationTimer: AnyObject?
 
     var selected: String { selection.selected }
@@ -60,8 +68,12 @@ final class PanelController: NSObject {
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
+        scroll.autoresizingMask = []
+        stage.autoresizingMask = []
+        stage.addSubview(scroll)
+        wrapper.addSubview(stage)
         let controller = NSViewController()
-        controller.view = scroll
+        controller.view = wrapper
         popover.contentViewController = controller
         // Not .transient: that closes the panel whenever this background app
         // isn't active, which macOS doesn't always allow it to be. Outside
@@ -120,7 +132,8 @@ final class PanelController: NSObject {
         goHome()
         NSApp.activate(ignoringOtherApps: true)
         if animationSeconds > 0 {
-            popover.contentSize = NSSize(width: PanelLayout.width, height: PanelLayout.foldedHeight)
+            show(frame: PanelLayout.foldFrame(progress: 0, unfolding: true, fromShare: 0, fullSize: fullSize))
+            lastShare = 0
         }
         // A popover takes its look from the menu bar icon, which follows the
         // menu bar (dark over a dark wallpaper), not the Appearance setting.
@@ -155,6 +168,27 @@ final class PanelController: NSObject {
         if popover.isShown {
             popover.close()
         }
+        resetToFullSize(share: 0)
+    }
+
+    /// The size and scale the panel has when it's open (and what it goes back
+    /// to once it's closed, so the next opening starts from a clean state).
+    func resetToFullSize(share: Double) {
+        stage.isAnimating = false
+        stage.setFrameSize(fullSize)
+        stage.setBoundsSize(fullSize)
+        popover.contentSize = fullSize
+        lastShare = share
+    }
+
+    var fullSize: NSSize { NSSize(width: PanelLayout.width, height: fullHeight) }
+
+    /// Puts the panel at one step of growing or shrinking: the popover at the
+    /// window size, and the stage's contents scaled to fit it.
+    func show(frame: PanelLayout.FoldFrame) {
+        stage.setFrameSize(NSSize(width: frame.width, height: frame.height))
+        stage.setBoundsSize(fullSize)
+        popover.contentSize = NSSize(width: frame.windowWidth, height: frame.windowHeight)
     }
 
     var isShown: Bool { popover.isShown }
@@ -305,10 +339,16 @@ final class PanelController: NSObject {
         root.setFrameSize(NSSize(width: PanelLayout.width, height: height))
         let screenHeight = NSScreen.main?.visibleFrame.height ?? height + PanelLayout.screenMargin
         fullHeight = PanelLayout.panelHeight(height, screenHeight: screenHeight)
-        // An animation sizes the panel itself; an unchanged size would only
-        // cost a needless layout pass.
-        if animation == nil && popover.contentSize.height != fullHeight {
-            popover.contentSize = NSSize(width: PanelLayout.width, height: fullHeight)
+        // The scroll view always has the full size; only the stage's scale
+        // changes while the panel grows or shrinks.
+        scroll.setFrameSize(fullSize)
+        // An animation sizes the panel itself (from the next step on, with
+        // this height); an unchanged size would only cost a needless layout
+        // pass.
+        if animation != nil {
+            stage.setBoundsSize(fullSize)
+        } else if popover.contentSize != fullSize || stage.frame.size != fullSize {
+            resetToFullSize(share: lastShare)
         }
     }
 

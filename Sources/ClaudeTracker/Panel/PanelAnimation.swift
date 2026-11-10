@@ -1,14 +1,16 @@
 import AppKit
 import TrackerCore
 
-// The panel unfolds down from the menu bar when it opens and folds back up
-// when it closes, by resizing the popover once per screen refresh.
+// The panel grows out of the menu bar icon when it opens and shrinks back into
+// it when it closes, by resizing the popover and scaling its contents once per
+// screen refresh.
 
 extension PanelController {
     func animate(unfolding: Bool) {
-        let current = popover.contentSize.height
+        let from = lastShare
         stopAnimation()
-        animation = (ProcessInfo.processInfo.systemUptime, unfolding, current)
+        animation = (ProcessInfo.processInfo.systemUptime, unfolding, from)
+        stage.isAnimating = true
         if #available(macOS 14, *) {
             // One step per screen refresh, in step with it (120 Hz on
             // ProMotion screens). A 60 Hz timer drifts against the refresh,
@@ -32,19 +34,21 @@ extension PanelController {
         let progress = animationSeconds > 0
             ? (ProcessInfo.processInfo.systemUptime - animation.start) / animationSeconds
             : 1
-        let height: CGFloat
-        if animation.unfolding {
-            // Unfold towards the current full height, which can change if
-            // the panel is redrawn mid-animation.
-            height = PanelLayout.foldHeight(progress, fullHeight, unfolding: true)
-        } else {
-            height = PanelLayout.foldHeight(progress, animation.from, unfolding: false)
-        }
-        popover.contentSize = NSSize(width: PanelLayout.width, height: height)
+        // Each step uses the current full size, which can change if the
+        // panel is redrawn mid-animation.
+        let frame = PanelLayout.foldFrame(progress: progress, unfolding: animation.unfolding,
+                                          fromShare: animation.fromShare, fullSize: fullSize)
+        show(frame: frame)
+        lastShare = frame.share
         if progress >= 1 {
             stopAnimation()
-            if !animation.unfolding {
+            if animation.unfolding {
+                resetToFullSize(share: 1)
+            } else {
+                // Close first, then reset: the other way round shows the
+                // full-size panel for a frame in the small window.
                 popover.close()
+                resetToFullSize(share: 0)
             }
         }
     }
