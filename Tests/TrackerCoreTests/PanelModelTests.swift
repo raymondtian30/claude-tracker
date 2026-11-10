@@ -159,13 +159,14 @@ func viewOf(_ daily: JSONObject, name: String = "Codex", key: String = "codex", 
     #expect(itemsOf(tabs["overview"]!).contains(
         .tiles([Item.Tile("Today", "15", "sun.max"), Item.Tile("Lifetime", "115", "infinity")])))
     let chart = itemsOf(tabs["overview"]!).compactMap { item -> [Int]? in
-        if case let .chart(values, _) = item { return values }
+        if case let .chart(values, _, _) = item { return values }
         return nil
     }.first!
     #expect(chart.count == 14 && chart.last == 15)
     #expect(itemsOf(tabs["breakdown"]!).contains(.bar(label: "Older, no detail", value: "100 · 87%", fraction: 100.0 / 115)))
     #expect(itemsOf(tabs["models"]!).contains(.bar(label: "Opus 5.5", value: "15 · 100%", fraction: 1.0)))
-    #expect(itemsOf(tabs["projects"]!).contains(.bar(label: "/x/proj", value: "15 · 100%", fraction: 1.0)))
+    #expect(itemsOf(tabs["projects"]!).contains(.bar(label: "proj", value: "15 · 100%", fraction: 1.0,
+                                                     extras: LabelExtras(tip: "/x/proj"))))
     #expect(tabs["sessions"]!.cards[0].title == "Sessions (1)")
     #expect(itemsOf(tabs["leaderboard"]!).contains(.bar(label: "1. Ann", value: "200", fraction: 1.0)))
     #expect(itemsOf(tabs["leaderboard"]!).contains(.bar(label: "2. Bo", value: "100", fraction: 0.5)))
@@ -677,4 +678,123 @@ private func effortTabs(_ entries: [(model: String, effort: String?, tokens: Int
     #expect(itemsOf(plain["models"]!).contains(.bar(label: "Opus 5.5", value: "100 · 100%", fraction: 1.0)))
     #expect(plain["cost"]! == withEffort["cost"]!)
     #expect(plain["breakdown"]! == withEffort["breakdown"]!)
+}
+
+// MARK: - Round 2: effort option, chart range and hover, folder names, currency
+
+private func effortState(_ extra: JSONObject = [:]) -> JSONObject {
+    var daily = JSONObject()
+    for (effort, tokens) in [("high", 60), ("medium", 40)] {
+        var e = panelEntry("2026-07-29T12:00:00.000Z", ["input_tokens": tokens])
+        e["effort"] = effort
+        UsageStats.recordEntry(&daily, e)
+    }
+    return ["daily": daily].merging(extra) { _, new in new }
+}
+
+private func tabsFor(_ daily: JSONObject, state: JSONObject = [:]) -> [String: Tab] {
+    let view = viewOf(daily, name: "Claude Code", key: "claude_code")
+    return tabsByKey(buildTestPanel(state, [], [], today: Day(2026, 7, 29), view: view))
+}
+
+private func labels(_ tab: Tab) -> [String] {
+    itemsOf(tab).compactMap { item -> String? in
+        if case let .bar(label, _, _, _, _) = item { return label } else { return nil }
+    }
+}
+
+@Test func modelsTabOffersEffortOnOrOff() {
+    let on = tabsFor(effortState()["daily"] as! JSONObject)["models"]!
+    let control = Item.segmented(label: nil, options: ["With effort", "Without effort"], selected: 0,
+                                 action: "show_effort")
+    #expect(on.cards[0].items == [control])
+    #expect(labels(on).contains("Opus 5.5 (High)") && labels(on).contains("Opus 5.5 (Medium)"))
+
+    let off = tabsFor(effortState()["daily"] as! JSONObject, state: ["show_effort": false])["models"]!
+    #expect(off.cards[0].items == [.segmented(label: nil, options: ["With effort", "Without effort"],
+                                              selected: 1, action: "show_effort")])
+    #expect(labels(off) == ["Opus 5.5", "Opus 5.5"])  // Today and Lifetime, one plain row each
+    #expect(itemsOf(off).contains(.bar(label: "Opus 5.5", value: "100 · 100%", fraction: 1.0)))
+}
+
+@Test func noEffortControlWhenNothingHasAnEffort() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, panelEntry("2026-07-29T12:00:00.000Z", ["input_tokens": 10]))
+
+    let tab = tabsFor(daily)["models"]!
+
+    #expect(!itemsOf(tab).contains { if case .segmented = $0 { return true } else { return false } })
+}
+
+@Test func chartRangeIsSevenFourteenOrThirty() {
+    #expect(PanelModel.chartDays(from: [:]) == 14)
+    for days in [7, 14, 30] { #expect(PanelModel.chartDays(from: ["chart_days": days]) == days) }
+    for bad: Any in [10, 0, -7, "30", NSNull(), 30.5, true] { #expect(PanelModel.chartDays(from: ["chart_days": bad]) == 14) }
+}
+
+@Test func overviewChartFollowsTheRangeAndHasDayLabels() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, panelEntry("2026-07-29T12:00:00.000Z", ["input_tokens": 15]))
+    for days in [7, 14, 30] {
+        let tab = tabsFor(daily, state: ["chart_days": days])["overview"]!
+        let card = tab.cards.first { $0.title == "Last \(days) days" }!
+        #expect(card.items[0] == .segmented(label: nil, options: ["7 days", "14 days", "30 days"],
+                                            selected: [7, 14, 30].firstIndex(of: days)!, action: "chart_days"))
+        guard case let .chart(values, _, chartLabels) = card.items[1] else { Issue.record("no chart"); return }
+        #expect(values.count == days && chartLabels.count == days)
+        #expect(chartLabels.last == "Jul 29th" && values.last == 15)
+        #expect(chartLabels.first == PanelModel.formatShortDate(Day(2026, 7, 29).adding(days: -(days - 1))))
+    }
+}
+
+@Test func projectRowsShowOnlyTheFolderName() {
+    var daily = JSONObject()
+    for (cwd, tokens) in [("/x/game", 10), ("/x/other/tools", 6), ("/Users/me/Desktop/My Project", 3)] {
+        UsageStats.recordEntry(&daily, panelEntry("2026-07-29T12:00:00.000Z", cwd: cwd, ["input_tokens": tokens]))
+    }
+
+    let projects = labels(tabsFor(daily)["projects"]!)
+
+    #expect(projects == ["game", "tools", "My Project"])
+}
+
+@Test func foldersWithTheSameNameShowTheirParent() {
+    var daily = JSONObject()
+    for (cwd, tokens) in [("/a/b/app", 10), ("/a/c/app", 6), ("/a/c/other", 3), ("/x/solo", 2)] {
+        UsageStats.recordEntry(&daily, panelEntry("2026-07-29T12:00:00.000Z", cwd: cwd, ["input_tokens": tokens]))
+    }
+
+    let tab = tabsFor(daily)["projects"]!
+
+    #expect(labels(tab) == ["app · b", "app · c", "other", "solo"])
+    #expect(itemsOf(tab).contains(.bar(label: "app · b", value: "10 · 48%", fraction: 10.0 / 21,
+                                       extras: LabelExtras(tip: "/a/b/app"))))
+}
+
+@Test func theHomeFolderAndRootKeepTheirOwnNames() {
+    var daily = JSONObject()
+    UsageStats.addUsage(&daily, day: Day(2026, 7, 29), model: "m", project: "~", parts: ["input": 5])
+    UsageStats.addUsage(&daily, day: Day(2026, 7, 29), model: "m", project: "/", parts: ["input": 4])
+    UsageStats.addUsage(&daily, day: Day(2026, 7, 29), model: "m", project: "~/Desktop/a", parts: ["input": 3])
+
+    #expect(labels(tabsFor(daily)["projects"]!) == ["~", "/", "a"])
+}
+
+@Test func costTabUsesTheChosenCurrency() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, panelEntry("2026-07-29T12:00:00.000Z", model: "claude-opus-5-5",
+                                              ["input_tokens": 1_000_000]))
+    func today(_ state: JSONObject) -> String {
+        let tiles = itemsOf(tabsFor(daily, state: state)["cost"]!).compactMap { item -> [Item.Tile]? in
+            if case let .tiles(tiles) = item { return tiles } else { return nil }
+        }.first!
+        return tiles[0].value
+    }
+
+    let usd = today([:])
+    #expect(usd.hasPrefix("$"))
+    let euro = today(["currency": "EUR"])
+    #expect(euro.hasPrefix("€"))
+    #expect(today(["currency": "XXX"]) == usd)  // unknown reads as dollars
+    #expect(today(["currency": 5]) == usd)
 }

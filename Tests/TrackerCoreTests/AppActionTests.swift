@@ -87,3 +87,15 @@ import Testing
     #expect(AppAction.parse("toggle_row:proj:/a:b/c", .none) == .toggleRow(id: "proj:/a:b/c"))
     #expect(AppAction.parse("toggle_row:", .none) == nil)
 }
+
+@Test func roundTwoActions() {
+    #expect(AppAction.parse("show_effort", .index(0)) == .showEffort(true))
+    #expect(AppAction.parse("show_effort", .index(1)) == .showEffort(false))
+    #expect(AppAction.parse("show_effort", .index(2)) == nil)
+    #expect(AppAction.parse("chart_days", .index(0)) == .chartDays(7))
+    #expect(AppAction.parse("chart_days", .index(2)) == .chartDays(30))
+    #expect(AppAction.parse("chart_days", .index(3)) == nil)
+    #expect(AppAction.parse("currency", .index(0)) == .currency("USD"))
+    #expect(AppAction.parse("currency", .index(Pricing.currencies.count)) == nil)
+    #expect(AppAction.parse("currency", .none) == nil)
+}

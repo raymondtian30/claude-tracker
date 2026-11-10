@@ -84,6 +84,10 @@ extension PanelModel {
                                    isOn: flag(state, "claude_usage_enabled", default: true),
                                    action: "claude_usage_enabled"))
         }
+        general.insert(.popup(label: "Currency for prices",
+                              options: Pricing.currencies.map { "\($0.code) · \($0.name)" },
+                              selected: Pricing.currencies.firstIndex { $0.code == currency(from: state) } ?? 0,
+                              action: "currency"), at: 0)
         let about = showCredits ? creditsItems() : aboutItems(updateStatus: updateStatus)
         return Tab(key: "settings", title: "Settings", short: "Settings", icon: "slider.horizontal.3", cards: [
             toolsCard(state, detected: detected),

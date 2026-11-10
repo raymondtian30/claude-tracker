@@ -47,21 +47,48 @@ private struct TileView: View {
     }
 }
 
-/// A caption over a line chart with a soft gradient underneath.
+/// A caption over a line chart with a soft gradient underneath. Moving the
+/// pointer over it shows that day's date and tokens in the caption, with a
+/// dot on the line.
 struct ChartItem: View {
     let values: [Int]
     let caption: String
+    var labels: [String] = []
+    @State private var hovered: Int?
+
+    private var shownCaption: String {
+        guard let index = hovered, values.indices.contains(index) else { return caption }
+        let day = labels.indices.contains(index) ? labels[index] + " · " : ""
+        return day + TokenMath.formatCount(values[index]) + " tokens"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            LabelText(text: caption, size: 10, color: .secondaryLabel, height: 14)
-            LineChart(values: values).frame(height: 58)
+            LabelText(text: shownCaption, size: 10, color: .secondaryLabel, height: 14)
+            LineChart(values: values, hovered: hovered)
+                .frame(height: 58)
+                .overlay(GeometryReader { proxy in
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case let .active(point):
+                                guard values.count >= 2, proxy.size.width > 0 else { return }
+                                let step = proxy.size.width / CGFloat(values.count - 1)
+                                let index = Int((point.x / step).rounded())
+                                hovered = Swift.min(Swift.max(index, 0), values.count - 1)
+                            case .ended:
+                                hovered = nil
+                            }
+                        }
+                })
         }
     }
 }
 
 private struct LineChart: View {
     let values: [Int]
+    var hovered: Int?
 
     var body: some View {
         Canvas { context, size in
@@ -94,6 +121,16 @@ private struct LineChart: View {
                 startPoint: CGPoint(x: 0, y: top), endPoint: CGPoint(x: 0, y: h)))
 
             context.stroke(line, with: .color(.accent), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+
+            // The day under the pointer: a vertical rule and a dot.
+            if let index = hovered, points.indices.contains(index) {
+                var rule = Path()
+                rule.move(to: CGPoint(x: points[index].x, y: 0))
+                rule.addLine(to: CGPoint(x: points[index].x, y: h))
+                context.stroke(rule, with: .color(.faint(0.35)), style: StrokeStyle(lineWidth: 1))
+                let dot = CGRect(x: points[index].x - 3.5, y: points[index].y - 3.5, width: 7, height: 7)
+                context.fill(Path(ellipseIn: dot), with: .color(.accent))
+            }
         }
     }
 }

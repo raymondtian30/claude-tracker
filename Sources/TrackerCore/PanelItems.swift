@@ -65,7 +65,8 @@ public enum Item: Equatable {
     /// Big numbers side by side.
     case tiles([Tile])
     /// Line chart, oldest first, with a caption above it.
-    case chart(values: [Int], caption: String)
+    /// `labels` name each value (a date) for hovering over the chart.
+    case chart(values: [Int], caption: String, labels: [String] = [])
     /// Label and value over a 0-1 bar.
     /// `sub`: an optional grey line under the bar.
     case bar(label: String, value: String, fraction: Double, sub: String? = nil, extras: LabelExtras = .none)
