@@ -42,6 +42,7 @@ final class AppController {
     /// Counts the changes made to the sessions by hand (Stop, Quit): a search
     /// that began before one is out of date when it ends.
     var liveGeneration = 0
+    private var renderWaiting = false
     /// Rows whose detail is open, by row id. Not saved: opening the panel or
     /// changing tab closes them all.
     var openRows: [String: Bool] = [:]
@@ -133,6 +134,14 @@ final class AppController {
 
     /// The scan timer's tick.
     func refresh() {
+        // Reading new log lines takes a moment, and a frame that waits for it
+        // shows as lag: let the panel finish unfolding first.
+        if panel.isAnimating {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                onMain { self?.refresh() }
+            }
+            return
+        }
         scan()
         save()
         checkAlerts()
@@ -202,6 +211,20 @@ final class AppController {
     }
 
     func renderPanel() {
+        // Not while the panel unfolds or folds up: drawing takes a moment, and
+        // a frame that has to wait for it shows as lag. It draws right after.
+        if panel.isAnimating {
+            if !renderWaiting {
+                renderWaiting = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                    onMain {
+                        self?.renderWaiting = false
+                        self?.renderPanel()
+                    }
+                }
+            }
+            return
+        }
         let detected = Tools.detectTools()
         let view = AppState.currentView(state, detected: detected)
         let enabled = AppState.strings(state["enabled_tools"])
@@ -360,7 +383,7 @@ final class AppController {
         case .showEffort(let on):
             state["show_effort"] = on
             save()
-        case .chartDays, .chartAll, .chartCustom, .chartFrom, .chartTo:
+        case .chartDays, .chartAll, .chartCustom, .chartRange:
             let earliest = UsageStats.earliestDay(AppState.currentView(state, detected: Tools.detectTools()).daily)
             AppState.applyChart(parsed, to: &state, today: Day.today(), earliest: earliest)
             save()
