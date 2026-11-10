@@ -61,10 +61,14 @@ extension AppController {
         guard wanted else { return }
         showUpdateStatus("Updating to \(newest)…")
         let tag = newestRelease.tag
-        let projectDir = files.projectDir.path
+        let savedDir = files.projectDir.path
+        let supportDir = ProjectLocator.supportDirectory(home: UsageStats.homeDirectory)
         let bundleDir = bundlePath.deletingLastPathComponent().path
         inBackground({ () -> UpdateOutcome in
             do {
+                // Wherever the app's folder is (or isn't), update from a clone:
+                // its own if it has no usable one, with the totals copied over.
+                let projectDir = try Updater.workingClone(projectDir: savedDir, tag: tag, supportDir: supportDir)
                 let before = Updater.currentCommit(projectDir)
                 try Updater.installRelease(tag, projectDir: projectDir)
                 try Updater.rebuildBundle(bundleDir, projectDir: projectDir, undoTo: before)

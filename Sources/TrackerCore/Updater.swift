@@ -173,6 +173,44 @@ public enum Updater {
         }
     }
 
+    /// The git clone to update: `projectDir` if it is one. If it isn't (the
+    /// folder was moved or deleted, or it came from a download), the app's own
+    /// clone in `supportDir`, made at `tag` the first time. The totals in
+    /// state.json and friends.json come along if the clone has none yet, so an
+    /// update works wherever the app was installed from.
+    public static func workingClone(projectDir: String, tag: String, supportDir: URL,
+                                    run: Subprocess.Runner = Subprocess.run,
+                                    repoURL: String = "\(Version.repoURL).git") throws -> String {
+        let manager = FileManager.default
+        func isClone(_ dir: String) -> Bool {
+            manager.fileExists(atPath: dir + "/.git")
+                && git(run, dir, "rev-parse", "--git-dir").status == 0
+        }
+        if isClone(projectDir) {
+            return projectDir
+        }
+        let source = supportDir.appendingPathComponent("source", isDirectory: true)
+        if !isClone(source.path) {
+            try? manager.createDirectory(at: supportDir, withIntermediateDirectories: true)
+            try? manager.removeItem(at: source)  // a half-made clone
+            let cloned = run(["git", "clone", "--quiet", repoURL, source.path], nil)
+            let atRelease = cloned.status == 0
+                && git(run, source.path, "checkout", "--quiet", "-B", "master", "refs/tags/\(tag)").status == 0
+            if !atRelease {
+                try? manager.removeItem(at: source)
+                throw UpdateError("Couldn't download the update from GitHub.")
+            }
+        }
+        for name in ["state.json", "friends.json"] {
+            let from = URL(fileURLWithPath: projectDir).appendingPathComponent(name)
+            let to = source.appendingPathComponent(name)
+            if manager.fileExists(atPath: from.path), !manager.fileExists(atPath: to.path) {
+                try? manager.copyItem(at: from, to: to)
+            }
+        }
+        return source.path
+    }
+
     /// Fast-forward this clone to `tag`. Throws UpdateError, leaving the
     /// code as it was, if that isn't safe or doesn't work.
     public static func installRelease(_ tag: String, run: Subprocess.Runner = Subprocess.run,

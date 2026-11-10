@@ -108,10 +108,17 @@ FORK_AUTHOR="$(version_field forkAuthor)"
 
 echo "Compiling Claude Tracker ${VERSION} (Swift ${SWIFT_VERSION})..." >&2
 cd "$PROJECT_DIR"
+# The compiler's cache (.build) holds absolute paths, so after this folder was
+# moved or renamed it can't be used and the build fails. .build/.built-in says
+# where it was made: from anywhere else (or from before it said), start again.
+if [ -d .build ] && [ "$(cat .build/.built-in 2>/dev/null)" != "$PROJECT_DIR" ]; then
+    rm -rf .build
+fi
 swift build -c release --product "$PRODUCT" >&2 || fail "Compiling Claude Tracker failed (see above)."
 BIN_DIR="$(swift build -c release --show-bin-path)"
 BINARY="$BIN_DIR/$PRODUCT"
 [ -x "$BINARY" ] || fail "The compiler didn't produce $BINARY."
+mkdir -p .build && printf '%s\n' "$PROJECT_DIR" > .build/.built-in
 
 # --- Assemble the bundle in a temporary folder next to DEST ---------------
 

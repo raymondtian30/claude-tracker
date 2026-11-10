@@ -374,3 +374,58 @@ private func upgradedClone(_ tmp: TempDir, fromPython: Bool = true)
     #expect(head(repo) == after)
     #expect(!FileManager.default.fileExists(atPath: repo.appendingPathComponent("app.py").path))
 }
+
+// The compiler's cache (.build) holds absolute paths, so it can't be used from
+// a folder that was moved: the build fails. build.sh starts it again then.
+
+/// The folder's real path, as `pwd -P` says it (/private/var, where Foundation's
+/// resolvingSymlinksInPath says /var).
+private func realPath(_ url: URL) -> String {
+    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+    return realpath(url.path, &buffer).map { String(cString: $0) } ?? url.path
+}
+
+/// Runs build.sh in a copy of the project's build files at `place`, with a fake
+/// `swift` that records whether `.build/stale` was still there when the
+/// compile began (and then fails, so nothing else is built). `markedAs` is
+/// what `.build/.built-in` says, if there is such a file.
+private func buildCacheSeenByTheCompiler(_ tmp: TempDir, markedAs: String?) -> String {
+    let place = tmp.mkdir("project")
+    try! FileManager.default.copyItem(at: projectDir.appendingPathComponent("build.sh"),
+                                      to: place.appendingPathComponent("build.sh"))
+    writeText(place.appendingPathComponent("Sources/TrackerCore/Version.swift"),
+              "public enum Version {\n    public static let version = \"9.9.9\"\n"
+              + "    public static let originalAuthor = \"A\"\n    public static let forkAuthor = \"B\"\n}\n")
+    writeText(place.appendingPathComponent(".build/stale"), "old cache")
+    if let marked = markedAs {
+        // "here" is this folder's real path, as build.sh sees it (pwd -P).
+        writeText(place.appendingPathComponent(".build/.built-in"),
+                  marked == "here" ? realPath(place) : marked)
+    }
+    let log = tmp.url("seen").path
+    let bin = tmp.mkdir("bin")
+    makeExecutable(bin.appendingPathComponent("swift"), """
+        #!/bin/sh
+        if [ "$1" = "--version" ]; then echo "Swift version 6.3 (swift-6.3-RELEASE)"; exit 0; fi
+        if [ "$1" = "build" ]; then
+            if [ -e .build/stale ]; then echo present > '\(log)'; else echo absent > '\(log)'; fi
+            exit 1
+        fi
+        exit 0
+
+        """)
+    _ = run(["bash", place.appendingPathComponent("build.sh").path, "--dest", tmp.mkdir("apps").path], binDir: bin)
+    return read(URL(fileURLWithPath: log)).trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+@Test func aBuildCacheFromAnotherPlaceIsStartedAgain() {
+    #expect(buildCacheSeenByTheCompiler(TempDir(), markedAs: "/Users/someone/old/place") == "absent")
+}
+
+@Test func aBuildCacheWithNoMarkerIsStartedAgain() {
+    #expect(buildCacheSeenByTheCompiler(TempDir(), markedAs: nil) == "absent")
+}
+
+@Test func aBuildCacheMadeInThisFolderIsKept() {
+    #expect(buildCacheSeenByTheCompiler(TempDir(), markedAs: "here") == "present")
+}

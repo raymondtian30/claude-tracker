@@ -354,3 +354,74 @@ private let RELEASES: [JSONObject] = [  // as GitHub lists them: newest first
 
     #expect(read(local.appendingPathComponent("version.py")) == "# my edit\n")
 }
+
+// Updating from a clone of its own when the app has no usable folder.
+
+@Test func aUsableCloneIsUsedAsItIs() throws {
+    let (remote, local) = makeClone()
+    let support = TempDir().url("support")
+
+    let dir = try Updater.workingClone(projectDir: local.path, tag: "v2.2.0", supportDir: support,
+                                       repoURL: remote.path)
+
+    #expect(dir == local.path)
+    #expect(!FileManager.default.fileExists(atPath: support.path))
+}
+
+@Test func withoutAFolderTheUpdateMakesItsOwnCloneAtTheRelease() throws {
+    let (remote, _) = makeClone()
+    let tmp = TempDir()
+    let support = tmp.url("support")
+
+    let dir = try Updater.workingClone(projectDir: tmp.url("moved-away").path, tag: "v2.2.0",
+                                       supportDir: support, repoURL: remote.path)
+
+    #expect(dir == support.appendingPathComponent("source").path)
+    #expect(read(URL(fileURLWithPath: dir).appendingPathComponent("version.py")) == "__version__ = \"2.2.0\"\n")
+    // On master, so the normal update steps work on it from now on.
+    #expect(Subprocess.run(["git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD"]).stdout
+        .trimmingCharacters(in: .whitespacesAndNewlines) == "master")
+}
+
+@Test func theTotalsComeAlongToTheNewClone() throws {
+    let (remote, _) = makeClone()
+    let tmp = TempDir()
+    let plain = tmp.mkdir("zip-download")  // not a git clone
+    writeText(plain.appendingPathComponent("state.json"), "{\"grand_total\": 5}")
+    writeText(plain.appendingPathComponent("friends.json"), "[1]")
+    let support = tmp.url("support")
+
+    let dir = try Updater.workingClone(projectDir: plain.path, tag: "v2.2.0", supportDir: support,
+                                       repoURL: remote.path)
+
+    #expect(read(URL(fileURLWithPath: dir).appendingPathComponent("state.json")) == "{\"grand_total\": 5}")
+    #expect(read(URL(fileURLWithPath: dir).appendingPathComponent("friends.json")) == "[1]")
+    // The original is left where it was.
+    #expect(read(plain.appendingPathComponent("state.json")) == "{\"grand_total\": 5}")
+}
+
+@Test func anExistingTotalsFileInTheNewCloneIsNotOverwritten() throws {
+    let (remote, _) = makeClone()
+    let tmp = TempDir()
+    let support = tmp.url("support")
+    let first = try Updater.workingClone(projectDir: tmp.url("gone").path, tag: "v2.2.0", supportDir: support,
+                                         repoURL: remote.path)
+    writeText(URL(fileURLWithPath: first).appendingPathComponent("state.json"), "{\"newer\": true}")
+    let old = tmp.mkdir("old")
+    writeText(old.appendingPathComponent("state.json"), "{\"older\": true}")
+
+    let again = try Updater.workingClone(projectDir: old.path, tag: "v2.2.0", supportDir: support,
+                                         repoURL: remote.path)
+
+    #expect(again == first)  // reused, not cloned again
+    #expect(read(URL(fileURLWithPath: again).appendingPathComponent("state.json")) == "{\"newer\": true}")
+}
+
+@Test func ifTheCloneCantBeDownloadedItSaysSo() {
+    let tmp = TempDir()
+
+    expectUpdateError("Couldn't download") {
+        _ = try Updater.workingClone(projectDir: tmp.url("gone").path, tag: "v2.2.0",
+                                     supportDir: tmp.url("support"), repoURL: tmp.url("no-such-repo").path)
+    }
+}
