@@ -79,8 +79,8 @@ public enum Item: Equatable {
     case popup(label: String?, options: [String], selected: Int, action: String)
     case `switch`(label: String, isOn: Bool, action: String)
     /// Two date fields, "From" and "To" (actions chart_from and chart_to).
-    /// Neither can be picked after `latest`.
-    case dateRange(from: Day, to: Day, latest: Day)
+    /// Neither can be picked before `earliest` or after `latest`.
+    case dateRange(from: Day, to: Day, earliest: Day, latest: Day)
     /// One line of a warning, in orange; the first line shows an icon.
     case alert(text: String, showIcon: Bool)
     /// Small rounded labels; off ones are crossed out.

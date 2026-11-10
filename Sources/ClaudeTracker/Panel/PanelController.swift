@@ -140,6 +140,9 @@ final class PanelController: NSObject {
         popover.appearance = NSApp.effectiveAppearance
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         if popover.isShown {
+            DispatchQueue.main.async { [weak self] in
+                onMain { if let self = self { self.redraw(self.root) } }
+            }
             startMonitors()
             if animationSeconds > 0 {
                 animate(unfolding: true)
@@ -331,6 +334,9 @@ final class PanelController: NSObject {
             let content = TabContentView(tab: tab, footer: footer, onAction: onAction)
             let view = hosting(content, y: contentTop, height: height)
             view.wantsLayer = true  // so it can fade in smoothly
+            // Built now, not when first drawn: a switch made while the tab is
+            // still invisible could otherwise stay undrawn until it was clicked.
+            view.layoutSubtreeIfNeeded()
             return view
         }
         if let shown = shownTabView, shown !== view {
@@ -343,13 +349,26 @@ final class PanelController: NSObject {
         setHeight(contentTop + height + PanelLayout.pad)
         if fade && animationSeconds > 0 {
             view.alphaValue = 0
-            NSAnimationContext.runAnimationGroup { context in
+            NSAnimationContext.runAnimationGroup({ context in
                 context.duration = PanelLayout.tabFadeSeconds
                 view.animator().alphaValue = 1
-            }
+            }, completionHandler: { [weak self, weak view] in
+                onMain { if let view = view { self?.redraw(view) } }
+            })
         } else {
             view.alphaValue = 1
+            DispatchQueue.main.async { [weak self, weak view] in
+                onMain { if let view = view { self?.redraw(view) } }
+            }
         }
+    }
+
+    /// Asks a view and everything in it to draw again. Some controls (the
+    /// switches) can come up blank the first time their tab is shown.
+    func redraw(_ view: NSView) {
+        view.needsDisplay = true
+        view.layer?.setNeedsDisplay()
+        view.subviews.forEach(redraw)
     }
 
     private func setHeight(_ height: CGFloat) {

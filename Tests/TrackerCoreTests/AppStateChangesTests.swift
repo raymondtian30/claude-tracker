@@ -365,3 +365,14 @@ private struct Offline: Error {}
     AppState.applyChart(.quit, to: &state, today: Day(2026, 7, 29))
     #expect(state.count == 1)
 }
+
+@Test func customDatesNeverGoBeforeTheFirstDay() {
+    let today = Day(2026, 7, 29), first = Day(2026, 7, 10)
+    var state: JSONObject = ["chart_mode": "custom", "chart_from": "2026-07-15", "chart_to": "2026-07-20"]
+
+    AppState.applyChart(.chartTo(Day(2025, 10, 8)), to: &state, today: today, earliest: first)
+    #expect(state["chart_from"] as? String == "2026-07-10" && state["chart_to"] as? String == "2026-07-10")
+
+    AppState.applyChart(.chartFrom(Day(2025, 10, 8)), to: &state, today: today, earliest: first)
+    #expect(state["chart_from"] as? String == "2026-07-10")
+}

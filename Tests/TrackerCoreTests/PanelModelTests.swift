@@ -846,13 +846,36 @@ private let july29 = Day(2026, 7, 29)
     var daily = JSONObject()
     UsageStats.recordEntry(&daily, panelEntry("2026-07-10T12:00:00.000Z", ["input_tokens": 9]))
     UsageStats.recordEntry(&daily, panelEntry("2026-07-29T12:00:00.000Z", ["input_tokens": 15]))
-    let state: JSONObject = ["chart_mode": "custom", "chart_from": "2026-07-08", "chart_to": "2026-07-12"]
+    let state: JSONObject = ["chart_mode": "custom", "chart_from": "2026-07-10", "chart_to": "2026-07-14"]
     let tab = tabsFor(daily, state: state)["overview"]!
-    let card = tab.cards.first { $0.title == "Jul 8th – Jul 12th" }!
+    let card = tab.cards.first { $0.title == "Jul 10th – Jul 14th" }!
 
     #expect(card.items[0] == .segmented(label: nil, options: ["7 days", "14 days", "30 days", "All", "Custom"],
                                         selected: 4, action: "chart_days"))
-    #expect(card.items[1] == .dateRange(from: Day(2026, 7, 8), to: Day(2026, 7, 12), latest: july29))
+    #expect(card.items[1] == .dateRange(from: Day(2026, 7, 10), to: Day(2026, 7, 14),
+                                        earliest: Day(2026, 7, 10), latest: july29))
     guard case let .chart(values, _, _) = card.items[2] else { Issue.record("no chart"); return }
-    #expect(values == [0, 0, 9, 0, 0])
+    #expect(values == [9, 0, 0, 0, 0])
+}
+
+@Test func aCustomRangeNeverStartsBeforeTheFirstDay() {
+    let earliest = Day(2026, 7, 10)
+    func range(_ from: String, _ to: String) -> PanelModel.ChartRange {
+        PanelModel.chartRange(from: ["chart_mode": "custom", "chart_from": from, "chart_to": to],
+                              today: july29, earliest: earliest)
+    }
+    #expect(range("2026-07-01", "2026-07-20") == .custom(from: earliest, to: Day(2026, 7, 20)))
+    // Entirely before the first usage (a mistyped year): the last 30 days instead of an empty chart.
+    #expect(range("2025-10-08", "2025-10-08") == .custom(from: earliest, to: july29))
+}
+
+@Test func aCustomRangeWithNoUsageSaysSo() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, panelEntry("2026-07-10T12:00:00.000Z", ["input_tokens": 9]))
+    UsageStats.recordEntry(&daily, panelEntry("2026-07-29T12:00:00.000Z", ["input_tokens": 15]))
+    let state: JSONObject = ["chart_mode": "custom", "chart_from": "2026-07-15", "chart_to": "2026-07-20"]
+    let card = tabsFor(daily, state: state)["overview"]!.cards.first { $0.title == "Jul 15th – Jul 20th" }!
+
+    guard case let .chart(values, caption, _) = card.items[2] else { Issue.record("no chart"); return }
+    #expect(values == [0, 0, 0, 0, 0, 0] && caption == "No usage in this range")
 }

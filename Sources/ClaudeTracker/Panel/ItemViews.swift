@@ -87,8 +87,15 @@ struct ChartItem: View {
 }
 
 private struct LineChart: View {
-    let values: [Int]
+    let given: [Int]
     var hovered: Int?
+    /// One value is drawn as a flat line, so a one-day range still shows.
+    private var values: [Int] { given.count == 1 ? given + given : given }
+
+    init(values: [Int], hovered: Int?) {
+        given = values
+        self.hovered = hovered
+    }
 
     var body: some View {
         Canvas { context, size in
