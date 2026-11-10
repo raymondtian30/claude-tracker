@@ -150,7 +150,7 @@ final class AppController {
         attempt("save \(files.state.path)") { try TokenMath.saveState(state, files.state) }
     }
 
-    /// Runs `body`, logging (to agent.err.log) instead of stopping on an error.
+    /// Runs `body`, logging (to ~/Library/Logs/ClaudeTracker/agent.err.log) instead of stopping on an error.
     func attempt(_ what: String, _ body: () throws -> Void) {
         do {
             try body()
