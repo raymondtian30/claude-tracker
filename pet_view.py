@@ -1,5 +1,6 @@
 """The floating black cat. Click through the empty pixels. Drag the cat itself."""
 
+import sys
 import time
 
 import objc
@@ -280,6 +281,12 @@ class DesktopPet:
     def _tick(self, _timer):
         if self.window is None or not self.window.isVisible():
             return
+        try:
+            self._frame()
+        except Exception as exc:
+            print(f"desktop pet: {exc}", file=sys.stderr)
+
+    def _frame(self):
         now = time.time()
         dt = now - self._last
         self._last = now
