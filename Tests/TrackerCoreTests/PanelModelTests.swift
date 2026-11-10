@@ -610,3 +610,71 @@ private let sevenPerChar: TextMeasure = { text, _, _ in CGFloat(text.count) * 7 
     #expect(!cut(187, 188))
     #expect(cut(188, 188))
 }
+
+// MARK: - Effort on the Models tab
+
+private func effortTabs(_ entries: [(model: String, effort: String?, tokens: Int)],
+                        changeBucket: ((inout JSONObject) -> Void)? = nil) -> [String: Tab] {
+    var daily = JSONObject()
+    for entry in entries {
+        var e = panelEntry("2026-07-29T12:00:00.000Z", model: entry.model, ["input_tokens": entry.tokens])
+        e["effort"] = entry.effort
+        if entry.effort == nil { e["effort"] = nil }
+        UsageStats.recordEntry(&daily, e)
+    }
+    if let change = changeBucket {
+        var bucket = daily.object("2026-07-29")!
+        change(&bucket)
+        daily["2026-07-29"] = bucket
+    }
+    let view = viewOf(daily, name: "Claude Code", key: "claude_code")
+    return tabsByKey(buildTestPanel([:], [], [], today: Day(2026, 7, 29), view: view))
+}
+
+@Test func effortRowsSumToModelTotal() {
+    let tabs = effortTabs([("claude-opus-5-5", "high", 60), ("claude-opus-5-5", "xhigh", 40),
+                           ("gpt-5.6-luna", "medium", 100)])
+
+    let items = itemsOf(tabs["models"]!)
+
+    #expect(items.contains(.bar(label: "gpt-5.6-luna (MEDIUM)", value: "100 · 50%", fraction: 0.5)))
+    #expect(items.contains(.bar(label: "Opus 5.5 (HIGH)", value: "60 · 30%", fraction: 0.3)))
+    #expect(items.contains(.bar(label: "Opus 5.5 (XHIGH)", value: "40 · 20%", fraction: 0.2)))
+    #expect(!items.contains { if case let .bar(label, _, _, _, _) = $0 { return label == "Opus 5.5" } else { return false } })
+    // Within a model, the larger effort comes first.
+    let labels = items.compactMap { item -> String? in
+        if case let .bar(label, _, _, _, _) = item { return label } else { return nil }
+    }
+    let high = labels.firstIndex(of: "Opus 5.5 (HIGH)")!
+    #expect(high < labels.firstIndex(of: "Opus 5.5 (XHIGH)")!)
+}
+
+@Test func effortSumIsClampedToTheModelTotal() {
+    // A merge or backfill can leave more tokens in `efforts` than the model has.
+    let tabs = effortTabs([("claude-opus-5-5", "high", 100)]) { bucket in
+        bucket["efforts"] = ["claude-opus-5-5": ["high": 150, "low": 20]] as JSONObject
+    }
+
+    let items = itemsOf(tabs["models"]!)
+
+    #expect(items.contains(.bar(label: "Opus 5.5 (HIGH)", value: "100 · 100%", fraction: 1.0)))
+    #expect(!items.contains { if case let .bar(label, _, _, _, _) = $0 { return label.contains("LOW") || label == "Opus 5.5" } else { return false } })
+}
+
+@Test func remainderRowOnlyWhenPositive() {
+    let tabs = effortTabs([("claude-opus-5-5", "high", 70), ("claude-opus-5-5", nil, 30)])
+
+    let items = itemsOf(tabs["models"]!)
+
+    #expect(items.contains(.bar(label: "Opus 5.5 (HIGH)", value: "70 · 70%", fraction: 0.7)))
+    #expect(items.contains(.bar(label: "Opus 5.5", value: "30 · 30%", fraction: 0.3)))
+}
+
+@Test func modelsWithoutEffortKeepTheirPlainRowAndCostIsUnchanged() {
+    let plain = effortTabs([("claude-opus-5-5", nil, 100)])
+    let withEffort = effortTabs([("claude-opus-5-5", "high", 100)])
+
+    #expect(itemsOf(plain["models"]!).contains(.bar(label: "Opus 5.5", value: "100 · 100%", fraction: 1.0)))
+    #expect(plain["cost"]! == withEffort["cost"]!)
+    #expect(plain["breakdown"]! == withEffort["breakdown"]!)
+}

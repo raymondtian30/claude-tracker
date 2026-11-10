@@ -288,3 +288,102 @@ private func rows(_ daily: JSONObject) -> [NamedTotal] {
     #expect(rows(data) == [NamedTotal("~/Downloads/game", 300), NamedTotal("~/Desktop/comp", 100),
                            NamedTotal("~", 2)])
 }
+
+// Effort: Claude Code's `effort` on assistant entries, and merging, filtering
+// and reading the per-day `efforts` maps.
+
+private func effortEntry(_ effort: Any?, perTurn: Any? = nil, model: String = "claude-opus-5-5",
+                         tokens: Int = 10) -> JSONObject {
+    var e = entry(model: model, ["input_tokens": tokens])
+    if let effort = effort { e["effort"] = effort }
+    if let perTurn = perTurn { e["perTurnEffort"] = perTurn }
+    return e
+}
+
+private let july29 = Day(2026, 7, 29)
+
+private func claudeEfforts(_ daily: JSONObject) -> Any? {
+    dig(daily, "2026-07-29", "efforts")
+}
+
+@Test func claudeEffortField() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, effortEntry("high"))
+    UsageStats.recordEntry(&daily, effortEntry("medium", tokens: 5))
+    UsageStats.recordEntry(&daily, effortEntry("high", tokens: 1))
+
+    #expect(jsonEqual(claudeEfforts(daily), ["claude-opus-5-5": ["high": 11, "medium": 5]]))
+}
+
+@Test func claudePerTurnEffortFallback() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, effortEntry(nil, perTurn: "xhigh"))
+
+    #expect(jsonEqual(claudeEfforts(daily), ["claude-opus-5-5": ["xhigh": 10]]))
+}
+
+@Test func claudeBothEffortFieldsPresentAndDifferentUsesEffort() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, effortEntry("medium", perTurn: "high"))
+
+    #expect(jsonEqual(claudeEfforts(daily), ["claude-opus-5-5": ["medium": 10]]))
+}
+
+@Test func claudeEntryWithoutEffortLeavesNoEffortsKey() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, effortEntry(nil))
+    UsageStats.recordEntry(&daily, effortEntry(NSNull(), perTurn: NSNull()))
+    UsageStats.recordEntry(&daily, effortEntry("not an effort!"))
+
+    #expect(claudeEfforts(daily) == nil)
+}
+
+@Test func wrongTypedEffortsReadAsNone() {
+    for bad: Any in ["high", ["high"], 5, NSNull(), ["claude-opus-5-5": "high"], ["claude-opus-5-5": ["high": "x"]]] {
+        var daily = JSONObject()
+        UsageStats.recordEntry(&daily, effortEntry(nil))
+        var bucket = daily.object("2026-07-29")!
+        bucket["efforts"] = bad
+        daily["2026-07-29"] = bucket
+        #expect(UsageStats.effortsInRange(daily, july29, july29).values.allSatisfy { $0.isEmpty })
+        // Merging and filtering must not trap on it either.
+        _ = UsageStats.mergeDaily([daily, daily])
+        _ = UsageStats.filterDaily(daily) { _ in true }
+    }
+}
+
+@Test func combineBucketsKeepsEffortsSumAndMax() {
+    var a = JSONObject(), b = JSONObject()
+    UsageStats.recordEntry(&a, effortEntry("high", tokens: 10))
+    UsageStats.recordEntry(&b, effortEntry("high", tokens: 4))
+    UsageStats.recordEntry(&b, effortEntry("low", tokens: 3))
+
+    #expect(jsonEqual(claudeEfforts(UsageStats.mergeDaily([a, b])),
+                      ["claude-opus-5-5": ["high": 14, "low": 3]]))
+    #expect(jsonEqual(claudeEfforts(UsageStats.mergeMaxDaily(a, b)),
+                      ["claude-opus-5-5": ["high": 10, "low": 3]]))
+}
+
+@Test func filterDailyKeepsEffortsOfKeptModels() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, effortEntry("high", model: "claude-opus-5-5"))
+    UsageStats.recordEntry(&daily, effortEntry("low", model: "gpt-5.6-luna"))
+
+    let filtered = UsageStats.filterDaily(daily) { $0.hasPrefix("claude") }
+
+    #expect(jsonEqual(claudeEfforts(filtered), ["claude-opus-5-5": ["high": 10]]))
+}
+
+@Test func effortsInRangeMatchesModelsInRange() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, effortEntry("high", tokens: 10))
+    UsageStats.recordEntry(&daily, effortEntry("medium", tokens: 5))
+    UsageStats.recordEntry(&daily, effortEntry(nil, tokens: 2))  // no effort
+
+    let efforts = UsageStats.effortsInRange(daily, july29, july29)
+    #expect(efforts == ["claude-opus-5-5": ["high": 10, "medium": 5]])
+    #expect(UsageStats.effortsAllTime(daily) == efforts)
+    let total = UsageStats.modelTotals(UsageStats.modelsInRange(daily, july29, july29)).first!.tokens
+    #expect(total == 17)  // the 2 without an effort are the remainder
+    #expect(UsageStats.effortsInRange(daily, Day(2026, 7, 30), Day(2026, 7, 30)).isEmpty)
+}

@@ -267,3 +267,58 @@ private func limitHit(_ kind: String = "five_hour", resetsAt: Int = 1_794_123_00
 
     #expect(state["claude_recent"] == nil)
 }
+
+// Effort backfill: the efforts of what's already counted, from logs still on disk.
+
+private func effortAssistant(_ tokens: Int, effort: String?, timestamp: String = "2026-07-29T12:00:00.000Z") -> JSONObject {
+    var entry = assistantEntry(tokens, 0, timestamp: timestamp)
+    entry["effort"] = effort as Any
+    if effort == nil { entry["effort"] = nil }
+    return entry
+}
+
+@Test func backfillEffortsOnce() throws {
+    let tmp = TempDir()
+    let path = tmp.url("s.jsonl")
+    writeJSONL(path, [effortAssistant(10, effort: "high"), effortAssistant(5, effort: "medium")])
+    var state: JSONObject = ["grand_total": 0, "file_offsets": [path.path: fileSize(path)]]
+    try TokenMath.backfillDaily(&state)
+
+    try TokenMath.backfillEfforts(&state)
+
+    #expect(state.bool("efforts_backfilled") == true)
+    #expect(jsonEqual(dig(state, "daily", "2026-07-29", "efforts"), ["unknown": ["high": 10, "medium": 5]]))
+    // A second run changes nothing, even if the file has grown.
+    writeJSONL(path, [effortAssistant(10, effort: "high"), effortAssistant(5, effort: "medium"),
+                      effortAssistant(7, effort: "low")])
+    try TokenMath.backfillEfforts(&state)
+    #expect(jsonEqual(dig(state, "daily", "2026-07-29", "efforts"), ["unknown": ["high": 10, "medium": 5]]))
+}
+
+@Test func backfillEffortsOnlyFillsBucketsWithNone() throws {
+    let tmp = TempDir()
+    let path = tmp.url("s.jsonl")
+    writeJSONL(path, [effortAssistant(10, effort: "high")])
+    var state: JSONObject = ["grand_total": 0, "file_offsets": [path.path: fileSize(path)]]
+    try TokenMath.backfillDaily(&state)
+    var daily = state.object("daily")!
+    var bucket = daily.object("2026-07-29")!
+    bucket["efforts"] = ["unknown": ["low": 3]] as JSONObject
+    daily["2026-07-29"] = bucket
+    state["daily"] = daily
+
+    try TokenMath.backfillEfforts(&state)
+
+    #expect(jsonEqual(dig(state, "daily", "2026-07-29", "efforts"), ["unknown": ["low": 3]]))
+}
+
+@Test func backfillEffortsSkipsMissingFilesAndLeavesPlainRows() throws {
+    let tmp = TempDir()
+    var state: JSONObject = ["grand_total": 0, "file_offsets": [tmp.url("gone.jsonl").path: 50],
+                             "daily": ["2026-07-29": ["models": JSONObject(), "projects": JSONObject()] as JSONObject]]
+
+    try TokenMath.backfillEfforts(&state)
+
+    #expect(state.bool("efforts_backfilled") == true)
+    #expect(dig(state, "daily", "2026-07-29", "efforts") == nil)
+}

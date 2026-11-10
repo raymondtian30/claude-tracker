@@ -112,3 +112,38 @@ private let TODAY = Day(2026, 11, 8)
     #expect(getsid(pid) == pid)  // it leads a new session
     #expect(getsid(0) != pid)
 }
+
+// The one-time copy of state.json before the first launch that backfills efforts.
+
+@Test func backupCreatedOnceBeforeDefaults() {
+    let state = URL(fileURLWithPath: "/proj/state.json")
+    var existing = Set<String>([state.path])
+    var copies: [(String, String)] = []
+    func run() -> String? {
+        AppState.backupBeforeUpgrade(stateFile: state, freshInstall: false,
+                                     fileExists: { existing.contains($0.path) },
+                                     copy: { from, to in copies.append((from.path, to.path)); existing.insert(to.path) })
+    }
+
+    #expect(run() == nil)
+    #expect(copies.count == 1 && copies[0].0 == "/proj/state.json" && copies[0].1 == "/proj/state.json.pre-3.1.bak")
+    #expect(run() == nil)  // the backup is there: not copied again
+    #expect(copies.count == 1)
+}
+
+@Test func backupSkippedOnFreshInstall() {
+    var copied = false
+    let result = AppState.backupBeforeUpgrade(stateFile: URL(fileURLWithPath: "/proj/state.json"), freshInstall: true,
+                                              fileExists: { _ in false }, copy: { _, _ in copied = true })
+
+    #expect(result == nil && !copied)
+}
+
+@Test func backupFailureIsReportedNotThrown() {
+    struct Boom: Error {}
+    let result = AppState.backupBeforeUpgrade(stateFile: URL(fileURLWithPath: "/proj/state.json"), freshInstall: false,
+                                              fileExists: { $0.lastPathComponent == "state.json" },
+                                              copy: { _, _ in throw Boom() })
+
+    #expect(result?.contains("state.json.pre-3.1.bak") == true)
+}

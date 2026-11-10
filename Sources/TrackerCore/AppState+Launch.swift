@@ -57,6 +57,25 @@ extension AppState {
     /// (nothing already there changes), the alert settings' migration, and
     /// keys from older versions dropped. `today` becomes the tracking start
     /// on a first launch.
+    /// Copies `state.json` to `state.json.pre-3.1.bak` once, before the first
+    /// launch of a version that backfills efforts, so there is a way back if
+    /// that goes wrong. Not on a fresh install (nothing to save), and never
+    /// over an existing backup. Returns a message when the copy failed (the
+    /// caller logs it and carries on: everything the new version adds is
+    /// additive), else nil.
+    public static func backupBeforeUpgrade(stateFile: URL, freshInstall: Bool,
+                                           fileExists: (URL) -> Bool,
+                                           copy: (URL, URL) throws -> Void) -> String? {
+        let backup = stateFile.deletingLastPathComponent().appendingPathComponent("state.json.pre-3.1.bak")
+        guard !freshInstall, fileExists(stateFile), !fileExists(backup) else { return nil }
+        do {
+            try copy(stateFile, backup)
+            return nil
+        } catch {
+            return "Couldn't back up \(stateFile.path) to \(backup.path): \(error)"
+        }
+    }
+
     public static func applyLaunchDefaults(_ state: inout JSONObject, freshInstall: Bool, today: Day) {
         initToolState(&state, freshInstall: freshInstall)
         initProviderState(&state)

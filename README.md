@@ -16,7 +16,7 @@ By default it never connects to the internet or sends your data anywhere. The on
   - **opencode:** its database at `~/.local/share/opencode/opencode.db`, opened read-only
   - **Gemini CLI:** its saved chat sessions in `~/.gemini/tmp/<project>/chats/` (and each project's `.project_root` file, for the folder name)
 
-  From these it reads only token counts, which model was used, when, and which project folder, plus, for open Claude Code sessions, which plugin skills, agents, hooks and MCP tools ran and when. It skips your prompts, code and replies, and never touches opencode's account or credential tables.
+  From these it reads only token counts, which model was used (and the effort level it ran at, such as medium or high), when, and which project folder, plus, for open Claude Code sessions, which plugin skills, agents, hooks and MCP tools ran and when. It skips your prompts, code and replies, and never touches opencode's account or credential tables.
 - `launchctl`, macOS's own built-in tool, only to turn its "start at login" setting on or off
 - `/usr/bin/security`, macOS's own Keychain tool, only for the Claude Code sign-in, API keys and Leaderboard token described below -- as before, the app reaches your Keychain only through this tool
 
@@ -56,7 +56,7 @@ A panel opens with a row of tabs along the top. It always opens on **Overview**;
 
 - **Overview** -- today's and lifetime totals, a chart of the last 14 days, and yesterday / last 7 days / this month / your biggest day
 - **Token Types** -- today's and lifetime tokens split into input, output, cache write and cache read, each with a bar showing its share
-- **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...)
+- **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...), split by effort level where the tool records it, for example "Sonnet 5.5 (HIGH)" and "Sonnet 5.5 (MEDIUM)" (history from before this was added shows as a plain model row)
 - **Projects** -- every folder you used tokens in over the last 7 days, most first: the top 5, and the rest behind **Show more** (usage in the home folder itself shows as its own "~" row)
 - **Estimated API Cost** -- what your usage would cost at Anthropic's pay-as-you-go API prices. Just for fun: a Pro or Max subscription is flat-rate, so you aren't billed this. Prices live in `Sources/TrackerCore/Pricing.swift` and will drift over time.
 - **Usage Limits** -- how much of your plan's limits you've used, and when to be notified (see [Usage limits and alerts](#usage-limits-and-alerts))

@@ -216,6 +216,34 @@ public enum TokenMath {
         state["daily_backfilled"] = true
     }
 
+    /// One-time read of the effort levels of what's already counted.
+    ///
+    /// Re-reads each tracked file from the start up to its saved offset into a
+    /// scratch copy of the buckets, and copies only the `efforts` maps into
+    /// saved buckets that have none. Logs Claude Code already pruned have no
+    /// effort left: their tokens show as a plain model row.
+    public static func backfillEfforts(_ state: inout JSONObject) throws {
+        if state.bool("efforts_backfilled") == true {
+            return
+        }
+        var scratch = JSONObject()
+        for (path, offset) in state.object("file_offsets") ?? [:] {
+            try skippingMissing {
+                try sumUsageSince(path, offset: 0, stopAt: JSON.int(offset) ?? 0, daily: &scratch)
+            }
+        }
+        var daily = state.object("daily") ?? [:]
+        for (iso, value) in scratch {
+            guard let efforts = JSON.object(value)?.object("efforts"), !efforts.isEmpty,
+                  var bucket = daily.object(iso), bucket["efforts"] == nil
+            else { continue }
+            bucket["efforts"] = efforts
+            daily[iso] = bucket
+        }
+        state["daily"] = daily
+        state["efforts_backfilled"] = true
+    }
+
     /// Runs `body`, ignoring a "no such file" error (Python's FileNotFoundError).
     static func skippingMissing(_ body: () throws -> Void) throws {
         do {
