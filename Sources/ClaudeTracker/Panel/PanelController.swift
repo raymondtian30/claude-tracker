@@ -323,6 +323,12 @@ final class PanelController: NSObject {
         showTab(fade: false)
     }
 
+    /// Shows the tab with this key, if there is one.
+    func select(key: String) {
+        guard let index = tabs.firstIndex(where: { $0.key == key }) else { return }
+        selectTab(index, fade: false)
+    }
+
     func selectTab(_ index: Int, fade: Bool = true) {
         guard selection.select(index) else { return }
         onTabChange?(selection.selected)

@@ -78,10 +78,10 @@ public enum Item: Equatable {
     case segmented(label: String?, options: [String], selected: Int, action: String)
     case popup(label: String?, options: [String], selected: Int, action: String)
     case `switch`(label: String, isOn: Bool, action: String)
-    /// Two date fields, "From" and "To", and a check mark that applies them
-    /// (action chart_range, with "from,to" as ISO dates). Neither can be
-    /// picked before `earliest` or after `latest`.
-    case dateRange(from: Day, to: Day, earliest: Day, latest: Day)
+    /// Two month calendars side by side, "From" and "To", with Apply and Cancel
+    /// under them (actions chart_range, with "from,to" as ISO dates, and
+    /// chart_cancel). Days before `earliest` or after `latest` can't be picked.
+    case rangePicker(from: Day, to: Day, earliest: Day, latest: Day)
     /// One line of a warning, in orange; the first line shows an icon.
     case alert(text: String, showIcon: Bool)
     /// Small rounded labels; off ones are crossed out.
@@ -138,7 +138,7 @@ public enum Item: Equatable {
         case .segmented: return "segmented"
         case .popup: return "popup"
         case .switch: return "switch"
-        case .dateRange: return "daterange"
+        case .rangePicker: return "rangepicker"
         case .alert: return "alert"
         case .tags: return "tags"
         case .choices: return "choices"

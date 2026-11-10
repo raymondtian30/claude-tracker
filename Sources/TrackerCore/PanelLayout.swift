@@ -26,7 +26,7 @@ public enum PanelLayout {
         "segmented": 30,
         "popup": 30,
         "switch": 30,
-        "daterange": 30,
+        "rangepicker": 264,
         "alert": 17,
         "tags": 22,
         "choices": 52,

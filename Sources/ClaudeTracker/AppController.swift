@@ -23,7 +23,7 @@ final class AppController {
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private(set) lazy var panel = PanelController(
         onAction: { [weak self] in self?.handleLater($0, $1) },
-        onTabChange: { [weak self] _ in self?.closeOpenRows() })
+        onTabChange: { [weak self] key in self?.tabChanged(to: key) })
     private(set) lazy var settingsWindow = SettingsWindow(onAction: { [weak self] in self?.handleLater($0, $1) })
     let notifier = Notifier.live(title: Version.appName)
 
@@ -34,6 +34,11 @@ final class AppController {
     var updateStatus: String?
     /// The Projects tab's "Show more".
     var projectsExpanded = false
+    /// Whether the Custom range page is open (a tab of its own, after Home).
+    /// Not saved: opening the panel or picking another tab closes it.
+    var rangeOpen = false
+    /// A tab to show once the next draw has made it (the Custom range page).
+    private var tabToShow: String?
     /// The open sessions and plugin activity, as the last background search
     /// found them. Clicks draw this; they never search (see `LiveSnapshot`).
     var live = LiveSnapshot()
@@ -106,6 +111,7 @@ final class AppController {
         panel.onWillShow = { [weak self] in
             self?.openRows = [:]
             self?.projectsExpanded = false  // Projects opens short each time
+            self?.closeRangePage()
             self?.renderPanel()
             self?.searchLive()
         }
@@ -239,7 +245,7 @@ final class AppController {
         let result = PanelModel.buildPanelResult(
             view, state: state, sessions: sessions, friends: friends,
             showLeaderboard: PanelModel.leaderboardEnabled(state) && view.key == "claude_code",
-            projectsExpanded: projectsExpanded, plugins: plugins,
+            projectsExpanded: projectsExpanded, plugins: plugins, rangeOpen: rangeOpen,
             context: PanelContext(open: openRows, measure: TextMeasures.live))
         let tabs = result.tabs
         rowInfo = result.rows
@@ -253,21 +259,45 @@ final class AppController {
             subtitle: view.key == "all" ? "All AIs" : "for \(view.name)",
             // Same rule as the menu bar: the AI's logo, the coin when combined.
             logo: view.key != "all" ? ToolIcons.iconImage(view.key, size: ToolIcons.headerIconSize) : nil)
+        if let key = tabToShow {
+            tabToShow = nil
+            panel.select(key: key)
+        }
         settingsWindow.render(PanelModel.settingsTab(state, intervalChoices: AppState.scanIntervalChoices,
                                                      detected: detected, updateStatus: updateStatus,
                                                      showCredits: aboutShowsCredits))
     }
 
-    /// Picking another tab closes every open row. The redraw waits for the
-    /// next run-loop turn: this runs inside `selectTab`, which must not be
-    /// re-entered.
-    private func closeOpenRows() {
-        guard !openRows.isEmpty || projectsExpanded else { return }
+    /// Picking another tab closes every open row, "Show less" the projects
+    /// and the Custom range page (unless that is the tab picked). The redraw
+    /// waits for the next run-loop turn: this runs inside `selectTab`, which
+    /// must not be re-entered.
+    private func tabChanged(to key: String) {
+        var changed = !openRows.isEmpty || projectsExpanded
         openRows = [:]
         projectsExpanded = false
+        if rangeOpen && key != "range" {
+            closeRangePage()
+            changed = true
+        }
+        guard changed else { return }
         DispatchQueue.main.async { [weak self] in
             onMain { self?.renderPanel() }
         }
+    }
+
+    /// Opens the Custom range page as a tab, and shows it.
+    private func openRangePage() {
+        RangeDraft.clear()
+        rangeOpen = true
+        tabToShow = "range"
+    }
+
+    /// Closes the Custom range page; the draw after this drops its tab, and
+    /// the panel goes back to Home.
+    private func closeRangePage() {
+        rangeOpen = false
+        RangeDraft.clear()
     }
 
     /// Looks for open sessions and plugin activity off the main thread, then
@@ -387,6 +417,14 @@ final class AppController {
             let earliest = UsageStats.earliestDay(AppState.currentView(state, detected: Tools.detectTools()).daily)
             AppState.applyChart(parsed, to: &state, today: Day.today(), earliest: earliest)
             save()
+            // Custom, and Change dates, open a page to pick the dates on; Apply closes it.
+            if parsed == .chartCustom {
+                openRangePage()
+            } else if case .chartRange = parsed {
+                closeRangePage()
+            }
+        case .chartEdit: openRangePage()
+        case .chartCancel: closeRangePage()
         case .currency(let code):
             state["currency"] = code
             save()

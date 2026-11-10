@@ -96,7 +96,9 @@ import Testing
     #expect(AppAction.parse("chart_days", .index(3)) == .chartAll)
     #expect(AppAction.parse("chart_days", .index(4)) == .chartCustom)
     #expect(AppAction.parse("chart_days", .index(5)) == nil)
-    // Both dates at once, when the check mark is clicked.
+    #expect(AppAction.parse("chart_edit", .none) == .chartEdit)
+    #expect(AppAction.parse("chart_cancel", .none) == .chartCancel)
+    // Both dates at once, when Apply is clicked.
     #expect(AppAction.parse("chart_range", .text("2026-07-01,2026-07-20")) == .chartRange(Day(2026, 7, 1), Day(2026, 7, 20)))
     for bad in ["2026-07-01", "tomorrow,2026-07-20", "2026-07-01,", ",", "2026-07-01,2026-07-20,2026-07-21", ""] {
         #expect(AppAction.parse("chart_range", .text(bad)) == nil, "\(bad)")

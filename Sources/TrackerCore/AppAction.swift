@@ -53,6 +53,10 @@ public enum AppAction: Equatable {
     case chartDays(Int)
     case chartAll
     case chartCustom
+    /// "Change dates": opens the Custom range page again.
+    case chartEdit
+    /// Cancel on the Custom range page.
+    case chartCancel
     /// Both Custom dates, once the check mark is clicked.
     case chartRange(Day, Day)
     case currency(String)
@@ -119,6 +123,8 @@ public enum AppAction: Equatable {
                 return [AppAction.chartAll, .chartCustom][safe: index - PanelModel.chartRanges.count]
             }
             return pick(value, PanelModel.chartRanges).map(AppAction.chartDays)
+        case "chart_edit": return .chartEdit
+        case "chart_cancel": return .chartCancel
         case "chart_range":
             guard case .text(let text) = value else { return nil }
             let days = text.split(separator: ",", omittingEmptySubsequences: false).map { Day(iso: String($0)) }
