@@ -262,12 +262,13 @@ extension PanelModel {
             let prefix = key == "all" ? "\(Tools.toolNames[tool] ?? tool): " : ""
             let found = levels.filter { $0.id.hasPrefix("\(tool):") }
             for level in found {
-                var label = key == "all" ? "\(level.name) \(level.label)" : level.label
+                var sub: String?
                 if let resetsAt = level.resetsAt, resetsAt != 0 {
-                    label += " · resets \(Limits.formatReset(resetsAt, now: now))"
+                    sub = "Resets \(Limits.formatReset(resetsAt, now: now))"
                 }
                 let value = level.reached ? "Reached" : String(format: "%.0f%%", level.percent)
-                plan.append(.bar(label: label, value: value, fraction: Swift.min(level.percent / 100, 1.0)))
+                plan.append(.bar(label: Limits.displayName(level), value: value,
+                                 fraction: Swift.min(level.percent / 100, 1.0), sub: sub))
             }
             if tool == "claude_code" {
                 plan += claudeLimitNotes(d.state, found, prefix: prefix)

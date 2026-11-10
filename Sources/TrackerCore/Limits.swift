@@ -143,7 +143,8 @@ public enum Limits {
         if enabled, !fetched.isEmpty {
             return fetched.map { limit in
                 var limit = limit
-                if let resetsAt = limit.resetsAt, resetsAt <= now {
+                // A reset time of 0 means "not known", the same as none.
+                if let resetsAt = limit.resetsAt, resetsAt > 0, resetsAt <= now {
                     limit.percent = 0.0
                     limit.resetsAt = nil
                 }
@@ -193,7 +194,7 @@ public enum Limits {
             if seeding || keys.allSatisfy({ above.contains($0) }) {
                 continue
             }
-            var message = "\(level.name): \(level.label) usage is at \(String(format: "%.0f", level.percent))%."
+            var message = "\(displayName(level)) usage is at \(String(format: "%.0f", level.percent))%."
             if let resetsAt = level.resetsAt, resetsAt != 0 {
                 let when = formatReset(resetsAt, now: now ?? Date().timeIntervalSince1970)
                 let startsWithDigit = when.first?.isNumber ?? false
@@ -252,6 +253,23 @@ public enum Limits {
         if state["alerts_above"] == nil {
             state["alerts_above"] = [String]()
         }
+    }
+
+    /// One name for a limit, in the panel and in notifications:
+    /// "Tool (Window)", or "Tool (Window, Model)" when Claude gives the
+    /// limit its own kind ("weekly_opus" gives "Opus"). Never built from the
+    /// saved `label`, so it needs no migration.
+    public static func displayName(_ level: Level) -> String {
+        let prefix = level.id.firstIndex(of: ":").map { String(level.id[..<$0]) } ?? level.id
+        let tool = [level.name, Tools.toolNames[prefix] ?? "", prefix].first { !$0.isEmpty } ?? ""
+        var window = windowLabels[level.window] ?? level.label
+        if let kind = level.kind, kind != level.window, kind.hasPrefix(level.window + "_") {
+            let words = kind.dropFirst(level.window.count + 1).split(separator: "_")
+            if !words.isEmpty {
+                window += ", " + words.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+            }
+        }
+        return "\(tool) (\(window))"
     }
 
     /// The real plan limits recorded for `toolKeys`, as alert levels.

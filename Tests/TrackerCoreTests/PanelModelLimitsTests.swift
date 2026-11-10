@@ -87,7 +87,7 @@ private func planItems(_ tab: Tab) -> [Item] {
 
     let tab = limitsTab(state, Tools.toolView(state, "codex"))
 
-    #expect(planItems(tab) == [.bar(label: "5-hour · resets 3:30 PM", value: "83%", fraction: 0.83)])
+    #expect(planItems(tab) == [.bar(label: "Codex (5-hour)", value: "83%", fraction: 0.83, sub: "Resets 3:30 PM")])
 }
 
 @Test func limitsTabShowsAReachedClaudeLimit() {
@@ -96,7 +96,7 @@ private func planItems(_ tab: Tab) -> [Item] {
 
     let tab = limitsTab(state, Tools.toolView(state, "claude_code"))
 
-    #expect(planItems(tab)[0] == .bar(label: "5-hour · resets 3:30 PM", value: "Reached", fraction: 1.0))
+    #expect(planItems(tab)[0] == .bar(label: "Claude Code (5-hour)", value: "Reached", fraction: 1.0, sub: "Resets 3:30 PM"))
 }
 
 @Test func limitsTabExplainsClaudeRecordsLimitsOnlyWhenReached() {
@@ -125,8 +125,8 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
     let tab = limitsTab(state, Tools.toolView(state, "claude_code"))
 
     let plan = planItems(tab)
-    #expect(Array(plan.prefix(2)) == [.bar(label: "5-hour · resets 3:30 PM", value: "23%", fraction: 0.23),
-                                      .bar(label: "Weekly", value: "41%", fraction: 0.414)])
+    #expect(Array(plan.prefix(2)) == [.bar(label: "Claude Code (5-hour)", value: "23%", fraction: 0.23, sub: "Resets 3:30 PM"),
+                                      .bar(label: "Claude Code (Weekly)", value: "41%", fraction: 0.414)])
 }
 
 @Test func limitsTabSaysWhenClaudesPercentagesAreUnavailable() {
@@ -210,7 +210,7 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
 
     let tab = limitsTab(state, Tools.toolView(state, "codex"))
 
-    #expect(planItems(tab) == [.bar(label: "Monthly · resets Nov 20", value: "83%", fraction: 0.83)])
+    #expect(planItems(tab) == [.bar(label: "Codex (Monthly)", value: "83%", fraction: 0.83, sub: "Resets Nov 20")])
 }
 
 @Test func settingsHasLightDarkAutoAppearance() {
@@ -287,4 +287,30 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
     #expect(PanelModel.formatAgo(0, 3 * 3600) == "3 hr ago")
     #expect(PanelModel.formatAgo(0, 86400) == "1 day ago")
     #expect(PanelModel.formatAgo(0, 3 * 86400) == "3 days ago")
+}
+
+@Test func limitsTabUsesDisplayNameInAllViews() {
+    let state = codexLimitsState(80.0, windowMinutes: 43200, resetsAt: LocalTime.timestamp(2026, 11, 20, 18, 46))
+        .merging(["enabled_tools": ["codex"]]) { a, _ in a }
+
+    for view in [Tools.toolView(state, "codex"), Tools.toolView(state, "all")] {
+        let tab = limitsTab(state, view)
+        #expect(planItems(tab) == [.bar(label: "Codex (Monthly)", value: "80%", fraction: 0.8,
+                                        sub: "Resets Nov 20")])
+    }
+}
+
+@Test func subTextAndNilCases() {
+    for resets: Any in [NSNull(), 0.0] {
+        let state: JSONObject = ["claude_usage": ["limits": [
+            ["kind": "five_hour", "window": "five_hour", "label": "5-hour", "percent": 23.0, "resets_at": resets] as JSONObject,
+        ], "error": NSNull(), "fetched_at": 1] as JSONObject]
+        let tab = limitsTab(state, Tools.toolView(state, "claude_code"))
+        #expect(planItems(tab)[0] == .bar(label: "Claude Code (5-hour)", value: "23%", fraction: 0.23, sub: nil))
+    }
+    let reached: JSONObject = ["claude_usage_enabled": false,
+                               "claude_limit_hits": ["five_hour": LocalTime.timestamp(2026, 11, 8, 15, 30)]]
+    let tab = limitsTab(reached, Tools.toolView(reached, "claude_code"))
+    guard case let .bar(_, value, _, sub, _) = planItems(tab)[0] else { Issue.record("no bar"); return }
+    #expect(value == "Reached" && sub == "Resets 3:30 PM")
 }
