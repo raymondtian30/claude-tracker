@@ -157,3 +157,69 @@ private func assistantEntry(_ inputTokens: Int, _ outputTokens: Int) -> JSONObje
     #expect(try ActiveSessions.runningCwds("codex", run: run) == ["/Users/me/game"])
     #expect(calls == [["ps", "-eo", "pid,comm"], ["lsof", "-a", "-p", "7", "-d", "cwd", "-Fn"]])
 }
+
+// MARK: - Processes (for Stop and Quit)
+
+@Test func processesNamedReadsPidAndWhetherItIsPaused() {
+    let psOutput = """
+          PID STAT COMM
+          101 S+   /Applications/Foo.app/Contents/MacOS/claude
+          102 T    claude
+          103 Ss   /usr/bin/claudette
+          104 TN   /Users/me/My Apps/claude
+          105 R    /bin/zsh
+
+        """
+    let found = ActiveSessions.processesNamed(psOutput, "claude")
+
+    #expect(found.map(\.pid) == [101, 102, 104])
+    #expect(found.map(\.stopped) == [false, true, true])
+}
+
+@Test func runningProcessesGivesPidFolderAndPausedState() throws {
+    let run: ActiveSessions.Run = { arguments in
+        if arguments[0] == "ps" {
+            #expect(arguments == ["ps", "-eo", "pid,stat,comm"])
+            return .init(status: 0, stdout: "  PID STAT COMM\n  7 T /usr/local/bin/claude\n  8 S zsh\n  9 S+ claude\n")
+        }
+        return .init(status: 0, stdout: "p\(arguments[3])\nfcwd\nn/Users/me/app\(arguments[3])\n")
+    }
+
+    let found = try ActiveSessions.runningProcesses("claude", run: run)
+
+    #expect(found == [ActiveSessions.Proc(pid: 7, cwd: "/Users/me/app7", stopped: true),
+                      ActiveSessions.Proc(pid: 9, cwd: "/Users/me/app9", stopped: false)])
+}
+
+@Test func eachSessionGetsAProcessOfItsFolder() throws {
+    let tmp = TempDir()
+    let projectsDir = tmp.url("projects")
+    let project = tmp.mkdir("projects/-Users-alice-work")
+    let (a, b) = (project.appendingPathComponent("a.jsonl"), project.appendingPathComponent("b.jsonl"))
+    writeJSONL(a, [assistantEntry(5, 5)])
+    writeJSONL(b, [assistantEntry(1, 1)])
+    let now = Date().timeIntervalSince1970
+    setModificationTime(a, now - 20)
+    setModificationTime(b, now - 10)
+    writeJSONL(tmp.mkdir("projects/-Users-alice-solo").appendingPathComponent("s.jsonl"), [assistantEntry(50, 50)])
+
+    let procs = [ActiveSessions.Proc(pid: 30, cwd: "/Users/alice/work", stopped: true),
+                 ActiveSessions.Proc(pid: 20, cwd: "/Users/alice/work", stopped: false),
+                 ActiveSessions.Proc(pid: 40, cwd: "/Users/alice/solo", stopped: false)]
+    let sessions = try ActiveSessions.activeSessions(projectsDir: projectsDir, processes: procs)
+
+    #expect(sessions.count == 3)
+    #expect(Set(sessions.compactMap(\.pid)) == [20, 30, 40])  // each process on one row
+    #expect(sessions.first { $0.pid == 40 }?.cwd == "/Users/alice/solo")
+    #expect(sessions.first { $0.pid == 30 }?.stopped == true && sessions.first { $0.pid == 20 }?.stopped == false)
+    #expect(sessions.filter { $0.cwd == "/Users/alice/work" }.count == 2)
+}
+
+@Test func sessionsFoundFromGivenFoldersHaveNoProcess() throws {
+    let tmp = TempDir()
+    writeJSONL(tmp.mkdir("projects/-Users-alice-w").appendingPathComponent("s.jsonl"), [assistantEntry(1, 1)])
+
+    let sessions = try ActiveSessions.activeSessions(projectsDir: tmp.url("projects"), cwds: ["/Users/alice/w"])
+
+    #expect(sessions.map(\.pid) == [nil] && sessions.map(\.stopped) == [false])
+}

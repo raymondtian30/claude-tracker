@@ -33,6 +33,19 @@ public struct LiveSnapshot: Equatable {
         self != new
     }
 
+    /// What Stop, Resume or Quit did to the sessions with these process ids,
+    /// shown at once; the next search confirms it.
+    public mutating func apply(_ action: SessionControl.Action, to pids: Set<Int32>) {
+        switch action {
+        case .stop, .resume:
+            for index in sessions.indices where sessions[index].pid.map(pids.contains) == true {
+                sessions[index].stopped = action == .stop
+            }
+        case .quit:
+            sessions.removeAll { $0.pid.map(pids.contains) == true }
+        }
+    }
+
     /// The search itself: Claude Code sessions with their plugins, and the
     /// running sessions of the other tools. Slow; call it off the main thread.
     /// A tool that can't be listed is skipped, with `report` told why.
@@ -41,7 +54,9 @@ public struct LiveSnapshot: Equatable {
         var sessions = [ActiveSessions.Session]()
         for tool in tools {
             do {
-                sessions += tool == "claude_code" ? try ActiveSessions.activeSessions()
+                // Claude Code's processes come along, for Stop and Quit.
+                sessions += tool == "claude_code"
+                    ? try ActiveSessions.activeSessions(processes: try ActiveSessions.runningProcesses("claude"))
                     : try ActiveSessions.runningToolSessions(tool)
             } catch {
                 report("Couldn't list \(tool) sessions: \(error)")

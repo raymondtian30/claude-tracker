@@ -104,3 +104,21 @@ import Testing
     #expect(AppAction.parse("currency", .index(Pricing.currencies.count)) == nil)
     #expect(AppAction.parse("currency", .none) == nil)
 }
+
+@Test func sessionActionsCarryAProcessId() {
+    #expect(AppAction.parse("session_stop:42", .none) == .sessionStop(42))
+    #expect(AppAction.parse("session_resume:42", .none) == .sessionResume(42))
+    #expect(AppAction.parse("session_quit:42", .none) == .sessionQuit(42))
+    #expect(AppAction.parse("sessions_stop_all", .none) == .sessionsStopAll)
+    #expect(AppAction.parse("sessions_resume_all", .none) == .sessionsResumeAll)
+    // Not a process id anyone should signal.
+    for bad in ["session_stop:", "session_stop:x", "session_quit:0", "session_quit:1", "session_quit:-1",
+                "session_quit:99999999999", "session_resume:4 2"] {
+        #expect(AppAction.parse(bad, .none) == nil, "\(bad)")
+    }
+}
+
+@Test func quittingASessionAsksFirst() {
+    #expect(AppAction.sessionQuit(42).opensDialog)
+    #expect(!AppAction.sessionStop(42).opensDialog && !AppAction.sessionsStopAll.opensDialog)
+}

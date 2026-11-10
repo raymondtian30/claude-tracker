@@ -247,7 +247,7 @@ extension PanelModel {
     }
 
     /// "~/Downloads/FPS Game" -> ("FPS Game", "Downloads"); "~" and "/" are their own names.
-    static func folderParts(_ path: String) -> (name: String, parent: String?) {
+    public static func folderParts(_ path: String) -> (name: String, parent: String?) {
         var trimmed = Substring(path)
         while trimmed.count > 1 && trimmed.hasSuffix("/") {
             trimmed = trimmed.dropLast()
@@ -461,56 +461,85 @@ extension PanelModel {
                     items: items.isEmpty ? [.note("No plugins enabled")] : items)
     }
 
-    /// Open sessions, each with tags for the plugins it runs, then (when
-    /// `plugins` is given: Claude Code's view or All AIs) what each plugin did.
+    /// Open sessions, then (when `plugins` is given: Claude Code's view or All
+    /// AIs) what each plugin did. A Claude Code process gets a card of its
+    /// own, with Stop (pause) and Quit; a summary card on top has Stop all.
+    /// Sessions with no known process (other tools') are rows in the summary
+    /// card, one per folder.
     static func sessionsTab(_ view: Tools.View, _ sessions: [ActiveSessions.Session],
                             plugins: [Plugins.Row]? = nil, now: Double? = nil) -> Tab {
-        // One row per folder: several processes can run in one (each Claude
-        // Code chat in VS Code, and the helpers it starts), and their rows
-        // were the same line again and again. The first seen keeps its place
-        // (the list is most tokens first), the tokens add up, and the plugin
-        // tags show once each.
-        var order = [String]()
-        var groups = [String: [ActiveSessions.Session]]()
-        for session in sessions {
-            let key = session.cwd ?? session.label
-            if groups[key] == nil {
-                order.append(key)
-            }
-            groups[key, default: []].append(session)
-        }
         // Just the folder's name, as in Projects; two folders with one name
         // also show their parent ("app · b").
-        let parts = order.map { folderParts(groups[$0]?.first?.label ?? $0) }
-        var nameCounts = [String: Int]()
-        for part in parts { nameCounts[part.name, default: 0] += 1 }
-        var items = [Item]()
-        for (position, key) in order.enumerated() {
-            let group = groups[key] ?? []
-            let counted = group.compactMap(\.tokens)
-            let part = parts[position]
-            var name = part.name
-            if nameCounts[name, default: 0] > 1, let parent = part.parent {
-                name = "\(name) · \(parent)"
+        func key(_ session: ActiveSessions.Session) -> String { session.cwd ?? session.label }
+        var foldersByName = [String: Set<String>]()
+        for session in sessions {
+            foldersByName[folderParts(session.label).name, default: []].insert(session.label)
+        }
+        func name(_ session: ActiveSessions.Session) -> String {
+            let part = folderParts(session.label)
+            if foldersByName[part.name, default: []].count > 1, let parent = part.parent {
+                return "\(part.name) · \(parent)"
             }
-            let label = group.count > 1 ? "\(name) · \(group.count) sessions" : name
-            items.append(.row(label: label,
-                              value: counted.isEmpty ? "running" : TokenMath.formatCount(counted.reduce(0, +))))
+            return part.name
+        }
+        func tagItems(_ sessions: [ActiveSessions.Session]) -> [Item] {
             var tags = [Item.Tag]()
-            for tag in group.flatMap({ $0.plugins ?? [] }) {
+            for tag in sessions.flatMap({ $0.plugins ?? [] }) {
                 if let index = tags.firstIndex(where: { $0.text == tag.name }) {
                     tags[index].isOn = tags[index].isOn || tag.runs
                 } else {
                     tags.append(Item.Tag(tag.name, tag.runs))
                 }
             }
-            items += tagLines(tags).map { .tags($0) }
+            return tagLines(tags).map { .tags($0) }
         }
-        if items.isEmpty {
-            let name = view.key == "all" ? "" : "\(view.name) "
-            items = [.note("No \(name)sessions running")]
+
+        let processes = sessions.filter { $0.pid != nil }
+        var items = [Item]()
+        if !processes.isEmpty {
+            var all = [Item.Button("Stop all", "pause.circle", "sessions_stop_all")]
+            if processes.contains(where: \.stopped) {
+                all.append(Item.Button("Resume all", "play.circle", "sessions_resume_all"))
+            }
+            items.append(.buttons(all))
         }
+
+        // The rest: one row per folder, since several can run in one. The
+        // first seen keeps its place (the list is most tokens first), the
+        // tokens add up, and the plugin tags show once each.
+        var order = [String]()
+        var groups = [String: [ActiveSessions.Session]]()
+        for session in sessions where session.pid == nil {
+            if groups[key(session)] == nil {
+                order.append(key(session))
+            }
+            groups[key(session), default: []].append(session)
+        }
+        for folder in order {
+            let group = groups[folder] ?? []
+            let counted = group.compactMap(\.tokens)
+            let label = group.count > 1 ? "\(name(group[0])) · \(group.count) sessions" : name(group[0])
+            items.append(.row(label: label,
+                              value: counted.isEmpty ? "running" : TokenMath.formatCount(counted.reduce(0, +))))
+            items += tagItems(group)
+        }
+        if sessions.isEmpty {
+            let who = view.key == "all" ? "" : "\(view.name) "
+            items = [.note("No \(who)sessions running")]
+        }
+
         var cards = [Card(title: "Sessions (\(sessions.count))", items: items)]
+        for session in processes {
+            guard let pid = session.pid else { continue }
+            let pause = session.stopped ? Item.Button("Resume", "play.circle", "session_resume:\(pid)")
+                : Item.Button("Stop", "pause.circle", "session_stop:\(pid)")
+            cards.append(Card(title: nil, items: [
+                .row(label: name(session), value: session.tokens.map(TokenMath.formatCount) ?? "running"),
+                .note("Process \(pid) · \(session.stopped ? "paused" : "running")"),
+            ] + tagItems([session]) + [
+                .buttons([pause, Item.Button("Quit", "xmark.circle", "session_quit:\(pid)")]),
+            ]))
+        }
         if let plugins = plugins {
             cards.append(pluginsCard(plugins, now: now ?? Date().timeIntervalSince1970))
         }

@@ -13,14 +13,21 @@ public enum ActiveSessions {
         public var log: String?
         /// The plugins a Claude Code session runs, set by `Plugins.livePlugins`.
         public var plugins: [Plugins.Tag]?
+        /// Claude Code sessions only: the process it runs in, and whether that
+        /// is paused. nil when the process isn't known (the Live tab then has
+        /// no Stop or Quit for it).
+        public var pid: Int32?
+        public var stopped: Bool
 
         public init(label: String, tokens: Int?, cwd: String? = nil, log: String? = nil,
-                    plugins: [Plugins.Tag]? = nil) {
+                    plugins: [Plugins.Tag]? = nil, pid: Int32? = nil, stopped: Bool = false) {
             self.label = label
             self.tokens = tokens
             self.cwd = cwd
             self.log = log
             self.plugins = plugins
+            self.pid = pid
+            self.stopped = stopped
         }
     }
 
@@ -88,6 +95,54 @@ public enum ActiveSessions {
             }
         }
         return cwds
+    }
+
+    /// A running process: its id, the folder it runs in and whether it is paused.
+    public struct Proc: Equatable {
+        public var pid: Int32
+        public var cwd: String
+        public var stopped: Bool
+
+        public init(pid: Int32, cwd: String, stopped: Bool) {
+            self.pid = pid
+            self.cwd = cwd
+            self.stopped = stopped
+        }
+    }
+
+    /// A process found in `ps -eo pid,stat,comm`, before its folder is known.
+    public struct Listed: Equatable {
+        public var pid: Int32
+        public var stopped: Bool
+    }
+
+    /// The processes named `name` in `ps -eo pid,stat,comm` output. A process
+    /// is paused when its state has a `T` (Ctrl-Z, or SIGSTOP from Stop).
+    public static func processesNamed(_ psOutput: String, _ name: String) -> [Listed] {
+        var found = [Listed]()
+        for line in pythonLines(psOutput).dropFirst() {
+            let parts = line.split(maxSplits: 2, omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
+            guard parts.count == 3, let pid = Int32(parts[0]) else { continue }
+            let comm = parts[2].trimmingCharacters(in: .whitespaces)
+            if basename(comm) == name {
+                found.append(Listed(pid: pid, stopped: parts[1].contains("T")))
+            }
+        }
+        return found
+    }
+
+    /// Each running process named `name`, with its working folder. One `ps`
+    /// and one `lsof` per process, so this is slow-ish: call it off the main thread.
+    public static func runningProcesses(_ name: String, run: Run = runCommand) throws -> [Proc] {
+        let listed = processesNamed(try checkedOutput(["ps", "-eo", "pid,stat,comm"], run), name)
+        var found = [Proc]()
+        for process in listed {
+            let result = try run(["lsof", "-a", "-p", String(process.pid), "-d", "cwd", "-Fn"])
+            for line in pythonLines(result.stdout) where line.hasPrefix("n") {
+                found.append(Proc(pid: process.pid, cwd: String(line.dropFirst()), stopped: process.stopped))
+            }
+        }
+        return found
     }
 
     /// stdout of a command that must exit 0 (Python's `check=True`).
@@ -179,9 +234,14 @@ public enum ActiveSessions {
     ///
     /// Returns sessions with label, tokens, cwd and log (the session file's
     /// path), most tokens first.
+    ///
+    /// `processes` (what `runningProcesses` found) gives each session the
+    /// process it runs in. Which log file belongs to which process in one
+    /// folder can't be told, so they are paired in order (lowest process id
+    /// to the most recently written log); either way each process is on one row.
     public static func activeSessions(projectsDir: URL = TokenMath.claudeProjectsDir, cwds: [String]? = nil,
-                                      run: Run = runCommand) throws -> [Session] {
-        let cwds = try cwds ?? runningClaudeCwds(run: run)
+                                      processes: [Proc]? = nil, run: Run = runCommand) throws -> [Session] {
+        let cwds = try cwds ?? processes?.map(\.cwd) ?? runningClaudeCwds(run: run)
         // Python's Counter: each folder once, in first-seen order, with a count.
         var order = [String]()
         var counts = [String: Int]()
@@ -203,9 +263,12 @@ public enum ActiveSessions {
                 .map { projectDir.path + "/" + $0 }
                 .compactMap { path in SourceFile.Stat(path).map { (path, $0.mtime) } }
                 .sorted { $0.1 > $1.1 }
-            for (path, _) in files.prefix(counts[cwd] ?? 0) {
+            let here = (processes ?? []).filter { $0.cwd == cwd }.sorted { $0.pid < $1.pid }
+            for (position, (path, _)) in files.prefix(counts[cwd] ?? 0).enumerated() {
                 let (tokens, _) = try TokenMath.sumUsageSince(path, offset: 0)
-                sessions.append(Session(label: displayName(cwd), tokens: tokens, cwd: cwd, log: path))
+                let process = position < here.count ? here[position] : nil
+                sessions.append(Session(label: displayName(cwd), tokens: tokens, cwd: cwd, log: path,
+                                        pid: process?.pid, stopped: process?.stopped ?? false))
             }
         }
 
