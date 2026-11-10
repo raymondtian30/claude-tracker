@@ -29,6 +29,11 @@ if ! APP_EXEC="$("$SCRIPT_DIR/build.sh" | tail -n 1)" || [ ! -x "$APP_EXEC" ]; t
     exit 1
 fi
 
+# launchd can't open log files in a folder macOS protects (Desktop,
+# Documents, Downloads) and then won't start the app (exit 78), so the logs
+# live in ~/Library/Logs, not next to the project.
+LOG_DIR="$HOME/Library/Logs/ClaudeTracker"
+mkdir -p "$LOG_DIR"
 mkdir -p "$HOME/Library/LaunchAgents"
 
 cat > "$PLIST_PATH" <<EOF
@@ -51,9 +56,9 @@ cat > "$PLIST_PATH" <<EOF
         <false/>
     </dict>
     <key>StandardOutPath</key>
-    <string>${SCRIPT_DIR}/agent.log</string>
+    <string>${LOG_DIR}/agent.log</string>
     <key>StandardErrorPath</key>
-    <string>${SCRIPT_DIR}/agent.err.log</string>
+    <string>${LOG_DIR}/agent.err.log</string>
 </dict>
 </plist>
 EOF

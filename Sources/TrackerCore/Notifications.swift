@@ -57,7 +57,7 @@ public final class Notifier {
         self.log = log
     }
 
-    /// Goes to agent.err.log.
+    /// Goes to ~/Library/Logs/ClaudeTracker/agent.err.log.
     public static func logToStderr(_ text: String) {
         FileHandle.standardError.write(Data("notifications: \(text)\n".utf8))
     }

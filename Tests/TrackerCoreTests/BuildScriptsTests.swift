@@ -212,13 +212,19 @@ func buildMakesASignedBundle() throws {
     #expect(!script.contains("python"))
 }
 
-@Test func installKeepsTheSameLaunchAgent() {
+@Test func installKeepsTheSameLaunchAgentButLogsOutsideTheProject() {
     let script = read(projectDir.appendingPathComponent("install.sh"))
 
     #expect(script.contains("LABEL=\"com.claudetokencounter.menubar\""))
     #expect(script.contains("<string>${APP_EXEC}</string>\n        <string>--foreground</string>"))
-    #expect(script.contains("<string>${SCRIPT_DIR}/agent.log</string>"))
-    #expect(script.contains("<string>${SCRIPT_DIR}/agent.err.log</string>"))
+    // Logs go to ~/Library/Logs, not the project folder: launchd can't open
+    // files in a folder macOS protects (Desktop, Documents, Downloads) and
+    // then won't start the app at all (exit 78).
+    #expect(script.contains("LOG_DIR=\"$HOME/Library/Logs/ClaudeTracker\""))
+    #expect(script.contains("mkdir -p \"$LOG_DIR\""))
+    #expect(script.contains("<string>${LOG_DIR}/agent.log</string>"))
+    #expect(script.contains("<string>${LOG_DIR}/agent.err.log</string>"))
+    #expect(!script.contains("${SCRIPT_DIR}/agent"))
     #expect(script.contains("launchctl bootstrap \"gui/$(id -u)\" \"$PLIST_PATH\""))
 }
 
