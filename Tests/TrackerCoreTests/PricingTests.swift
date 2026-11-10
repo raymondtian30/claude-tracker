@@ -61,3 +61,23 @@ private func approx(_ value: Double, _ expected: Double) -> Bool {
     #expect(approx(dollars, 4.75))
     #expect(unpriced == 5)
 }
+
+@Test func formatMoneyInTheChosenCurrency() {
+    #expect(Pricing.formatMoney(3.456, currency: "USD") == "$3.46")
+    #expect(Pricing.formatMoney(12345.6, currency: "USD") == "$12,346")
+    #expect(Pricing.formatMoney(3.456, currency: "nope") == "$3.46")
+    #expect(Pricing.formatMoney(10, currency: "EUR") == "€" + Pricing.withThousandsSeparators(String(format: "%.2f", 10 * Pricing.rates["EUR"]!)))
+    // A currency with no minor unit shows whole numbers.
+    #expect(Pricing.formatMoney(1, currency: "JPY") == "¥" + String(format: "%.0f", Pricing.rates["JPY"]!))
+    #expect(Pricing.formatMoney(0, currency: "GBP") == "£0.00")
+    #expect(Pricing.formatDollars(3.456) == "$3.46")
+}
+
+@Test func everyCurrencyHasARateASymbolAndAName() {
+    #expect(Pricing.currencies.first?.code == "USD" && Pricing.rates["USD"] == 1)
+    for currency in Pricing.currencies {
+        #expect((Pricing.rates[currency.code] ?? 0) > 0, "\(currency.code)")
+        #expect(!currency.symbol.isEmpty && !currency.name.isEmpty)
+    }
+    #expect(Set(Pricing.currencies.map(\.code)).count == Pricing.currencies.count)
+}

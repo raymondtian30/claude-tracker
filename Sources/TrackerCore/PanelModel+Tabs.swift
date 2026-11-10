@@ -7,6 +7,7 @@ extension PanelModel {
     static func overviewTab(_ d: PanelData) -> Tab {
         let stats = UsageStats.history(d.daily, today: d.today)
         let lifetime = UsageStats.categoryTotals(d.lifetimeModels)
+        let chartDays = PanelModel.chartDays(from: d.state)
         let series = UsageStats.dailySeries(d.daily, d.today, chartDays)
         let peak = series.map(\.tokens).max() ?? 0
         var historyItems: [Item] = [
@@ -29,7 +30,10 @@ extension PanelModel {
             ]),
         ])
         let chart = Card(title: "Last \(chartDays) days", items: [
-            .chart(values: series.map(\.tokens), caption: "Peak \(TokenMath.formatCount(peak))"),
+            .segmented(label: nil, options: chartRanges.map { "\($0) days" },
+                       selected: chartRanges.firstIndex(of: chartDays) ?? 1, action: "chart_days"),
+            .chart(values: series.map(\.tokens), caption: "Peak \(TokenMath.formatCount(peak))",
+                   labels: series.map { formatShortDate($0.day) }),
         ])
         return Tab(key: "overview", title: "Overview", short: "Home", icon: "square.grid.2x2",
                    cards: [tiles] + accountCards(d) + [chart, Card(title: "History", items: historyItems)]
@@ -72,9 +76,9 @@ extension PanelModel {
                 }
             }
             items += [
-                .row(label: "Billed, last 7 days", value: Pricing.formatDollars(billed(7))),
+                .row(label: "Billed, last 7 days", value: Pricing.formatMoney(billed(7), currency: PanelModel.currency(from: d.state))),
                 .row(label: "Billed, last \(Accounts.windowDays) days",
-                     value: Pricing.formatDollars(billed(Accounts.windowDays))),
+                     value: Pricing.formatMoney(billed(Accounts.windowDays), currency: PanelModel.currency(from: d.state))),
             ]
         }
         for row in saved.array("rows") ?? [] {
@@ -167,12 +171,23 @@ extension PanelModel {
     }
 
     static func modelsTab(_ d: PanelData) -> Tab {
-        var lifetime = modelsCard("Lifetime", d.lifetimeModels, efforts: d.lifetimeEfforts)
+        // Efforts can be hidden. The control only shows once some model has one.
+        let hasEfforts = !d.lifetimeEfforts.isEmpty
+        let showEffort = flag(d.state, "show_effort", default: true)
+        let todayEfforts = showEffort ? d.todayEfforts : [:]
+        let lifetimeEfforts = showEffort ? d.lifetimeEfforts : [:]
+        var lifetime = modelsCard("Lifetime", d.lifetimeModels, efforts: lifetimeEfforts)
         if d.earlier != 0 {
             lifetime.items.append(.note("Plus \(TokenMath.formatCount(d.earlier)) older tokens with no model detail"))
         }
-        return Tab(key: "models", title: "Models", short: "Models", icon: "brain",
-                   cards: [modelsCard("Today", d.todayModels, efforts: d.todayEfforts), lifetime])
+        var cards = [modelsCard("Today", d.todayModels, efforts: todayEfforts), lifetime]
+        if hasEfforts {
+            cards.insert(Card(title: nil, items: [
+                .segmented(label: nil, options: ["With effort", "Without effort"], selected: showEffort ? 0 : 1,
+                           action: "show_effort"),
+            ]), at: 0)
+        }
+        return Tab(key: "models", title: "Models", short: "Models", icon: "brain", cards: cards)
     }
 
     // MARK: - Projects
@@ -187,7 +202,18 @@ extension PanelModel {
         if projects.isEmpty {
             items = [.note("No usage in the last 7 days")]
         } else {
-            items = shown.map { shareBar($0.name, $0.tokens, weekTotal) }
+            // Just the folder's name; the full path is the tip. Two folders
+            // with one name also show their parent ("app · b").
+            let parts = projects.map { folderParts($0.name) }
+            var counts = [String: Int]()
+            for part in parts { counts[part.name, default: 0] += 1 }
+            let rows = Dictionary(uniqueKeysWithValues: zip(projects.map(\.name), parts).map { ($0.0, $0.1) })
+            items = shown.map { project in
+                let part = rows[project.name] ?? (name: project.name, parent: nil)
+                let duplicated = counts[part.name, default: 0] > 1
+                let label = duplicated ? part.parent.map { "\(part.name) · \($0)" } ?? part.name : part.name
+                return shareBar(label, project.tokens, weekTotal, tip: project.name)
+            }
         }
         let hidden = projects.count - projectsShown
         if hidden > 0 {
@@ -197,6 +223,21 @@ extension PanelModel {
         }
         return Tab(key: "projects", title: "Projects", short: "Projects", icon: "folder",
                    cards: [Card(title: "Projects · last 7 days", items: items)])
+    }
+
+    /// "~/Downloads/FPS Game" -> ("FPS Game", "Downloads"); "~" and "/" are their own names.
+    static func folderParts(_ path: String) -> (name: String, parent: String?) {
+        var trimmed = Substring(path)
+        while trimmed.count > 1 && trimmed.hasSuffix("/") {
+            trimmed = trimmed.dropLast()
+        }
+        if trimmed == "~" || trimmed == "/" || trimmed.isEmpty {
+            return (path.isEmpty ? "Unknown" : String(trimmed.isEmpty ? Substring(path) : trimmed), nil)
+        }
+        let pieces = trimmed.split(separator: "/", omittingEmptySubsequences: false)
+        let name = String(pieces.last ?? trimmed)
+        let parent = pieces.count >= 2 ? String(pieces[pieces.count - 2]) : nil
+        return (name.isEmpty ? String(trimmed) : name, parent?.isEmpty == true ? nil : parent)
     }
 
     // MARK: - Cost
@@ -219,7 +260,8 @@ extension PanelModel {
             }
             costs[range.key] = (perTool.reduce(0.0) { $0 + $1.dollars }, perTool.reduce(0) { $0 + $1.unpriced })
         }
-        func dollars(_ key: String) -> String { Pricing.formatDollars(costs[key]?.dollars ?? 0) }
+        let currency = PanelModel.currency(from: d.state)
+        func dollars(_ key: String) -> String { Pricing.formatMoney(costs[key]?.dollars ?? 0, currency: currency) }
         var notes = [Item]()
         let unpriced = costs.values.map(\.unpriced).max() ?? 0
         if unpriced != 0 {

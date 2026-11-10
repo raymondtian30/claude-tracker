@@ -54,10 +54,10 @@ The first time you open it, it asks which AI tools you use (Claude Code, Codex, 
 
 A panel opens with a row of tabs along the top. It always opens on **Overview**; click an icon to switch tabs:
 
-- **Overview** -- today's and lifetime totals, a chart of the last 14 days, and yesterday / last 7 days / this month / your biggest day
+- **Overview** -- today's and lifetime totals, a chart of the last 7, 14 or 30 days (pick the range above it; move the pointer over the chart to see a day's date and tokens), and yesterday / last 7 days / this month / your biggest day
 - **Token Types** -- today's and lifetime tokens split into input, output, cache write and cache read, each with a bar showing its share
-- **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...), split by effort level where the tool records it, for example "Sonnet 5.5 (High)" and "Sonnet 5.5 (Medium)" (history from before this was added shows as a plain model row)
-- **Projects** -- every folder you used tokens in over the last 7 days, most first: the top 5, and the rest behind **Show more** (usage in the home folder itself shows as its own "~" row)
+- **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...), split by effort level where the tool records it, for example "Sonnet 5.5 (High)" and "Sonnet 5.5 (Medium)" (history from before this was added shows as a plain model row). A **With effort | Without effort** switch at the top turns the split off to see one row per model
+- **Projects** -- every folder you used tokens in over the last 7 days, most first: the top 5, and the rest behind **Show more** (usage in the home folder itself shows as its own "~" row). Each row shows only the folder's name, with the full path as its tooltip; two folders with the same name also show their parent folder, for example "app · work"
 - **Estimated API Cost** -- what your usage would cost at Anthropic's pay-as-you-go API prices. Just for fun: a Pro or Max subscription is flat-rate, so you aren't billed this. Prices live in `Sources/TrackerCore/Pricing.swift` and will drift over time.
 - **Usage Limits** -- how much of your plan's limits you've used, and when to be notified (see [Usage limits and alerts](#usage-limits-and-alerts))
 - **Active Sessions** -- two sections:
@@ -65,7 +65,7 @@ A panel opens with a row of tabs along the top. It always opens on **Overview**;
   - **Plugins:** every Claude Code plugin you have enabled, how many open sessions run it, the last thing it did (ran a skill, started an agent, used an MCP tool, ran a hook, added context to your prompt) and how often today. Two installs of a plugin with the same name can't be told apart in the logs, so their activity is shown on the first one in your settings
 - **Leaderboard (Beta)** -- hidden unless you turn it on in Settings; see below, this one's still a work in progress
 
-At the bottom: the date you started tracking, a **Settings** button that opens a separate Settings window (which AIs you use -- coding tools and providers; **Appearance** -- Auto, Light or Dark, where Auto follows macOS; what the menu bar shows -- lifetime total, today's total, or just the icon -- and its text size; the panel's grow/shrink **Animation** -- Off, Fast, Normal or Slow; how often to scan; start at login; show the Leaderboard; and **About**, with a small About | Credits switch: About has the version and Check for Updates, Credits lists everyone who made the app) and **Quit**. Click anywhere outside the panel to close it.
+At the bottom: the date you started tracking, a **Settings** button that opens a separate Settings window (which AIs you use -- coding tools and providers; **Appearance** -- Auto, Light or Dark, where Auto follows macOS; what the menu bar shows -- lifetime total, today's total, or just the icon -- and its text size; the panel's grow/shrink **Animation** -- Off, Fast, Normal or Slow; how often to scan; start at login; the **Currency for prices** (US dollar, euro, pound and nine more; the Cost tab converts its dollar estimates at fixed, approximate rates built into the app, which don't follow the market); show the Leaderboard; and **About**, with a small About | Credits switch: About has the version and Check for Updates, Credits lists everyone who made the app) and **Quit**. Click anywhere outside the panel to close it.
 
 ### OpenAI, DeepSeek, Kimi and other AI companies
 

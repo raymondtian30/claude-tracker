@@ -42,6 +42,9 @@ public enum AppAction: Equatable {
     case scanInterval(seconds: Int)
     case login(Bool)
     case projectsExpand
+    case showEffort(Bool)
+    case chartDays(Int)
+    case currency(String)
     case aboutView(showCredits: Bool)
     case checkUpdates
     case openRepo
@@ -95,6 +98,9 @@ public enum AppAction: Equatable {
         case "login": return .login(isOn)
         case "leaderboard_enabled": return .leaderboardEnabled(isOn)
         case "projects_expand": return .projectsExpand
+        case "show_effort": return pick(value, [true, false]).map(AppAction.showEffort)
+        case "chart_days": return pick(value, PanelModel.chartRanges).map(AppAction.chartDays)
+        case "currency": return pick(value, Pricing.currencies.map(\.code)).map(AppAction.currency)
         case "about_view":
             return pick(value, [false, true]).map { .aboutView(showCredits: $0) }
         case "check_updates": return .checkUpdates

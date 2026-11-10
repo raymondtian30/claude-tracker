@@ -57,14 +57,14 @@ private func planItems(_ tab: Tab) -> [Item] {
 @Test func projectsShowsTheTop5ThenAShowMoreButton() {
     let items = projectsItems(8)
 
-    #expect(barLabels(items) == (0..<5).map { "/p/proj\($0)" })
+    #expect(barLabels(items) == (0..<5).map { "proj\($0)" })
     #expect(items.last == .buttons([Item.Button("Show 3 more", "chevron.down", "projects_expand")]))
 }
 
 @Test func projectsShowMoreListsEveryProject() {
     let items = projectsItems(8, expanded: true)
 
-    #expect(barLabels(items) == (0..<8).map { "/p/proj\($0)" })
+    #expect(barLabels(items) == (0..<8).map { "proj\($0)" })
     #expect(items.last == .buttons([Item.Button("Show less", "chevron.up", "projects_expand")]))
 }
 

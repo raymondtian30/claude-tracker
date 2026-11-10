@@ -85,7 +85,48 @@ public enum Pricing {
 
     /// "$3.46", or "$12,346" from $1,000 up.
     public static func formatDollars(_ amount: Double) -> String {
-        "$" + withThousandsSeparators(String(format: amount >= 1000 ? "%.0f" : "%.2f", amount))
+        formatMoney(amount, currency: "USD")
+    }
+
+    /// A currency prices can be shown in.
+    public struct Currency {
+        public let code: String
+        public let symbol: String
+        public let name: String
+        /// Whole units only (the currency has no minor unit worth showing).
+        public let wholeUnits: Bool
+    }
+
+    public static let currencies: [Currency] = [
+        Currency(code: "USD", symbol: "$", name: "US dollar", wholeUnits: false),
+        Currency(code: "EUR", symbol: "€", name: "Euro", wholeUnits: false),
+        Currency(code: "GBP", symbol: "£", name: "British pound", wholeUnits: false),
+        Currency(code: "CAD", symbol: "CA$", name: "Canadian dollar", wholeUnits: false),
+        Currency(code: "AUD", symbol: "A$", name: "Australian dollar", wholeUnits: false),
+        Currency(code: "CHF", symbol: "CHF ", name: "Swiss franc", wholeUnits: false),
+        Currency(code: "JPY", symbol: "¥", name: "Japanese yen", wholeUnits: true),
+        Currency(code: "CNY", symbol: "CN¥", name: "Chinese yuan", wholeUnits: false),
+        Currency(code: "KRW", symbol: "₩", name: "South Korean won", wholeUnits: true),
+        Currency(code: "INR", symbol: "₹", name: "Indian rupee", wholeUnits: false),
+        Currency(code: "MXN", symbol: "MX$", name: "Mexican peso", wholeUnits: false),
+        Currency(code: "BRL", symbol: "R$", name: "Brazilian real", wholeUnits: false),
+    ]
+
+    /// Units of each currency per US dollar. These are fixed, approximate
+    /// rates built into the app (it makes no network request for them), so
+    /// they don't follow the market: update them here from time to time.
+    public static let rates: [String: Double] = [
+        "USD": 1, "EUR": 0.92, "GBP": 0.79, "CAD": 1.37, "AUD": 1.52, "CHF": 0.88,
+        "JPY": 150, "CNY": 7.2, "KRW": 1380, "INR": 84, "MXN": 18.5, "BRL": 5.5,
+    ]
+
+    /// `dollars` in `currency` ("$3.46", "€3.18", "¥519"); an unknown code
+    /// reads as US dollars. From 1,000 units up there are no decimals.
+    public static func formatMoney(_ dollars: Double, currency code: String) -> String {
+        let currency = currencies.first { $0.code == code } ?? currencies[0]
+        let amount = dollars * (rates[currency.code] ?? 1)
+        let digits = currency.wholeUnits || amount >= 1000 ? "%.0f" : "%.2f"
+        return currency.symbol + withThousandsSeparators(String(format: digits, amount))
     }
 
     /// "12345.60" -> "12,345.60", as Python's "," format option groups digits.

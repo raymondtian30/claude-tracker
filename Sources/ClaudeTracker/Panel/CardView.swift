@@ -62,8 +62,8 @@ struct ItemView: View {
         switch item {
         case let .tiles(tiles):
             TilesView(tiles: tiles, width: width)
-        case let .chart(values, caption):
-            ChartItem(values: values, caption: caption)
+        case let .chart(values, caption, labels):
+            ChartItem(values: values, caption: caption, labels: labels)
         case let .bar(label, value, fraction, sub, _):
             BarItem(label: label, value: value, fraction: fraction, sub: sub, width: width)
         case let .row(label, value, _):

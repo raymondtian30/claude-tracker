@@ -43,7 +43,23 @@ public enum PanelModel {
     public static let leaderboardViews: [(key: String, label: String)] = [
         ("total", "Total"), ("day", "Yesterday"),
     ]
-    public static let chartDays = 14
+    public static let chartRanges = [7, 14, 30]
+    public static let defaultChartDays = 14
+
+    /// How many days the Home chart shows: 7, 14 or 30 (anything else reads as 14).
+    public static func chartDays(from state: JSONObject) -> Int {
+        guard let value = state["chart_days"], JSON.isInteger(value), let days = JSON.int(value),
+              chartRanges.contains(days)
+        else { return defaultChartDays }
+        return days
+    }
+
+    /// The currency prices are shown in (an unknown or wrong-typed one reads as dollars).
+    public static func currency(from state: JSONObject) -> String {
+        guard let code = state.string("currency"), Pricing.currencies.contains(where: { $0.code == code })
+        else { return "USD" }
+        return code
+    }
     public static let menuBarFontSizes = [10, 11, 12, 13, 14]
     public static let defaultMenuBarFontSize = 12
     public static let noteWidth = 46  // characters that fit on one note line
@@ -135,9 +151,9 @@ public enum PanelModel {
         whole != 0 ? Double(part) / Double(whole) : 0.0
     }
 
-    static func shareBar(_ label: String, _ count: Int, _ whole: Int) -> Item {
+    static func shareBar(_ label: String, _ count: Int, _ whole: Int, tip: String? = nil) -> Item {
         .bar(label: label, value: "\(TokenMath.formatCount(count)) · \(percent(count, whole))",
-             fraction: fraction(count, whole))
+             fraction: fraction(count, whole), extras: tip.map { LabelExtras(tip: $0) } ?? .none)
     }
 
     /// Python's `value in options` and `options.index(value)` on JSON

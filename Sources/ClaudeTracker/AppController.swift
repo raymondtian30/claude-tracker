@@ -317,6 +317,15 @@ final class AppController {
         case .leaderboardEnabled(let on):
             state["leaderboard_enabled"] = on
             save()
+        case .showEffort(let on):
+            state["show_effort"] = on
+            save()
+        case .chartDays(let days):
+            state["chart_days"] = days
+            save()
+        case .currency(let code):
+            state["currency"] = code
+            save()
         case .projectsExpand: projectsExpanded.toggle()
         case .aboutView(let showCredits): aboutShowsCredits = showCredits
         case .checkUpdates: checkForUpdates()
