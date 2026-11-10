@@ -89,9 +89,8 @@ import Testing
 }
 
 @Test func roundTwoActions() {
-    #expect(AppAction.parse("show_effort", .index(0)) == .showEffort(true))
-    #expect(AppAction.parse("show_effort", .index(1)) == .showEffort(false))
-    #expect(AppAction.parse("show_effort", .index(2)) == nil)
+    #expect(AppAction.parse("show_effort", .bool(true)) == .showEffort(true))
+    #expect(AppAction.parse("show_effort", .bool(false)) == .showEffort(false))
     #expect(AppAction.parse("chart_days", .index(0)) == .chartDays(7))
     #expect(AppAction.parse("chart_days", .index(2)) == .chartDays(30))
     #expect(AppAction.parse("chart_days", .index(3)) == nil)

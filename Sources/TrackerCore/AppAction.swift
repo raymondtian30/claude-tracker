@@ -98,7 +98,7 @@ public enum AppAction: Equatable {
         case "login": return .login(isOn)
         case "leaderboard_enabled": return .leaderboardEnabled(isOn)
         case "projects_expand": return .projectsExpand
-        case "show_effort": return pick(value, [true, false]).map(AppAction.showEffort)
+        case "show_effort": return .showEffort(isOn)
         case "chart_days": return pick(value, PanelModel.chartRanges).map(AppAction.chartDays)
         case "currency": return pick(value, Pricing.currencies.map(\.code)).map(AppAction.currency)
         case "about_view":

@@ -358,7 +358,7 @@ private func sessionRows(_ sessions: [ActiveSessions.Session]) -> [Item] {
     let items = sessionRows(sessions)
 
     #expect(items.filter { if case .row = $0 { return true } else { return false } }
-            == [.row(label: "~/proj · 3 sessions", value: "2.0K"), .row(label: "~/other", value: "100")])
+            == [.row(label: "proj · 3 sessions", value: "2.0K"), .row(label: "other", value: "100")])
     // The tags of the folder's sessions, once each; one that runs anywhere runs.
     var tags = [Item.Tag]()
     for item in items {
@@ -366,6 +366,26 @@ private func sessionRows(_ sessions: [ActiveSessions.Session]) -> [Item] {
     }
     #expect(tags.map { $0.text } == ["superpowers", "caveman", "egm"])
     #expect(tags.first { $0.text == "caveman" }?.isOn == true)
+}
+
+@Test func sessionRowsShowOnlyTheFolderName() {
+    let rows = sessionRows([
+        ActiveSessions.Session(label: "~/Desktop/claude-token-counter", tokens: 10, cwd: "/Users/me/Desktop/claude-token-counter"),
+        ActiveSessions.Session(label: "~", tokens: nil),
+        ActiveSessions.Session(label: "/opt/tool/", tokens: nil),
+    ])
+
+    #expect(rows == [.row(label: "claude-token-counter", value: "10"), .row(label: "~", value: "running"),
+                     .row(label: "tool", value: "running")])
+}
+
+@Test func sessionFoldersWithOneNameShowTheirParent() {
+    let rows = sessionRows([
+        ActiveSessions.Session(label: "~/a/app", tokens: 2, cwd: "/Users/me/a/app"),
+        ActiveSessions.Session(label: "~/b/app", tokens: 1, cwd: "/Users/me/b/app"),
+    ])
+
+    #expect(rows == [.row(label: "app · a", value: "2"), .row(label: "app · b", value: "1")])
 }
 
 @Test func theSessionCountStillCountsEveryProcess() {

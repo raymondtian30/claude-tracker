@@ -266,7 +266,7 @@ func viewOf(_ daily: JSONObject, name: String = "Codex", key: String = "codex", 
     let tabs = tabsByKey(buildTestPanel([:], [ActiveSessions.Session(label: "~/p", tokens: nil)], [],
                                         today: Day(2026, 7, 29), view: viewOf([:])))
 
-    #expect(itemsOf(tabs["sessions"]!).contains(.row(label: "~/p", value: "running")))
+    #expect(itemsOf(tabs["sessions"]!).contains(.row(label: "p", value: "running")))
 }
 
 @Test func leaderboardOnlyWhenRequested() {
@@ -705,14 +705,11 @@ private func labels(_ tab: Tab) -> [String] {
 
 @Test func modelsTabOffersEffortOnOrOff() {
     let on = tabsFor(effortState()["daily"] as! JSONObject)["models"]!
-    let control = Item.segmented(label: nil, options: ["With effort", "Without effort"], selected: 0,
-                                 action: "show_effort")
-    #expect(on.cards[0].items == [control])
+    #expect(on.cards[0].items == [.switch(label: "Show effort", isOn: true, action: "show_effort")])
     #expect(labels(on).contains("Opus 5.5 (High)") && labels(on).contains("Opus 5.5 (Medium)"))
 
     let off = tabsFor(effortState()["daily"] as! JSONObject, state: ["show_effort": false])["models"]!
-    #expect(off.cards[0].items == [.segmented(label: nil, options: ["With effort", "Without effort"],
-                                              selected: 1, action: "show_effort")])
+    #expect(off.cards[0].items == [.switch(label: "Show effort", isOn: false, action: "show_effort")])
     #expect(labels(off) == ["Opus 5.5", "Opus 5.5"])  // Today and Lifetime, one plain row each
     #expect(itemsOf(off).contains(.bar(label: "Opus 5.5", value: "100 · 100%", fraction: 1.0)))
 }

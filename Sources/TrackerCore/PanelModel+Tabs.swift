@@ -183,8 +183,7 @@ extension PanelModel {
         var cards = [modelsCard("Today", d.todayModels, efforts: todayEfforts), lifetime]
         if hasEfforts {
             cards.insert(Card(title: nil, items: [
-                .segmented(label: nil, options: ["With effort", "Without effort"], selected: showEffort ? 0 : 1,
-                           action: "show_effort"),
+                .switch(label: "Show effort", isOn: showEffort, action: "show_effort"),
             ]), at: 0)
         }
         return Tab(key: "models", title: "Models", short: "Models", icon: "brain", cards: cards)
@@ -458,11 +457,21 @@ extension PanelModel {
             }
             groups[key, default: []].append(session)
         }
+        // Just the folder's name, as in Projects; two folders with one name
+        // also show their parent ("app · b").
+        let parts = order.map { folderParts(groups[$0]?.first?.label ?? $0) }
+        var nameCounts = [String: Int]()
+        for part in parts { nameCounts[part.name, default: 0] += 1 }
         var items = [Item]()
-        for key in order {
+        for (position, key) in order.enumerated() {
             let group = groups[key] ?? []
             let counted = group.compactMap(\.tokens)
-            let label = group.count > 1 ? "\(group[0].label) · \(group.count) sessions" : group[0].label
+            let part = parts[position]
+            var name = part.name
+            if nameCounts[name, default: 0] > 1, let parent = part.parent {
+                name = "\(name) · \(parent)"
+            }
+            let label = group.count > 1 ? "\(name) · \(group.count) sessions" : name
             items.append(.row(label: label,
                               value: counted.isEmpty ? "running" : TokenMath.formatCount(counted.reduce(0, +))))
             var tags = [Item.Tag]()

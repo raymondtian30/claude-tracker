@@ -96,6 +96,7 @@ final class AppController {
         panel.attach(statusItem)
         panel.onWillShow = { [weak self] in
             self?.openRows = [:]
+            self?.projectsExpanded = false  // Projects opens short each time
             self?.renderPanel()
         }
         renderPanel()
@@ -224,8 +225,9 @@ final class AppController {
     /// next run-loop turn: this runs inside `selectTab`, which must not be
     /// re-entered.
     private func closeOpenRows() {
-        guard !openRows.isEmpty else { return }
+        guard !openRows.isEmpty || projectsExpanded else { return }
         openRows = [:]
+        projectsExpanded = false
         DispatchQueue.main.async { [weak self] in
             onMain { self?.renderPanel() }
         }
