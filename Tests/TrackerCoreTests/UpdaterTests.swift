@@ -38,7 +38,7 @@ private func read(_ url: URL) -> String {
 
 /// A 'GitHub' repo with a v2.2.0 release one commit ahead, and a clone
 /// of it still at the older commit, with settings in a gitignored file.
-private func makeClone() -> (remote: URL, local: URL) {
+private func makeClone(trackedDSStore: Bool = false) -> (remote: URL, local: URL) {
     let tmp = TempDir()
     let remote = tmp.mkdir("remote")
     git(remote, "init", "-q", "-b", "master")
@@ -46,11 +46,18 @@ private func makeClone() -> (remote: URL, local: URL) {
     git(remote, "config", "user.name", "t")
     writeText(remote.appendingPathComponent(".gitignore"), "state.json\n")
     writeText(remote.appendingPathComponent("version.py"), "__version__ = \"2.1.0\"\n")
+    if trackedDSStore {
+        // Older versions committed one by mistake; the release stops tracking it.
+        writeText(remote.appendingPathComponent(".DS_Store"), "finder 1")
+    }
     git(remote, "add", ".")
     git(remote, "commit", "-q", "-m", "2.1.0")
     let local = tmp.url("local")
     git(tmp.root, "clone", "-q", remote.path, local.path)
     writeText(remote.appendingPathComponent("version.py"), "__version__ = \"2.2.0\"\n")
+    if trackedDSStore {
+        git(remote, "rm", "-q", "--cached", ".DS_Store")
+    }
     git(remote, "commit", "-q", "-am", "2.2.0")
     git(remote, "tag", "v2.2.0")
     writeText(local.appendingPathComponent("state.json"), "{\"title_mode\": \"today\"}")
@@ -305,4 +312,45 @@ private let RELEASES: [JSONObject] = [  // as GitHub lists them: newest first
                                       projectDir: "/p", undoTo: undoTo)
         }
     }
+}
+
+@Test func aFolderThatMovedSaysSoAndHowToFixIt() {
+    let tmp = TempDir()
+    let gone = tmp.url("old-place").path
+
+    expectUpdateError("isn't there any more") {
+        try Updater.installRelease("v2.2.0", projectDir: gone, repoURL: "unused")
+    }
+    expectUpdateError("./install.sh") {
+        try Updater.installRelease("v2.2.0", projectDir: gone, repoURL: "unused")
+    }
+}
+
+@Test func aFolderThatIsNotAGitCloneStillSaysSo() {
+    let tmp = TempDir()
+
+    expectUpdateError("isn't a git clone") {
+        try Updater.installRelease("v2.2.0", projectDir: tmp.mkdir("plain").path, repoURL: "unused")
+    }
+}
+
+@Test func aChangedDSStoreIsNotALocalChange() throws {
+    let (remote, local) = makeClone(trackedDSStore: true)
+    writeText(local.appendingPathComponent(".DS_Store"), "finder 2 (rewritten by Finder)")
+
+    try Updater.installRelease("v2.2.0", projectDir: local.path, repoURL: remote.path)
+
+    #expect(read(local.appendingPathComponent("version.py")).contains("2.2.0"))
+}
+
+@Test func aChangedDSStoreDoesNotHideARealLocalChange() {
+    let (remote, local) = makeClone(trackedDSStore: true)
+    writeText(local.appendingPathComponent(".DS_Store"), "finder 2")
+    writeText(local.appendingPathComponent("version.py"), "# my edit\n")
+
+    expectUpdateError("local changes") {
+        try Updater.installRelease("v2.2.0", projectDir: local.path, repoURL: remote.path)
+    }
+
+    #expect(read(local.appendingPathComponent("version.py")) == "# my edit\n")
 }

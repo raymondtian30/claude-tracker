@@ -180,11 +180,29 @@ public enum Updater {
                                       repoURL: String = "\(Version.repoURL).git") throws {
         let status = git(run, projectDir, "status", "--porcelain", "--untracked-files=no")
         if status.status != 0 {
+            // The app remembers the folder it was installed from. If that
+            // folder was moved or renamed, it isn't "not a clone": say what
+            // to do.
+            var isDirectory: ObjCBool = false
+            if !FileManager.default.fileExists(atPath: projectDir, isDirectory: &isDirectory) || !isDirectory.boolValue {
+                throw UpdateError("The folder this app was installed from (\(projectDir)) isn't there any more. "
+                                  + "If you moved it, open Terminal in its new location and run ./install.sh once; "
+                                  + "updates work from there.")
+            }
             throw UpdateError("This copy of the app isn't a git clone, so it can't update itself. "
                               + "Download it again from GitHub.")
         }
-        if !status.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        // Finder rewrites .DS_Store files, and some versions tracked one by
+        // mistake: that is not a change of the app's code. Put them back so
+        // an update that stops tracking them can go through.
+        let changedPaths = status.stdout.split(whereSeparator: \.isNewline).map { String($0.dropFirst(3)) }
+        let finderFiles = changedPaths.filter { $0.hasSuffix(".DS_Store") || $0.hasSuffix(".DS_Store\"") }
+        if changedPaths.count > finderFiles.count {
             throw UpdateError("The app's code has local changes, so it wasn't updated.")
+        }
+        if !finderFiles.isEmpty {
+            let paths = finderFiles.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
+            _ = run(["git", "-C", projectDir, "checkout", "--"] + paths, nil)
         }
         let branch = git(run, projectDir, "rev-parse", "--abbrev-ref", "HEAD")
             .stdout.trimmingCharacters(in: .whitespacesAndNewlines)
