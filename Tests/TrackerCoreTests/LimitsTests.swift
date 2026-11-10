@@ -452,3 +452,15 @@ private func claudeState(percentages: Bool, limits: [JSONObject]) -> JSONObject 
                       window: "weekly", label: "Weekly", percent: 1, resetsAt: nil)
     #expect(Limits.displayName(level) == "Claude Code (Weekly, Fable Pro)")
 }
+
+@Test func aLimitInAnUnknownWindowShowsButNeverAlerts() {
+    let daily: JSONObject = ["kind": "daily_fable", "window": "daily", "label": "Daily · Fable",
+                             "percent": 99.0, "resets_at": NSNull()]
+    let state: JSONObject = ["claude_usage": claudeUsage(["limits": [daily]])]
+    let levels = Limits.planLevels(state, toolKeys: ["claude_code"], now: NOW)
+    #expect(levels.map(\.id) == ["claude_code:daily_fable"])
+    #expect(!Limits.limitWindows(state, toolKeys: ["claude_code"], now: NOW).contains("daily"))
+    let (messages, _) = Limits.alertsToSend(levels, thresholds: [50], windowsOn: ["five_hour", "weekly", "monthly"],
+                                            above: [], now: NOW)
+    #expect(messages.isEmpty)
+}

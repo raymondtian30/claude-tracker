@@ -217,11 +217,77 @@ private func fableLimit(_ name: String = "Fable", kind: String = "weekly_fable",
     #expect(try ClaudeUsage.parseUsage(answer(adding: items)).count == 3)
 }
 
-@Test func scopedItemWithoutAModelIsSkipped() throws {
-    let noModel: JSONObject = ["kind": "weekly_scoped", "percent": 5, "resets_at": NSNull(),
-                               "scope": ["model": NSNull(), "surface": "web"] as JSONObject]
-    let items = [noModel, scoped(NSNull()), scoped(""), scoped(5)]
+@Test func scopedItemWithNoNameAtAllIsSkipped() throws {
+    // No model name, no surface, and a kind ("weekly_scoped") that names nothing.
+    let items = [scoped(NSNull()), scoped(""), scoped(5)]
     #expect(try ClaudeUsage.parseUsage(answer(adding: items)).count == 3)
+}
+
+@Test func surfaceNamesAnItemWithoutAModel() throws {
+    let noModel: JSONObject = ["kind": "weekly_scoped", "group": "weekly", "percent": 5, "resets_at": NSNull(),
+                               "scope": ["model": NSNull(), "surface": "Web chat"] as JSONObject]
+    let parsed = try ClaudeUsage.parseUsage(answer(adding: [noModel]))
+    #expect(parsed.last?.string("kind") == "weekly_web_chat")
+    #expect(parsed.last?.string("label") == "Weekly · Web chat")
+}
+
+@Test func unknownKindInTheListShowsUnderItsKindName() throws {
+    let item: JSONObject = ["kind": "weekly_cowork", "group": "weekly", "percent": 12, "resets_at": NSNull(),
+                            "scope": NSNull()]
+    let parsed = try ClaudeUsage.parseUsage(answer(adding: [item]))
+    #expect(jsonEqual(Array(parsed.suffix(1)), [["kind": "weekly_cowork", "window": "weekly",
+                                                 "label": "Weekly · Cowork", "percent": 12.0,
+                                                 "resets_at": NSNull()]]))
+}
+
+@Test func sessionAndWeeklyAllStandInWhenTheLegacyKeysAreMissing() throws {
+    let items: [JSONObject] = [
+        ["kind": "session", "group": "session", "percent": 26, "resets_at": "2026-11-10T01:29:59+00:00",
+         "scope": NSNull()],
+        ["kind": "weekly_all", "group": "weekly", "percent": 91, "resets_at": "2026-11-10T18:59:59+00:00",
+         "scope": NSNull()],
+    ]
+    let parsed = try ClaudeUsage.parseUsage(["limits": items])
+    #expect(parsed.map { $0.string("kind") } == ["five_hour", "weekly"])
+    #expect(parsed.map { $0.string("label") } == ["5-hour", "Weekly"])
+    #expect(parsed.map { $0.string("window") } == ["five_hour", "weekly"])
+    #expect(parsed.map { $0.double("percent") } == [26.0, 91.0])
+}
+
+@Test func unknownGroupBecomesItsOwnWindow() throws {
+    let item: JSONObject = ["kind": "daily_extra", "group": "Daily", "percent": 50, "resets_at": NSNull(),
+                            "scope": ["model": ["display_name": "Fable"] as JSONObject] as JSONObject]
+    let parsed = try ClaudeUsage.parseUsage(answer(adding: [item]))
+    #expect(jsonEqual(Array(parsed.suffix(1)), [["kind": "daily_fable", "window": "daily",
+                                                 "label": "Daily · Fable", "percent": 50.0,
+                                                 "resets_at": NSNull()]]))
+}
+
+@Test func extraSevenDayKeyShows() throws {
+    var data = ANSWER
+    data["seven_day_cowork"] = ["utilization": 17.0, "resets_at": "2026-11-12T09:00:00Z"]
+    data["seven_day_oauth_apps"] = NSNull()
+    let parsed = try ClaudeUsage.parseUsage(data)
+    #expect(parsed.map { $0.string("kind") } == ["five_hour", "weekly", "weekly_sonnet", "weekly_cowork"])
+    #expect(parsed.last?.string("label") == "Weekly · Cowork")
+    #expect(parsed.last?.double("percent") == 17.0)
+}
+
+@Test func extraSevenDayKeyDuplicatingAListItemIsSkipped() throws {
+    var data = answer(adding: [scoped("Cowork", percent: 3)])
+    data["seven_day_cowork"] = ["utilization": 17.0, "resets_at": NSNull()]
+    let parsed = try ClaudeUsage.parseUsage(data)
+    #expect(parsed.filter { $0.string("kind") == "weekly_cowork" }.map { $0.double("percent") } == [3.0])
+}
+
+@Test func nonNumericOrNumericResetUnderAnExtraKeyIsSkipped() throws {
+    for info: JSONObject in [["utilization": "x", "resets_at": NSNull()],
+                             ["utilization": 5.0, "resets_at": 1e20],
+                             ["utilization": NSNull(), "resets_at": NSNull()]] {
+        var data = ANSWER
+        data["seven_day_cowork"] = info
+        #expect(try ClaudeUsage.parseUsage(data).count == 3)
+    }
 }
 
 @Test func aBadItemSkipsOnlyThatItem() throws {

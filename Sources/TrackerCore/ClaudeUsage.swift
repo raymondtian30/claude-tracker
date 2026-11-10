@@ -115,46 +115,96 @@ public enum ClaudeUsage {
                 "resets_at": JSON.truthy(resetsAt) ? try unixTime(resetsAt!) : NSNull(),
             ])
         }
-        parsed += scopedLimits(JSON.object(data)?.array("limits"), taken: Set(parsed.compactMap { $0.string("kind") }))
+        parsed += newLimits(JSON.object(data) ?? [:], found: parsed)
         if parsed.isEmpty {
             throw HTTP.UnexpectedAnswer(description: "no limits in the answer")
         }
         return parsed
     }
 
-    /// The longest model name kept from Anthropic's `limits` list.
-    static let longestScopedName = 24
+    /// The longest name kept from Anthropic's answer for a new limit.
+    static let longestNewName = 24
 
-    /// Model-scoped weekly limits (Fable) from the answer's `limits` list:
-    /// items with `kind` "weekly_scoped" and a model name. Their kind is
-    /// "weekly_" plus the name in lowercase letters and digits, which is how
-    /// Limits.displayName finds the name again. Items that don't look as
-    /// expected are skipped, never an error, so a change in this undocumented
-    /// list can't blank the limits that parsed fine. `taken` holds the kinds
-    /// already found; a repeat is skipped.
-    static func scopedLimits(_ list: [Any]?, taken: Set<String>) -> [JSONObject] {
-        var taken = taken
-        var found: [JSONObject] = []
-        for case let item as JSONObject in list ?? [] {
-            guard item.string("kind") == "weekly_scoped",
-                  let shown = item.object("scope")?.object("model")?.string("display_name"),
-                  let percent = JSON.double(item["percent"])
+    /// Limits in the answer that the fixed `limits` table doesn't name: how
+    /// the app notices a limit Anthropic adds (Fable came this way) with no
+    /// update. They come from the answer's `limits` list and from extra
+    /// `seven_day_<name>` keys. Anything that doesn't look as expected is
+    /// skipped, never an error, so a change in this undocumented answer can't
+    /// blank the limits that parsed fine. `found` holds the limits from the
+    /// fixed table; a kind already taken is not repeated.
+    static func newLimits(_ answer: JSONObject, found: [JSONObject]) -> [JSONObject] {
+        var taken = Set(found.compactMap { $0.string("kind") })
+        var new: [JSONObject] = []
+        func add(kind: String, window: String, label: String, percent: Double, resetsAt: Any) {
+            guard taken.insert(kind).inserted else { return }
+            new.append(["kind": kind, "window": window, "label": label, "percent": percent,
+                        "resets_at": resetsAt])
+        }
+        for case let item as JSONObject in answer.array("limits") ?? [] {
+            guard let kind = item.string("kind"), let percent = JSON.double(item["percent"]),
+                  let resetsAt = isoTimeOrNull(item["resets_at"])
             else { continue }
-            let name = String(shown.trimmingCharacters(in: .whitespacesAndNewlines).prefix(longestScopedName))
-            let slug = kindSuffix(name)
-            let resetsAt: Any
-            if JSON.isNull(item["resets_at"]) {
-                resetsAt = NSNull()
-            } else if let text = item["resets_at"] as? String, let time = LocalTime.parseISO(text) {
-                resetsAt = time
-            } else {
+            // These two repeat the fixed keys; they only stand in for one that's missing.
+            if kind == "session" || kind == "weekly_all" {
+                let window = kind == "session" ? "five_hour" : "weekly"
+                add(kind: window, window: window, label: Limits.windowLabels[window] ?? window,
+                    percent: percent, resetsAt: resetsAt)
                 continue
             }
-            guard !slug.isEmpty, taken.insert("weekly_" + slug).inserted else { continue }
-            found.append(["kind": "weekly_" + slug, "window": "weekly", "label": "Weekly · " + name,
-                          "percent": percent, "resets_at": resetsAt])
+            let group = item.string("group").map(kindSuffix(_:)).flatMap { $0.isEmpty ? nil : $0 }
+                ?? kindSuffix(String(kind.split(separator: "_").first ?? ""))
+            let window = ["session": "five_hour"][group] ?? group
+            guard !window.isEmpty else { continue }
+            let scope = item.object("scope")
+            var name = [scope?.object("model")?.string("display_name"), scope?.string("surface")]
+                .compactMap { $0 }.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { !$0.isEmpty }
+            if name == nil {
+                // The kind without its group word ("weekly_cowork" -> "cowork");
+                // "weekly_scoped" only says it has a scope, so it names nothing.
+                let rest = kind.hasPrefix(group + "_") ? String(kind.dropFirst(group.count + 1)) : kind
+                name = rest == "scoped" ? nil : words(rest)
+            }
+            guard let named = name.map({ String($0.prefix(longestNewName)) }) else { continue }
+            let slug = kindSuffix(named)
+            guard !slug.isEmpty else { continue }
+            add(kind: window + "_" + slug, window: window, label: windowTitle(window) + " · " + named,
+                percent: percent, resetsAt: resetsAt)
         }
-        return found
+        let fixed = Set(limits.map(\.name))
+        for key in answer.keys.sorted() where key.hasPrefix("seven_day_") && !fixed.contains(key) {
+            guard let info = answer.object(key), let percent = JSON.double(info["utilization"]),
+                  let resetsAt = isoTimeOrNull(info["resets_at"])
+            else { continue }
+            let named = String(words(String(key.dropFirst("seven_day_".count))).prefix(longestNewName))
+            let slug = kindSuffix(named)
+            guard !slug.isEmpty else { continue }
+            add(kind: "weekly_" + slug, window: "weekly", label: "Weekly · " + named,
+                percent: percent, resetsAt: resetsAt)
+        }
+        return new
+    }
+
+    /// null (or missing) as NSNull, an ISO time as seconds; anything else, a
+    /// number included, as nil: a stray huge number would break formatting
+    /// the reset time later.
+    private static func isoTimeOrNull(_ value: Any?) -> Any? {
+        if JSON.isNull(value) {
+            return NSNull()
+        }
+        return (value as? String).flatMap { LocalTime.parseISO($0) }
+    }
+
+    /// "oauth_apps" -> "Oauth apps".
+    private static func words(_ text: String) -> String {
+        let text = text.split(separator: "_").joined(separator: " ")
+        return text.prefix(1).uppercased() + text.dropFirst()
+    }
+
+    /// A window's name for a label: "Weekly", or "Daily" for a window the app
+    /// doesn't know.
+    private static func windowTitle(_ window: String) -> String {
+        Limits.windowLabels[window] ?? (window.prefix(1).uppercased() + window.dropFirst())
     }
 
     /// "GPT-5 Pro" -> "gpt_5_pro": lowercase letters and digits (any script),

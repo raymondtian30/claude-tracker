@@ -326,3 +326,13 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
     #expect(planItems(tab)[0] == .bar(label: "Claude Code (Weekly, Fable)", value: "0%", fraction: 0.0,
                                       sub: "Resets 3:30 PM"))
 }
+
+@Test func limitsTabShowsALimitInAnUnknownWindowByItsLabel() {
+    let state = claudeUsageState(limits: [
+        ["kind": "daily_fable", "window": "daily", "label": "Daily · Fable", "percent": 50.0, "resets_at": NSNull()],
+    ])
+
+    let tab = limitsTab(state, Tools.toolView(state, "claude_code"))
+
+    #expect(planItems(tab)[0] == .bar(label: "Claude Code (Daily · Fable)", value: "50%", fraction: 0.5))
+}
