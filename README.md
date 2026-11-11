@@ -54,7 +54,7 @@ The first time you open it, it asks which AI tools you use (Claude Code, Codex, 
 
 A panel opens with a row of tabs along the top. It always opens on **Overview**; click an icon to switch tabs:
 
-- **Overview** -- today's and lifetime totals, a chart of the last 1, 7, 14 or 30 days, **All** your history, or a **Custom** range (pick it above the chart; long ranges are grouped, for example by week, so they stay readable; move the pointer over the chart to see a day's or group's date and tokens). **Custom** opens a popup with two calendars side by side, **From** and **To**, so both dates are in view; the days between them are tinted in both, and days with no data (before your first usage, or in the future) can't be picked. Nothing changes until you click the big **Apply** button; **Cancel** or `Esc` leaves the range as it was. **Change dates** under the chart opens the popup again, and yesterday / last 7 days / this month / your biggest day
+- **Overview** -- today's and lifetime totals, a chart of today's usage by hour (**1 day**), the last 7, 14 or 30 days, **All** your history, or a **Custom** range (pick it above the chart; long ranges are grouped, for example by week, so they stay readable; move the pointer over the chart to see the hour, day or group's tokens). **Custom** opens a popup with two calendars side by side, **From** and **To**, so both dates are in view; the days between them are tinted in both, and days with no data (before your first usage, or in the future) can't be picked. Nothing changes until you click the big **Apply** button; **Cancel** or `Esc` leaves the range as it was. **Change dates** under the chart opens the popup again, and yesterday / last 7 days / this month / your biggest day
 - **Token Types** -- today's and lifetime tokens split into input, output, cache write and cache read, each with a bar showing its share
 - **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...), split by effort level where the tool records it, for example "Sonnet 5.5 (High)" and "Sonnet 5.5 (Medium)" (history from before this was added shows as a plain model row). A **Show effort** switch at the top turns the split off to see one row per model. **Settings > Models > Sort model token usage by** orders the rows by token usage (the default) or by model, lowest tier first (Claude: Haiku, Sonnet, Opus, Mythos, Fable; models with no known tier come last)
 - **Projects** -- every folder you used tokens in over the last 7 days, most first: the top 5, and the rest behind **Show more** (it opens short every time; usage in the home folder itself shows as its own "~" row). Each row shows only the folder's name, with the full path as its tooltip; two folders with the same name also show their parent folder, for example "app · work"
@@ -136,7 +136,7 @@ This removes it from starting at login and deletes **Claude Tracker** from your 
 
 ## Version and credits
 
-Current version: **3.8.0**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
+Current version: **3.8.1**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
 
 - Original app by Brody Kretz ([BrodyKretz](https://github.com/BrodyKretz/claude-token-counter))
 - Redesign, new features and the Swift rewrite by Raymond Tian ([raymondtian30](https://github.com/raymondtian30/claude-tracker))

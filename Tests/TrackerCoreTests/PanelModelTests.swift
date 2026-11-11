@@ -730,7 +730,7 @@ private func labels(_ tab: Tab) -> [String] {
     for bad: Any in [10, 0, -7, "30", NSNull(), 30.5, true] { #expect(PanelModel.chartDays(from: ["chart_days": bad]) == 14) }
 }
 
-@Test func overviewChartFollowsTheRangeAndHasDayLabels() {
+@Test func overviewChartUsesHoursForOneDayAndDaysForLongerRanges() {
     var daily = JSONObject()
     UsageStats.recordEntry(&daily, panelEntry("2026-07-29T12:00:00.000Z", ["input_tokens": 15]))
     for days in [1, 7, 14, 30] {
@@ -740,10 +740,29 @@ private func labels(_ tab: Tab) -> [String] {
         #expect(card.items[0] == .segmented(label: nil, options: ["1 day", "7 days", "14 days", "30 days", "All", "Custom"],
                                             selected: [1, 7, 14, 30].firstIndex(of: days)!, action: "chart_days"))
         guard case let .chart(values, _, chartLabels) = card.items[1] else { Issue.record("no chart"); return }
-        #expect(values.count == days && chartLabels.count == days)
-        #expect(chartLabels.last == "Jul 29th" && values.last == 15)
-        #expect(chartLabels.first == PanelModel.formatShortDate(Day(2026, 7, 29).adding(days: -(days - 1))))
+        if days == 1 {
+            #expect(values.count == 24 && chartLabels.count == 24)
+            #expect(values.reduce(0, +) == 15)
+            #expect(chartLabels.first == "12 AM" && chartLabels.last == "11 PM")
+        } else {
+            #expect(values.count == days && chartLabels.count == days)
+            #expect(chartLabels.last == "Jul 29th" && values.last == 15)
+            #expect(chartLabels.first == PanelModel.formatShortDate(Day(2026, 7, 29).adding(days: -(days - 1))))
+        }
     }
+}
+
+@Test func oneDayChartPlacesTokensInTheirLocalHours() {
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, panelEntry("2026-07-29T09:10:00", ["input_tokens": 12]))
+    UsageStats.recordEntry(&daily, panelEntry("2026-07-29T15:30:00", ["output_tokens": 8]))
+    let tab = tabsFor(daily, state: ["chart_days": 1])["overview"]!
+    let card = tab.cards.first { $0.title == "Last 1 day" }!
+    guard case let .chart(values, caption, labels) = card.items[1] else { Issue.record("no chart"); return }
+    #expect(values[9] == 12 && values[15] == 8)
+    #expect(values.reduce(0, +) == 20)
+    #expect(labels[9] == "9 AM" && labels[15] == "3 PM")
+    #expect(caption == "Peak 12 per hour")
 }
 
 @Test func projectRowsShowOnlyTheFolderName() {

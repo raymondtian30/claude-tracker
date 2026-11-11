@@ -20,7 +20,10 @@ extension PanelModel {
                                                    chartRanges.count + 1)
         }
         let series = UsageStats.rangeSeries(d.daily, from: first, to: last)
-        let peak = series.map(\.tokens).max() ?? 0
+        let hourly: Bool
+        if case .days(1) = range { hourly = true } else { hourly = false }
+        let values = hourly ? UsageStats.hourlySeries(d.daily, day: d.today) : series.map(\.tokens)
+        let peak = values.max() ?? 0
         let run = (series.first.map { $0.start.days(to: $0.end) } ?? 0) + 1
         var historyItems: [Item] = [
             .row(label: "Yesterday", value: TokenMath.formatCount(stats.yesterday)),
@@ -50,15 +53,23 @@ extension PanelModel {
             chartItems.append(.buttons([Item.Button("Change dates", "calendar", "chart_edit")]))
         }
         chartItems.append(.chart(
-            values: series.map(\.tokens),
-            caption: peak == 0 ? "No usage in this range"
-                : "Peak \(TokenMath.formatCount(peak))" + (run > 1 ? " per \(run) days" : ""),
-            labels: series.map { $0.start == $0.end ? formatShortDate($0.start)
-                : "\(formatShortDate($0.start)) – \(formatShortDate($0.end))" }))
+            values: values,
+            caption: peak == 0 ? (hourly && d.todayTotal > 0 ? "Hourly detail unavailable" : "No usage in this range")
+                : "Peak \(TokenMath.formatCount(peak))" + (hourly ? " per hour" : run > 1 ? " per \(run) days" : ""),
+            labels: hourly ? (0..<24).map { hourLabel($0) }
+                : series.map { $0.start == $0.end ? formatShortDate($0.start)
+                    : "\(formatShortDate($0.start)) – \(formatShortDate($0.end))" }))
+        if hourly && values.reduce(0, +) < d.todayTotal {
+            chartItems += noteLines("Some earlier usage has no hourly detail.")
+        }
         let chart = Card(title: title, items: chartItems)
         return Tab(key: "overview", title: "Overview", short: "Home", icon: "square.grid.2x2",
                    cards: [tiles] + accountCards(d) + byokOverviewCards(d)
                        + [chart, Card(title: "History", items: historyItems)] + accountInvite(d))
+    }
+
+    static func hourLabel(_ hour: Int) -> String {
+        "\(hour % 12 == 0 ? 12 : hour % 12) \(hour < 12 ? "AM" : "PM")"
     }
 
     /// The Custom range popup's card: two calendars side by side, From and To.

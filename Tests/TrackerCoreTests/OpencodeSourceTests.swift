@@ -79,12 +79,15 @@ private func message(input: Int = 0, output: Int = 0, reasoning: Int = 0, read: 
     let db = makeDB(tmp.url("o.db"), [message(input: 2261, output: 63, reasoning: 7, read: 6555, write: 3, cost: 0.5),
                                       ["time": ["created": NOON], "text": "user message, no tokens"]])
 
-    let day = try OpencodeSource.readOpencode(db).object("2026-07-29") ?? [:]
+    let daily = try OpencodeSource.readOpencode(db)
+    let day = daily.object("2026-07-29") ?? [:]
 
     #expect(jsonEqual(dig(day, "models", "gemini-4-argon"), [
         "input": 2261, "output": 70, "cache_write_5m": 3, "cache_write_1h": 0, "cache_read": 6555,
     ]))
     #expect(jsonEqual(day["recorded_cost"], ["gemini-4-argon": 0.5]))
+    let hour = LocalTime.parts(of: Double(NOON) / 1000).hour
+    #expect(UsageStats.hourlySeries(daily, day: Day(2026, 7, 29))[hour] == 8_889)
 }
 
 @Test func projectFromSessionDirectory() throws {

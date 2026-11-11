@@ -65,8 +65,8 @@ public enum CodexSource {
 
     /// (per-day buckets, latest rate limits) for one session file.
     /// Bumped when a newer app reads more from a file, so each file saved by
-    /// an older one is read once more. 2: the effort level.
-    static let fileVersion = 2
+    /// an older one is read once more. 2: effort level; 3: hourly totals.
+    static let fileVersion = 3
 
     static func readCodex(_ path: String) throws -> (daily: JSONObject, limits: JSONObject?) {
         let entries = try completeEntries(path)
@@ -126,9 +126,10 @@ public enum CodexSource {
 
             // A timestamp that can't be read is skipped (Python would stop
             // with an error there).
-            if parts.values.reduce(0, +) != 0, let day = UsageStats.localDateOf(timestamp) {
+            if parts.values.reduce(0, +) != 0, let at = LocalTime.parseISO(timestamp) {
+                let day = Day(timestamp: at)
                 UsageStats.addUsage(&daily, day: day, model: model, project: UsageStats.projectLabel(cwd),
-                                    parts: parts, effort: effort)
+                                    parts: parts, effort: effort, at: at)
             }
         }
         return (daily, latestRateLimits(entries))

@@ -58,6 +58,8 @@ private func sum(_ parts: Any?) -> Int {
     #expect(parts.int("output") == 20 + 5)
     #expect(sum(parts) == 128)
     #expect(Array((bucket.object("projects") ?? [:]).keys) == ["/Users/me/myproj"])
+    let hour = LocalTime.parts(of: LocalTime.parseISO(TS)!).hour
+    #expect(UsageStats.hourlySeries(daily, day: Day(2026, 7, 29))[hour] == 128)
 }
 
 @Test func aReplyUpdatedLaterCountsOnceWithItsLatestTokens() throws {
@@ -139,6 +141,32 @@ private func sum(_ parts: Any?) -> Int {
     GeminiSource.scanGemini(&state, geminiDir: tmp.root)
 
     #expect(GeminiSource.geminiTotal(state) == 128)
+}
+
+@Test func scanRereadsLegacyFilesForHourlyTotals() {
+    let tmp = TempDir()
+    let folder = project(tmp)
+    writeRecords(folder.appendingPathComponent("chats/session-a.jsonl"), [meta(), reply()])
+    var state = JSONObject()
+    GeminiSource.scanGemini(&state, geminiDir: tmp.root)
+    var files = state.object("files") ?? [:]
+    let path = files.keys.first!
+    var saved = files.object(path)!
+    saved["v"] = nil
+    var daily = saved.object("daily") ?? [:]
+    var bucket = daily.object("2026-07-29") ?? [:]
+    bucket.removeValue(forKey: "model_hours")
+    daily["2026-07-29"] = bucket
+    saved["daily"] = daily
+    files[path] = saved
+    state["files"] = files
+
+    GeminiSource.scanGemini(&state, geminiDir: tmp.root)
+
+    let reread = (state.object("files") ?? [:]).object(path) ?? [:]
+    #expect(reread.int("v") == GeminiSource.fileVersion)
+    #expect(UsageStats.hourlySeries(reread.object("daily") ?? [:], day: Day(2026, 7, 29))
+        .reduce(0, +) == 128)
 }
 
 @Test func scanWithNothingThere() {

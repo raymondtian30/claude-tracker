@@ -13,6 +13,7 @@ import Foundation
 public enum GeminiSource {
     public static let geminiDir = URL(fileURLWithPath: UsageStats.homeDirectory)
         .appendingPathComponent(".gemini")
+    static let fileVersion = 2  // re-read old session buckets once for hourly totals
 
     /// Gemini's counts -> the app's categories. `input` (promptTokenCount)
     /// includes the cached tokens, so they're split out; tool-use prompt tokens
@@ -68,10 +69,11 @@ public enum GeminiSource {
             let parts = self.parts(reply.object("tokens") ?? [:])
             guard let timestamp = CodexSource.nonEmpty(reply.string("timestamp")),
                   parts.values.reduce(0, +) != 0,
-                  let day = UsageStats.localDateOf(timestamp)
+                  let at = LocalTime.parseISO(timestamp)
             else { continue }
+            let day = Day(timestamp: at)
             let model = CodexSource.nonEmpty(reply.string("model")) ?? "unknown"
-            UsageStats.addUsage(&daily, day: day, model: model, project: label, parts: parts)
+            UsageStats.addUsage(&daily, day: day, model: model, project: label, parts: parts, at: at)
         }
         return daily
     }
@@ -126,12 +128,13 @@ public enum GeminiSource {
             let project = projectOf(folder, roots)
             for path in SourceFile.find(in: chats, suffixes: [".jsonl", ".json"]) {
                 guard let stat = SourceFile.Stat(path) else { continue }
-                if let saved = files.object(path), stat.matches(saved) {
+                if let saved = files.object(path), stat.matches(saved), (saved.int("v") ?? 0) >= fileVersion {
                     continue
                 }
                 do {
                     let daily = try readGeminiFile(URL(fileURLWithPath: path), project: project)
-                    files[path] = ["size": stat.size, "mtime": stat.mtime, "daily": daily] as JSONObject
+                    files[path] = ["size": stat.size, "mtime": stat.mtime, "daily": daily,
+                                   "v": fileVersion] as JSONObject
                 } catch {
                     errors.append(SourceFile.message(error))
                 }

@@ -71,10 +71,11 @@ private func fakeToken(email: String, plan: String, issued: Int) throws -> Strin
     let tabs = PanelModel.buildPanel(Tools.toolView(state, "codex"), state: state,
                                      sessions: [], friends: [], showLeaderboard: false)
     let tab = tabs.first { $0.key == "subscriptions" }
+    let card = tab?.cards.first { $0.title == "Codex" }
     #expect(tab?.title == "Subscriptions")
-    #expect(tab?.cards.first?.items.contains(.row(label: "Plan", value: "ChatGPT Pro")) == true)
-    #expect(tab?.cards.first?.items.contains(.row(label: "Email", value: "user@example.com")) == true)
-    #expect(tab?.cards.first?.items.contains(.row(label: "Card", value: "•••• 4242")) == true)
+    #expect(card?.items.contains(.row(label: "Plan", value: "ChatGPT Pro")) == true)
+    #expect(card?.items.contains(.row(label: "Email", value: "user@example.com")) == true)
+    #expect(card?.items.contains(.row(label: "Card", value: "•••• 4242")) == true)
 }
 
 @Test func subscriptionActionsAcceptOnlySupportedTools() {
@@ -93,5 +94,6 @@ private func fakeToken(email: String, plan: String, issued: Int) throws -> Strin
     let tab = PanelModel.buildPanel(Tools.toolView(state, "codex"), state: state,
                                     sessions: [], friends: [], showLeaderboard: false)
         .first { $0.key == "subscriptions" }
-    #expect(tab?.cards.first?.items.contains(.row(label: "Card", value: "Unavailable")) == true)
+    let card = tab?.cards.first { $0.title == "Codex" }
+    #expect(card?.items.contains(.row(label: "Card", value: "Unavailable")) == true)
 }

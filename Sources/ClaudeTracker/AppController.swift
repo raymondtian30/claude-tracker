@@ -109,6 +109,7 @@ final class AppController {
         attempt("backfill daily totals") { try TokenMath.backfillDaily(&state) }
         attempt("backfill limits") { try TokenMath.backfillLimits(&state) }
         attempt("backfill efforts") { try TokenMath.backfillEfforts(&state) }
+        attempt("backfill hourly totals") { try TokenMath.backfillTodayHours(&state) }
         scan()
         Subscriptions.refresh(&state)
         save()

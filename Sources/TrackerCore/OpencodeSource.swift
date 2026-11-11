@@ -82,7 +82,7 @@ public enum OpencodeSource {
             let cost = data.double("cost")
             UsageStats.addUsage(&daily, day: Day(timestamp: created / 1000), model: model,
                                 project: UsageStats.projectLabel(row[1] as? String), parts: parts, cost: cost,
-                                effort: effort)
+                                effort: effort, at: created / 1000)
             var seen = counted[hashable(row[2])] ?? Counted()
             for (category, count) in parts {
                 seen.parts[category, default: 0] += count

@@ -9,6 +9,7 @@ import Foundation
 ///         "models": {model_id: {category: tokens, ...}, ...},
 ///         "projects": {project_label: tokens, ...},
 ///         "model_projects": {model_id: {project_label: tokens}},  # newer buckets
+///         "model_hours": {model_id: {"00"..."23": tokens}},  # when timestamps are known
 ///         "recorded_cost": {model_id: dollars},  # when a tool records cost
 ///     }
 ///
@@ -105,8 +106,9 @@ public enum UsageStats {
         let message = entry.object("message") ?? [:]
         guard let usage = message.object("usage"), !usage.isEmpty,
               let timestamp = entry.string("timestamp"), !timestamp.isEmpty,
-              let day = localDateOf(timestamp)
+              let at = LocalTime.parseISO(timestamp)
         else { return }
+        let day = Day(timestamp: at)
         let parts = splitUsage(usage)
         if parts.values.reduce(0, +) == 0 {
             return
@@ -116,7 +118,7 @@ public enum UsageStats {
         // fallback (the two differ on some entries, and `effort` is preferred).
         let effort = normalizeEffort(entry["effort"]) ?? normalizeEffort(entry["perTurnEffort"])
         addUsage(&daily, day: day, model: model, project: projectLabel(entry.string("cwd")),
-                 parts: parts, effort: effort)
+                 parts: parts, effort: effort, at: at)
     }
 
     /// An effort level as kept ("high"): lowercase letters, digits, "_" and
@@ -132,7 +134,8 @@ public enum UsageStats {
     /// Add one response's token `parts` ({category: tokens}) to the buckets
     /// for `day`. `cost` is a dollar amount the tool itself recorded, if any.
     public static func addUsage(_ daily: inout JSONObject, day: Day, model: String, project: String,
-                                parts: [String: Int], cost: Double? = nil, effort: String? = nil) {
+                                parts: [String: Int], cost: Double? = nil, effort: String? = nil,
+                                at: Double? = nil) {
         var bucket = daily.object(day.iso) ?? ["models": JSONObject(), "projects": JSONObject()]
         var models = bucket.object("models") ?? [:]
         var modelParts = models.object(model) ?? zeroParts()
@@ -152,6 +155,15 @@ public enum UsageStats {
         perModel[project] = (perModel.int(project) ?? 0) + tokens
         modelProjects[model] = perModel
         bucket["model_projects"] = modelProjects
+
+        if let at = at, at.isFinite {
+            let hour = String(format: "%02d", LocalTime.parts(of: at).hour)
+            var hours = bucket.object("model_hours") ?? [:]
+            var perModel = hours.object(model) ?? [:]
+            perModel[hour] = (perModel.int(hour) ?? 0) + tokens
+            hours[model] = perModel
+            bucket["model_hours"] = hours
+        }
 
         // Tokens per model and effort, for the models whose tool says the level.
         if let effort = effort {
@@ -233,6 +245,14 @@ public enum UsageStats {
                     }
                     into["efforts"] = intoEfforts
                 }
+                if let hours = bucket.object("model_hours"), !hours.isEmpty {
+                    var intoHours = into.object("model_hours") ?? [:]
+                    for (model, perHour) in hours {
+                        intoHours[model] = combineNumbers(intoHours.object(model) ?? [:],
+                                                          JSON.object(perHour) ?? [:], start: 0, combine)
+                    }
+                    into["model_hours"] = intoHours
+                }
                 merged[iso] = into
             }
         }
@@ -285,6 +305,10 @@ public enum UsageStats {
             let efforts = (bucket.object("efforts") ?? [:]).filter { models[$0.key] != nil }
             if !efforts.isEmpty {
                 out["efforts"] = efforts
+            }
+            let hours = (bucket.object("model_hours") ?? [:]).filter { models[$0.key] != nil }
+            if !hours.isEmpty {
+                out["model_hours"] = hours
             }
             filtered[iso] = out
         }
@@ -500,6 +524,20 @@ public enum UsageStats {
             let end = Swift.min(start.adding(days: run - 1), to)
             return RangePoint(start, end, used)
         }
+    }
+
+    /// Local clock hours for one day, midnight through 11 PM. Missing hour
+    /// detail stays at zero; callers can compare the sum with that day's total
+    /// to explain older usage that predates hourly tracking.
+    public static func hourlySeries(_ daily: JSONObject, day: Day) -> [Int] {
+        var values = [Int](repeating: 0, count: 24)
+        for perHour in (daily.object(day.iso)?.object("model_hours") ?? [:]).values {
+            for (key, count) in JSON.object(perHour) ?? [:] {
+                guard let hour = Int(key), (0..<24).contains(hour) else { continue }
+                values[hour] += JSON.int(count) ?? 0
+            }
+        }
+        return values
     }
 
     /// [(date, tokens)] for each of the `days` days ending on `end`, oldest

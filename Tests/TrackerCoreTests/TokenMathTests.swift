@@ -151,6 +151,28 @@ func formatCount(n: Int, expected: String) {
     #expect(total == 20)
 }
 
+@Test func backfillTodayHoursPreservesExistingTotals() throws {
+    let tmp = TempDir()
+    let path = tmp.url("session.jsonl")
+    let entry = assistantEntry(7, 3, timestamp: "2026-07-29T09:00:00")
+    writeJSONL(path, [entry])
+    setModificationTime(path, LocalTime.timestamp(2026, 7, 29, 12))
+    var daily = JSONObject()
+    UsageStats.recordEntry(&daily, entry)
+    var bucket = daily.object("2026-07-29")!
+    bucket.removeValue(forKey: "model_hours")
+    daily["2026-07-29"] = bucket
+    var state: JSONObject = ["daily": daily, "grand_total": 10,
+                             "file_offsets": [path.path: fileSize(path)]]
+
+    try TokenMath.backfillTodayHours(&state, today: Day(2026, 7, 29))
+    #expect(state.int("grand_total") == 10)
+    #expect(UsageStats.hourlySeries(state.object("daily") ?? [:], day: Day(2026, 7, 29))[9] == 10)
+    let once = state
+    try TokenMath.backfillTodayHours(&state, today: Day(2026, 7, 29))
+    #expect(JSON.isEqual(state, once))
+}
+
 @Test func sumUsageForTodaySkipsFilesNotModifiedToday() throws {
     let tmp = TempDir()
     let projectsDir = tmp.url("projects")

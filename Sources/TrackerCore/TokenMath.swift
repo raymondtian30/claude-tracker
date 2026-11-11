@@ -297,6 +297,34 @@ public enum TokenMath {
         state["efforts_backfilled"] = true
     }
 
+    /// Recover today's hourly detail from Claude log entries already counted
+    /// before this version. Only the hour map is copied; daily and lifetime
+    /// totals stay unchanged. Files not modified today cannot contain today's
+    /// usage and are skipped.
+    public static func backfillTodayHours(_ state: inout JSONObject,
+                                          today: Day = Day.today()) throws {
+        guard state.bool("hourly_backfilled") != true else { return }
+        var scratch = JSONObject()
+        for (path, savedOffset) in state.object("file_offsets") ?? [:] {
+            guard let modified = modificationTime(path), Day(timestamp: modified) >= today,
+                  let offset = JSON.int(savedOffset), offset > 0 else { continue }
+            try skippingMissing {
+                try sumUsageSince(path, offset: 0, stopAt: offset) { entry in
+                    guard entry.string("timestamp").flatMap(UsageStats.localDateOf) == today else { return }
+                    UsageStats.recordEntry(&scratch, entry)
+                }
+            }
+        }
+        if let hours = scratch.object(today.iso)?.object("model_hours"), !hours.isEmpty {
+            var daily = state.object("daily") ?? [:]
+            var bucket = daily.object(today.iso) ?? [:]
+            bucket["model_hours"] = hours
+            daily[today.iso] = bucket
+            state["daily"] = daily
+        }
+        state["hourly_backfilled"] = true
+    }
+
     /// Runs `body`, ignoring a "no such file" error (Python's FileNotFoundError).
     static func skippingMissing(_ body: () throws -> Void) throws {
         do {

@@ -140,6 +140,25 @@ private func parts(input: Int = 0, output: Int = 0, cacheWrite5m: Int = 0, cache
     #expect(jsonEqual(day?["recorded_cost"], ["gpt-x": 0.25]))
 }
 
+@Test func hourlyTotalsMergeAndFilterByModel() {
+    let day = Day(2026, 7, 29)
+    var a = JSONObject(), b = JSONObject()
+    UsageStats.addUsage(&a, day: day, model: "gpt-x", project: "~/a", parts: parts(input: 5),
+                        at: LocalTime.timestamp(2026, 7, 29, 9))
+    UsageStats.addUsage(&b, day: day, model: "gpt-x", project: "~/b", parts: parts(output: 7),
+                        at: LocalTime.timestamp(2026, 7, 29, 9))
+    UsageStats.addUsage(&b, day: day, model: "claude-y", project: "~/b", parts: parts(input: 3),
+                        at: LocalTime.timestamp(2026, 7, 29, 15))
+    let merged = UsageStats.mergeDaily([a, b])
+    let hours = UsageStats.hourlySeries(merged, day: day)
+    #expect(hours.count == 24 && hours[9] == 12 && hours[15] == 3)
+    #expect(hours.reduce(0, +) == 15)
+    let gptOnly = UsageStats.filterDaily(merged) { $0 == "gpt-x" }
+    #expect(UsageStats.hourlySeries(gptOnly, day: day)[9] == 12)
+    #expect(UsageStats.hourlySeries(gptOnly, day: day)[15] == 0)
+    #expect(UsageStats.hourlySeries(UsageStats.mergeMaxDaily(a, b), day: day)[9] == 7)
+}
+
 @Test func mergeDailySumsAcrossTools() {
     var a = JSONObject(), b = JSONObject()
     UsageStats.addUsage(&a, day: Day(2026, 7, 29), model: "claude-opus-5-5", project: "~/p",

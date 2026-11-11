@@ -52,12 +52,15 @@ private func sum(_ parts: Any?) -> Int {
     let tmp = TempDir()
     let path = write(tmp.url("r.jsonl"), [meta(), turn(), record("r1", inputTokens: 12651, cached: 8960, output: 191)])
 
-    let parts = dayModels(try CodexSource.readCodexFile(path.path)).object("gpt-5.6-luna") ?? [:]
+    let daily = try CodexSource.readCodexFile(path.path)
+    let parts = dayModels(daily).object("gpt-5.6-luna") ?? [:]
 
     #expect(parts.int("input") == 3691)
     #expect(parts.int("cache_read") == 8960)
     #expect(parts.int("output") == 191)
     #expect(parts.int("cache_write_5m") == 0)
+    let hour = LocalTime.parts(of: LocalTime.parseISO(TS)!).hour
+    #expect(UsageStats.hourlySeries(daily, day: Day(2026, 7, 29))[hour] == 12_842)
 }
 
 @Test func projectComesFromSessionCwd() throws {
@@ -297,4 +300,6 @@ private func efforts(_ daily: JSONObject) -> Any? {
     let again = (state.object("files") ?? [:]).object(path) ?? [:]
     #expect(again.int("v") == CodexSource.fileVersion)
     #expect(jsonEqual(dig(again, "daily", "2026-07-29", "efforts"), ["gpt-5.6-luna": ["high": 10]]))
+    #expect(UsageStats.hourlySeries(again.object("daily") ?? [:], day: Day(2026, 7, 29))
+        .reduce(0, +) == 10)
 }
