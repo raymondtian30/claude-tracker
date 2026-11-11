@@ -441,7 +441,7 @@ private func statusRows(_ items: [Item]) -> [Item] {
         session(.active, stopped: true),
     ], plugins: nil, now: 0)
 
-    #expect(tab.cards[0].items.first == .note("3 active · 1 waiting · 1 idle · 1 unknown · 1 paused"))
+    #expect(tab.cards[0].items.first == .note("2 active · 1 waiting · 1 idle · 1 unknown · 1 paused"))
 }
 
 @Test func eachStateHasItsWordAndDot() {
@@ -590,7 +590,7 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
                   button("Quit all", "xmark.circle", "sessions_quit_all")]),
     ])
     #expect(claudeTab([running, paused]).cards[0].items == [
-        .note("2 unknown · 1 paused"),
+        .note("1 unknown · 1 paused"),
         .buttons([button("Stop all", "pause.circle", "sessions_stop_all"),
                   button("Quit all", "xmark.circle", "sessions_quit_all")]),
         .buttons([button("Resume all", "play.circle", "sessions_resume_all")]),
@@ -721,4 +721,28 @@ private let fiveHourHit: JSONObject = ["claude_usage_enabled": false,
                                       live: live)
     let tab = panel.first { $0.key == "sessions" }!
     #expect(tab.cards.flatMap(\.items).contains(dotRow("a", "Limit hit", .yellow)))
+}
+
+@Test func aLimitForOneModelDoesNotPauseSessionsOnOthers() {
+    let reset = LocalTime.timestamp(2026, 11, 14, 12, 0)
+    let opusOnly = claudeUsageState(limits: [
+        ["kind": "five_hour", "window": "five_hour", "label": "5-hour", "percent": 30.0, "resets_at": reset],
+        ["kind": "weekly_opus", "window": "weekly", "label": "Weekly · Opus", "percent": 100.0, "resets_at": reset],
+    ])
+    #expect(Limits.hitClaudeLimit(opusOnly, now: limitsNow) == nil)
+    let weekly = claudeUsageState(limits: [
+        ["kind": "weekly", "window": "weekly", "label": "Weekly", "percent": 100.0, "resets_at": reset],
+    ])
+    #expect(Limits.hitClaudeLimit(weekly, now: limitsNow)?.window == "weekly")
+}
+
+@Test func aPausedSessionIsCountedOnceInTheSummaryWhateverItsRecordSays() {
+    let sessions = [
+        ActiveSessions.Session(label: "~/a", tokens: nil, pid: 2, status: "busy", tool: "claude_code", state: .active),
+        ActiveSessions.Session(label: "~/b", tokens: nil, pid: 3, stopped: true, status: "busy", tool: "claude_code",
+                               state: .active),
+    ]
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), sessions, plugins: nil, now: 0)
+    #expect(tab.cards[0].title == "Sessions (2)")
+    #expect(tab.cards[0].items.first == .note("1 active · 1 paused"))  // adds up to the title's 2
 }

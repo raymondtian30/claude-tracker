@@ -1,6 +1,6 @@
 // The diagnostics report: why each process was counted or not. It is pasted
-// into bug reports, so it must not carry command lines, prompts, chat titles
-// or paths outside the home folder shorthand.
+// into bug reports, so it must not carry command-line values, prompts or chat
+// titles; project folders appear, with ~ for the home folder.
 
 import Foundation
 import Testing
@@ -126,4 +126,8 @@ private func report(_ processes: [ProcInfo], _ records: [ClaudeRecords.Record] =
     #expect(command("opencode", "/o/opencode serve --port 4096") == "opencode serve --port")
     #expect(command("node", "node /usr/local/bin/gemini --yolo") == "node gemini --yolo")
     #expect(command("claude", "") == "claude")
+}
+
+@Test func aValueGluedOntoAFlagIsNeverPrinted() {
+    #expect(SessionDiagnostics.command(program: "codex", args: "/c/codex -C/Users/alice/private --key=sk-1 -x") == "codex -C --key -x")
 }

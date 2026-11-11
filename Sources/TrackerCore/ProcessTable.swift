@@ -37,7 +37,8 @@ public struct ProcInfo: Equatable {
 /// The process table: every running process with its parent, terminal, state
 /// and start time, plus the command line and folder of the ones that might be
 /// an AI tool. Three spawns however many processes there are (`ps` for all,
-/// `ps -p` for the candidates' command lines, `lsof` for their folders),
+/// `ps -p` for the candidates' command lines, `lsof -b` for their folders: `-b`
+/// keeps `lsof` from waiting on a folder that lives on a dead network mount),
 /// instead of one or two per process. Takes about 70 ms with 500 processes.
 public enum ProcessTable {
     /// Gives the whole table. Injected into the registry so tests need no `ps`.
@@ -69,11 +70,16 @@ public enum ProcessTable {
     /// lines or folders empty, since both exit non-zero when a process ended
     /// between the calls.
     public static func read(run: Subprocess.Runner = Subprocess.run) throws -> [ProcInfo] {
-        let listed = run(["env", "TZ=UTC", "ps", "-axww", "-o", "pid=,ppid=,tty=,stat=,lstart=,comm="], nil)
+        let listed = run(["env", "TZ=UTC", "LC_ALL=C", "ps", "-axww", "-o", "pid=,ppid=,tty=,stat=,lstart=,comm="], nil)
         guard listed.status == 0 else {
             throw ActiveSessions.CommandFailed(description: "ps exited with \(listed.status)")
         }
         var table = parseTable(listed.stdout)
+        // Output that is there but parses to nothing means the format changed:
+        // say so, instead of answering "no processes".
+        if table.isEmpty, listed.stdout.contains(where: { !$0.isWhitespace }) {
+            throw ActiveSessions.CommandFailed(description: "the output of ps could not be read")
+        }
         let candidates = table.indices.filter { candidatePrograms.contains(table[$0].program) }
         guard !candidates.isEmpty else { return table }
 
@@ -88,7 +94,7 @@ public enum ProcessTable {
         }
         guard !tools.isEmpty else { return table }
         let folderList = tools.map { String(table[$0].pid) }.joined(separator: ",")
-        let folders = parseFolders(run(["lsof", "-a", "-p", folderList, "-d", "cwd", "-Fpn"], nil).stdout)
+        let folders = parseFolders(run(["lsof", "-b", "-a", "-p", folderList, "-d", "cwd", "-Fpn"], nil).stdout)
         for index in tools {
             table[index].folder = folders[table[index].pid]
         }

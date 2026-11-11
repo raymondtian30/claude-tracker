@@ -42,6 +42,8 @@ public enum SessionRules {
         case hasTerminal
         case noTerminal
         case server
+        /// The command line could not be read, so a server cannot be told from a chat.
+        case commandUnreadable
         case backgroundAgent(String)
         case otherToolChild(of: Int32)
         case duplicateSessionId(withPid: Int32)
@@ -122,7 +124,9 @@ public enum SessionRules {
                 continue
             }
             if let started = record.procStart, !started.isEmpty {
-                if ProcessTable.sameStart(started, process.start) {
+                if ProcessTable.startTime(started) == nil {
+                    valid[pid] = (record, false)  // a format this code doesn't know: unverified, not stale
+                } else if ProcessTable.sameStart(started, process.start) {
                     valid[pid] = (record, true)
                 } else {
                     stale.append(StaleRecord(pid: pid, reason: .startTimeDiffers))
@@ -217,7 +221,13 @@ public enum SessionRules {
     private static func classify(_ process: ProcInfo, _ tool: String,
                                  _ own: (record: ClaudeRecords.Record, verified: Bool)?) -> Entry {
         guard tool == "claude_code" else {
-            let server = ActiveSessions.isBackgroundServer(tool, args: process.args ?? "")
+            // Without the command line a server (`opencode serve`) looks like a
+            // chat, so such a process is not counted.
+            guard let args = process.args else {
+                return entry(process, tool, own: nil, role: .unclassified, counted: false,
+                             reasons: [.commandUnreadable])
+            }
+            let server = ActiveSessions.isBackgroundServer(tool, args: args)
             if process.tty != nil && !server {
                 return entry(process, tool, own: nil, role: .session, counted: true, reasons: [.hasTerminal])
             }

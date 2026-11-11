@@ -137,10 +137,6 @@ final class AppController {
         panel.onHover = { [weak self] in onMain { self?.prewarmPanelOnHover() } }
         renderPanel()
         updateTitle()
-        // SCRATCH-LOOK-TEMPORARY (removed before the work is finished)
-        if ProcessInfo.processInfo.environment["CT_SHOW_PANEL"] != nil {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in onMain { self?.panel.show() } }
-        }
         // Opening the app again (e.g. from Finder) asks this copy to show its panel.
         showObserver = SingleInstance.observeShowRequests { [weak self] in
             onMain { self?.panel.show() }
@@ -290,7 +286,9 @@ final class AppController {
         // The saved search result, never a new search: that takes over half a
         // second, and every click draws. Another tool's? Search again.
         let tools = AppState.sessionTools(view.key, enabled: enabled)
-        if !registry.snapshot.scanned && !registry.isScanning {
+        // The first scan of all; if it failed, the timer and the Live tab retry
+        // it (drawing must not, or a failing `ps` would loop).
+        if !registry.snapshot.scanned && registry.snapshot.error == nil && !registry.isScanning {
             searchLive()
         }
         let result = PanelModel.buildPanelResult(
@@ -490,6 +488,7 @@ final class AppController {
                 state["selected_tool"] = choices[index].key
                 save()
                 updateTitle()
+                searchLive()  // the new view may show plugins the last scan didn't work out
             }
         case .welcomeTool(let key, let on):
             welcomeChoice = AppState.welcomeChoice(welcomeChoice, key, on)

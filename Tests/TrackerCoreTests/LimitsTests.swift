@@ -521,3 +521,10 @@ private func claudeState(percentages: Bool, limits: [JSONObject]) -> JSONObject 
     let (messages, _) = Limits.alertsToSend([full], thresholds: [75], windowsOn: ["five_hour"], above: [])
     #expect(messages == ["Codex (5-hour) usage reached 100%."])
 }
+
+@Test func anAddedLowerThresholdSaysItself() {
+    // 75 was already told at 80%; ticking 50 alerts for 50, not for 75 again.
+    let (messages, _) = Limits.alertsToSend([level(percent: 80.0)], thresholds: [50, 75], windowsOn: ["five_hour"],
+                                            above: ["codex:five_hour@75"])
+    #expect(messages == ["Codex (5-hour) usage reached 50%."])
+}

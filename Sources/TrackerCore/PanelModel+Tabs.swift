@@ -564,11 +564,13 @@ extension PanelModel {
     }
 
     /// "2 active · 1 waiting · 1 paused": how many sessions are in each state
-    /// (only the states that have any). Paused counts apart, since it is a flag.
+    /// (only the states that have any). A paused session is counted as paused
+    /// only, as its row reads "Paused", so the numbers add up to the title's count.
     static func stateSummary(_ sessions: [ActiveSessions.Session], limit: Limits.Level? = nil) -> String {
         var counts = [SessionRules.State: Int]()
         var held = 0
         for session in sessions {
+            if session.stopped { continue }  // counted below, as paused, and nowhere else
             if limit != nil, isHeldByLimit(session) {
                 held += 1
             } else {

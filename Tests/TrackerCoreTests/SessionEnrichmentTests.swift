@@ -49,7 +49,7 @@ private func enrich(_ entries: [Rules.Entry], _ cache: inout EnrichmentCache, pr
     #expect(result.details[100] == SessionDetails())
 }
 
-@Test func laterScansReadOnlyWhatWasAppendedAndEqualAFullRead() throws {
+@Test func laterScansMoveTheOffsetOnAndEqualAFullRead() throws {
     let tmp = TempDir()
     let log = tmp.mkdir("projects/-w-app").appendingPathComponent("s1.jsonl")
     writeJSONL(log, [assistant(1, 1), assistant(2, 2)])

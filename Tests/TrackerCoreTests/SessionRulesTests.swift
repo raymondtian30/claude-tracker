@@ -304,3 +304,23 @@ private func counted(_ scan: Rules.Scan) -> [Rules.Entry] { scan.entries.filter(
     #expect(ProcessTable.startTime("Mon Nov  9 07:19:59 2026") == ProcessTable.startTime("Mon Nov 9 07:19:59 2026"))
     #expect(ProcessTable.startTime("nonsense") == nil)
 }
+
+@Test func aRecordWhoseStartTimeIsInAFormatWeDontKnowIsUnverifiedNotStale() {
+    // procStart in some other format must not make a background agent look like a chat.
+    let result = scan([claude(1), claude(2)],
+                      [record(1, session: "a", procStart: "2026-11-10T18:00:00Z"),
+                       record(2, session: "b", kind: .background, procStart: "2026-11-10T18:00:00Z")])
+    #expect(result.staleRecords.isEmpty)
+    #expect(counted(result).map(\.pid) == [1])
+    #expect(counted(result)[0].reasons.contains(.unverifiedRecord))
+    #expect(result.entries.first { $0.pid == 2 }?.role == .background)
+}
+
+@Test func aToolProcessWhoseCommandLineCouldNotBeReadIsNotCounted() {
+    // Without it a server in a terminal would look like a chat.
+    let unread = ProcInfo(pid: 9, ppid: 1, tty: "ttys001", state: "S", start: t0, program: "opencode",
+                          args: nil, folder: "/w")
+    let result = scan([unread])
+    #expect(counted(result).isEmpty)
+    #expect(result.entries[0].reasons == [.commandUnreadable])
+}

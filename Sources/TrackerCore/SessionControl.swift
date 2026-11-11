@@ -76,7 +76,7 @@ public enum SessionControl {
                 && ActiveSessions.basename(found.stdout.trimmingCharacters(in: .whitespacesAndNewlines)) == program
             return named ? .matches : .notClaude
         }
-        let found = run(["env", "TZ=UTC", "ps", "-p", String(pid), "-o", "lstart=,comm="], nil)
+        let found = run(["env", "TZ=UTC", "LC_ALL=C", "ps", "-p", String(pid), "-o", "lstart=,comm="], nil)
         // Five words of start time, then the program path.
         let parts = found.stdout.split(maxSplits: 5, omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
         guard found.status == 0, parts.count == 6,

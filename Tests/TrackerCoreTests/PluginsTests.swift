@@ -284,7 +284,7 @@ private let NOW = LocalTime.parseISO("2026-11-08T12:00:00+00:00")!
 
 // MARK: Reading a log once
 
-@Test func cachedLogEventsReadOnlyWhatWasAddedAndEqualAFullRead() {
+@Test func cachedLogEventsEqualAFullReadAfterAppends() {
     let tmp = TempDir()
     let log = tmp.url("a.jsonl")
     writeLog(log, [toolUse("Skill", ts(9, 1), ["skill": "superpowers:brainstorming"])])

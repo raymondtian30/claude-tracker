@@ -114,10 +114,11 @@ private final class FakeRunner {
     let processes = try ProcessTable.read(run: fake.runner)
 
     #expect(fake.calls.count == 3)
-    #expect(fake.calls[0].prefix(3) == ["env", "TZ=UTC", "ps"])
+    #expect(fake.calls[0].prefix(4) == ["env", "TZ=UTC", "LC_ALL=C", "ps"])
     #expect(fake.calls[1].first == "ps")
     #expect(fake.calls[1].contains("-p"))
     #expect(fake.calls[2].first == "lsof")
+    #expect(fake.calls[2].contains("-b"))  // never wait on a dead network folder
     // Candidates are the tool programs and node, never claude-tracker.
     let asked = fake.calls[1].last ?? ""
     #expect(!asked.split(separator: ",").contains("747"))
@@ -147,4 +148,12 @@ private final class FakeRunner {
     let processes = try ProcessTable.read(run: fake.runner)
     #expect(processes.first { $0.pid == 22367 }?.folder == nil)
     #expect(processes.first { $0.pid == 22367 }?.args == "codex")
+}
+
+@Test func psOutputThatParsesToNothingIsAnErrorNotAnEmptyTable() {
+    // The format changed: lines are there, none is understood.
+    let runner: Subprocess.Runner = { _, _ in Subprocess.Result(stdout: "12 1 ?? S 10 Nov 18:00:00 2026 /bin/zsh\n") }
+    #expect(throws: (any Error).self) { try ProcessTable.read(run: runner) }
+    let empty: Subprocess.Runner = { _, _ in Subprocess.Result(stdout: "") }
+    #expect((try? ProcessTable.read(run: empty))?.isEmpty == true)  // really no output: no processes
 }
