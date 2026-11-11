@@ -75,6 +75,7 @@ final class AppController {
     let leaderboardQueue = DispatchQueue(label: "com.raymondtian.claudetracker.leaderboard")
 
     private var timer: Timer?
+    private var subscriptionTimer: Timer?
     private var showObserver: NSObjectProtocol?
 
     init(files: AppState.Files) {
@@ -109,6 +110,7 @@ final class AppController {
         attempt("backfill limits") { try TokenMath.backfillLimits(&state) }
         attempt("backfill efforts") { try TokenMath.backfillEfforts(&state) }
         scan()
+        Subscriptions.refresh(&state)
         save()
         // The first launch after an update re-reads the logs; hand what that
         // used back to the system instead of keeping it as a footprint.
@@ -123,6 +125,7 @@ final class AppController {
         panel.animationSeconds = PanelSpeeds.animationSeconds(state.string("panel_animation"))
         panel.attach(statusItem)
         panel.onWillShow = { [weak self] in
+            self?.refreshSubscriptions()
             self?.openRows = [:]
             self?.projectsExpanded = false  // Projects opens short each time
             self?.closeRangePage()
@@ -145,6 +148,7 @@ final class AppController {
             }
         }
         startTimer(seconds: state.int("scan_interval_seconds") ?? AppState.refreshSeconds)
+        startSubscriptionTimer()
     }
 
     // MARK: - Scanning
@@ -166,6 +170,7 @@ final class AppController {
             return
         }
         scan()
+        Subscriptions.refresh(&state)
         save()
         checkAlerts()
         fetchAccounts()
@@ -216,6 +221,20 @@ final class AppController {
         // The default mode only, as rumps' timers: no scan while a dialog is open.
         RunLoop.main.add(timer, forMode: .default)
         self.timer = timer
+    }
+
+    private func startSubscriptionTimer() {
+        let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
+            onMain { self?.refreshSubscriptions() }
+        }
+        RunLoop.main.add(timer, forMode: .default)
+        subscriptionTimer = timer
+    }
+
+    private func refreshSubscriptions() {
+        guard Subscriptions.refresh(&state) else { return }
+        save()
+        if panel.isShown { renderPanel() }
     }
 
     func setScanInterval(_ seconds: Int) {
@@ -412,6 +431,8 @@ final class AppController {
         case .leaderboardAdd: addFriendByCode()
         case .providerKey(let provider): addAPIKey(provider)
         case .providerKeyRemove(let provider): removeAPIKey(provider)
+        case .subscriptionEmail(let tool): editSubscriptionEmail(tool)
+        case .subscriptionCard(let tool): editSubscriptionCard(tool)
         case .provider(let key, let on): setProviderEnabled(key, on)
         case .leaderboardPush: pushLeaderboardUpdate()
         case .leaderboardPull: pullLeaderboardUpdates()

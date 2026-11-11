@@ -4,6 +4,45 @@ import TrackerCore
 /// Provider API keys and account numbers (OpenAI, DeepSeek, Kimi), and
 /// Claude Code's limit percentages from Anthropic.
 extension AppController {
+    func editSubscriptionEmail(_ tool: String) {
+        guard Subscriptions.supportedTools.contains(tool) else { return }
+        let saved = state.object("subscription_details")?.object(tool)?.string("email") ?? ""
+        guard let entered = Dialogs.ask(title: "\(Tools.toolNames[tool] ?? tool) Email",
+                                        message: "Enter the email used for this subscription. Leave blank to clear it.",
+                                        defaultText: saved, ok: "Save", cancel: "Cancel") else { return }
+        let email = entered.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard email.isEmpty || Subscriptions.validEmail(email) else {
+            Dialogs.alert("Invalid Email", "Enter an email address such as name@example.com.")
+            return
+        }
+        Subscriptions.setDetail(&state, tool: tool, field: "email", value: email)
+        save()
+    }
+
+    func editSubscriptionCard(_ tool: String) {
+        guard Subscriptions.supportedTools.contains(tool) else { return }
+        guard let entered = Dialogs.ask(title: "\(Tools.toolNames[tool] ?? tool) Card",
+                                        message: "Enter only the last four digits of the card used for this subscription. Leave blank to clear it.",
+                                        ok: "Save", cancel: "Cancel", secure: true) else { return }
+        let digits = entered.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard digits.isEmpty || Subscriptions.validLastFour(digits) else {
+            Dialogs.alert("Invalid Card Digits", "Enter exactly four digits. Full card numbers are not accepted.")
+            return
+        }
+        Subscriptions.setDetail(&state, tool: tool, field: "last_four", value: digits)
+        var details = state.object("subscription_details") ?? [:]
+        var saved = details.object(tool) ?? [:]
+        if !digits.isEmpty, let email = state.object("subscriptions")?.object(tool)?.string("email")
+            ?? saved.string("email") {
+            saved["card_email"] = email
+        } else {
+            saved.removeValue(forKey: "card_email")
+        }
+        details[tool] = saved
+        state["subscription_details"] = details
+        save()
+    }
+
     // MARK: - API keys
 
     func addAPIKey(_ provider: String) {

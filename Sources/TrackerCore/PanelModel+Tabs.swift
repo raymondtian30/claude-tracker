@@ -530,6 +530,47 @@ extension PanelModel {
         return Tab(key: "limits", title: "Usage Limits", short: "Limits", icon: "speedometer", cards: cards)
     }
 
+    static func subscriptionsTab(_ d: PanelData) -> Tab {
+        let enabled = strings(d.state["enabled_tools"])
+        let auto = d.state.object("subscriptions") ?? [:]
+        let details = d.state.object("subscription_details") ?? [:]
+        var cards = [Card]()
+        for tool in Subscriptions.supportedTools where enabled.contains(tool) {
+            let name = Tools.toolNames[tool] ?? tool
+            let found = auto.object(tool) ?? [:]
+            let saved = details.object(tool) ?? [:]
+            let plan = found.string("plan").map(Subscriptions.displayPlan) ?? "Unavailable"
+            let email = found.string("email") ?? saved.string("email") ?? "Unavailable"
+            let boundEmail = saved.string("card_email")
+            let cardMatches = boundEmail == nil || boundEmail == (found.string("email") ?? saved.string("email"))
+            let card = (cardMatches ? saved.string("last_four") : nil).map { "•••• \($0)" } ?? "Unavailable"
+            var items: [Item] = [
+                .row(label: "Plan", value: plan),
+                .row(label: "Email", value: email),
+                .row(label: "Card", value: card),
+            ]
+            if tool == "codex" {
+                items += noteLines("Plan and email come from Codex's local sign-in. Billing details are not included.")
+                items += noteLines("Checked every 5 seconds after Codex updates its sign-in.")
+            } else {
+                items += noteLines("Plan and email come from Claude Code's local account profile when available. Billing details are not included.")
+            }
+            var buttons = [Item.Button]()
+            if found.string("email") == nil {
+                buttons.append(Item.Button(saved.string("email") == nil ? "Set Email" : "Edit Email",
+                                           "envelope", "subscription_email:\(tool)"))
+            }
+            buttons.append(Item.Button(saved.string("last_four") == nil ? "Set Card" : "Edit Card",
+                                       "creditcard", "subscription_card:\(tool)"))
+            items.append(.buttons(buttons))
+            cards.append(Card(title: name, items: items))
+        }
+        if cards.isEmpty {
+            cards.append(Card(title: "Subscriptions", items: noteLines("Track Codex or Claude Code to see subscription details.")))
+        }
+        return Tab(key: "subscriptions", title: "Subscriptions", short: "Plans", icon: "creditcard", cards: cards)
+    }
+
     /// Limits discovered from BYOK credentials and catalog (balance/rate rows
     /// and model context/output token limits).
     static func byokLimitItems(_ d: PanelData) -> [Item] {

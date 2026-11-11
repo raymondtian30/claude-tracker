@@ -150,7 +150,7 @@ func viewOf(_ daily: JSONObject, name: String = "Codex", key: String = "codex", 
     let list = buildTestPanel(state, sessions, friends, today: Day(2026, 7, 29))
 
     #expect(list.map(\.key) == [
-        "overview", "breakdown", "models", "projects", "cost", "limits", "sessions", "leaderboard",
+        "overview", "breakdown", "models", "projects", "cost", "limits", "subscriptions", "sessions", "leaderboard",
     ])
     for tab in list {
         expectWellFormed(tab)

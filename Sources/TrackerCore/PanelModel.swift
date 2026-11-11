@@ -287,6 +287,7 @@ public enum PanelModel {
             projectsTab(d, expanded: projectsExpanded),
             costTab(d),
             limitsTab(d, now: now ?? Date().timeIntervalSince1970),
+            subscriptionsTab(d),
         ]
         // A running session can't be tied to one provider, so provider views
         // have no Live tab.
