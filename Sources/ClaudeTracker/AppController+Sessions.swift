@@ -7,19 +7,22 @@ import TrackerCore
 /// only) to ~/Library/Logs/ClaudeTracker/agent.err.log, to look at if one
 /// doesn't do what it should.
 extension AppController {
-    /// The process ids of the sessions the Live tab lists right now.
-    var livePids: [Int32] { live.sessions.compactMap(\.pid) }
+    /// The process ids of the sessions the Live tab can stop or quit right
+    /// now: the counted Claude Code sessions, the same ones its rows show.
+    var livePids: [Int32] { liveView.controllablePids }
 
     /// Pause or resume `pids`; the tab shows the change at once.
     func pauseOrResume(_ action: SessionControl.Action, _ pids: [Int32]) {
         guard !pids.isEmpty else { return }
-        let known = livePids
+        let live = liveView
+        let known = live.controllablePids
+        let starts = live.starts
         let verb = action == .stop ? "pause" : "resume"
         // Anything the Live tab learned before this click may now be wrong; a
-        // search already running must not put the old list back.
-        liveGeneration += 1
+        // scan already running must not put the old list back.
+        registry.invalidate()
         inBackground({
-            pids.map { SessionControl.send(action, to: $0, among: known) }
+            pids.map { SessionControl.send(action, to: $0, among: known, starts: starts) }
         }, then: { [weak self] outcomes in
             guard let self = self else { return }
             var problem: String?
@@ -32,8 +35,8 @@ extension AppController {
                     problem = reason
                 }
             }
-            self.live.apply(action, to: worked)
-            self.liveGeneration += 1
+            self.registry.apply(action, to: worked)
+            self.registry.invalidate()
             self.renderPanel()
             self.searchLive()  // confirms it
             if let problem = problem {
@@ -47,15 +50,17 @@ extension AppController {
     /// is in the middle of is lost. Each is asked to quit, and force-quit if
     /// it ignores that for 3 seconds (`SessionControl.quit`).
     func quitSessions(_ pids: [Int32]) {
-        let sessions = pids.compactMap { pid in live.sessions.first { $0.pid == pid } }
+        let live = liveView
+        let sessions = pids.compactMap { pid in live.controllable.first { $0.pid == pid } }
         guard !sessions.isEmpty else { return }
         let question = SessionControl.quitQuestion(sessions)
         guard Dialogs.confirmDestructive(title: question.title, message: question.message,
                                          confirm: question.confirm) else { return }
-        let known = livePids
-        liveGeneration += 1
+        let known = live.controllablePids
+        let starts = live.starts
+        registry.invalidate()
         inBackground({
-            SessionControl.quit(sessions.compactMap(\.pid), among: known)
+            SessionControl.quit(sessions.compactMap(\.pid), among: known, starts: starts)
         }, then: { [weak self] results in
             guard let self = self else { return }
             var gone = Set<Int32>()
@@ -69,8 +74,8 @@ extension AppController {
                 case .refused(let reason): if !reasons.contains(reason) { reasons.append(reason) }
                 }
             }
-            self.live.apply(.quit, to: gone)
-            self.liveGeneration += 1
+            self.registry.apply(.quit, to: gone)
+            self.registry.invalidate()
             self.renderPanel()
             self.searchLive()  // confirms it, and refreshes the plugin counts
             var problems = reasons

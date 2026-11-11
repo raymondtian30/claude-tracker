@@ -184,8 +184,8 @@ extension PanelModel {
     /// hold more than the model has); what's left over, when there is any,
     /// stays a plain model row. So the rows always add up to the model's total.
     static func modelsCard(_ title: String, _ models: UsageStats.Models,
-                           efforts: [String: [String: Int]] = [:]) -> Card {
-        let totals = UsageStats.modelTotals(models)
+                           efforts: [String: [String: Int]] = [:], order: ModelTiers.Order = .tokens) -> Card {
+        let totals = ModelTiers.sorted(UsageStats.modelTotals(models), by: order)
         let whole = totals.reduce(0) { $0 + $1.tokens }
         if totals.isEmpty {
             return Card(title: title, items: [.note("No usage yet")])
@@ -215,11 +215,12 @@ extension PanelModel {
         let showEffort = flag(d.state, "show_effort", default: true)
         let todayEfforts = showEffort ? d.todayEfforts : [:]
         let lifetimeEfforts = showEffort ? d.lifetimeEfforts : [:]
-        var lifetime = modelsCard("Lifetime", d.lifetimeModels, efforts: lifetimeEfforts)
+        let order = ModelTiers.order(from: d.state["model_sort"])
+        var lifetime = modelsCard("Lifetime", d.lifetimeModels, efforts: lifetimeEfforts, order: order)
         if d.earlier != 0 {
             lifetime.items.append(.note("Plus \(TokenMath.formatCount(d.earlier)) older tokens with no model detail"))
         }
-        var cards = [modelsCard("Today", d.todayModels, efforts: todayEfforts), lifetime]
+        var cards = [modelsCard("Today", d.todayModels, efforts: todayEfforts, order: order), lifetime]
         if hasEfforts {
             cards.insert(Card(title: nil, items: [
                 .switch(label: "Show effort", isOn: showEffort, action: "show_effort"),
@@ -347,6 +348,21 @@ extension PanelModel {
         return notes
     }
 
+    /// "Free resets remaining": the number when a source reports one, else
+    /// "Unavailable" and why. Never a made-up count.
+    static func freeResetsCard(_ resets: FreeResets, now: Double) -> Card {
+        switch resets {
+        case .available(let count, let renewsAt):
+            var items: [Item] = [.row(label: "Free resets remaining", value: "\(count)")]
+            if let renewsAt = renewsAt, renewsAt != 0 {
+                items.append(.note("Renews \(Limits.formatReset(renewsAt, now: now))"))
+            }
+            return Card(title: nil, items: items)
+        case .unavailable(let reason):
+            return Card(title: nil, items: [.row(label: "Free resets remaining", value: "Unavailable"), .note(reason)])
+        }
+    }
+
     static func limitsTab(_ d: PanelData, now: Double) -> Tab {
         let (view, key) = (d.view, d.view.key)
         let toolKeys: [String]
@@ -383,6 +399,11 @@ extension PanelModel {
         }
 
         var cards = [Card(title: "Plan limits", items: plan)]
+        // Claude Code's limits are the ones with free resets, so the line shows
+        // in its view and in All AIs when it is tracked.
+        if toolKeys.contains("claude_code") {
+            cards.append(freeResetsCard(FreeResets.current(d.state, now: now), now: now))
+        }
         let windows = Limits.limitWindows(d.state, toolKeys: toolKeys, now: now)
         if !windows.isEmpty {
             cards.append(alertsCard(d.state, windows: windows))
@@ -478,12 +499,17 @@ extension PanelModel {
                     items: items.isEmpty ? [.note("No plugins enabled")] : items)
     }
 
-    /// What a process is doing, for its card: paused, busy now, idle for how
-    /// long, or just running when Claude Code doesn't say.
-    static func processState(_ session: ActiveSessions.Session, now: Double) -> String {
+    /// What a process is doing, for its card: paused, busy now, waiting for
+    /// what, idle for how long, or just running when Claude Code doesn't say.
+    static func processState(_ session: ActiveSessions.Session, now: Double, limit: Limits.Level? = nil) -> String {
         if session.stopped { return "paused" }
+        if let limit = limit, isHeldByLimit(session) {
+            let resets = limit.resetsAt.flatMap { $0 != 0 ? $0 : nil }.map { ", resets \(Limits.formatReset($0, now: now))" }
+            return "paused: \(limit.label) limit hit\(resets ?? "")"
+        }
         switch session.status {
         case "busy": return "busy now"
+        case "waiting": return session.waitingFor.map { "waiting: \($0)" } ?? "waiting for you"
         case "idle":
             if session.log == nil { return "idle, no messages yet" }
             guard let since = session.since else { return "idle" }
@@ -501,18 +527,112 @@ extension PanelModel {
         return "\(days) day\(days == 1 ? "" : "s")"
     }
 
-    /// Open sessions, then (when `plugins` is given: Claude Code's view or All
-    /// AIs) what each plugin did. A Claude Code process gets a card of its
-    /// own, with Stop (pause) and Quit; a summary card on top has Stop all.
-    /// Sessions with no known process (other tools') are rows in the summary
-    /// card, one per folder.
+    /// The state a session is in: what the registry decided, or, for a
+    /// session built without it, what Claude Code's status string says.
+    static func effectiveState(_ session: ActiveSessions.Session) -> SessionRules.State {
+        if let state = session.state { return state }
+        switch session.status {
+        case "busy": return .active
+        case "waiting": return .waiting
+        case "idle": return .idle
+        default: return .unknown
+        }
+    }
+
+    /// Whether a plan limit that is hit holds this session: it is a Claude Code
+    /// session that would otherwise read as running (Active, or no state
+    /// known). An Idle or Waiting one is not running, so the limit changes nothing.
+    static func isHeldByLimit(_ session: ActiveSessions.Session) -> Bool {
+        guard (session.tool ?? "claude_code") == "claude_code", !session.stopped else { return false }
+        let state = effectiveState(session)
+        return state == .active || state == .unknown
+    }
+
+    /// The word shown on the right of a session's status row, and its dot.
+    /// A paused session reads "Paused" whatever its record says; one held by a
+    /// plan limit that is hit (`limit`) reads "Limit hit".
+    static func stateWord(_ session: ActiveSessions.Session,
+                          limit: Limits.Level? = nil) -> (word: String, dot: LabelExtras.Dot) {
+        if session.stopped { return ("Paused", .grey) }
+        if limit != nil, isHeldByLimit(session) { return ("Limit hit", .yellow) }
+        switch effectiveState(session) {
+        case .active: return ("Active", .green)
+        case .waiting: return ("Waiting", .yellow)
+        case .idle: return ("Idle", .grey)
+        case .unknown: return ("Unknown", .hollow)
+        }
+    }
+
+    /// "2 active · 1 waiting · 1 paused": how many sessions are in each state
+    /// (only the states that have any). Paused counts apart, since it is a flag.
+    static func stateSummary(_ sessions: [ActiveSessions.Session], limit: Limits.Level? = nil) -> String {
+        var counts = [SessionRules.State: Int]()
+        var held = 0
+        for session in sessions {
+            if limit != nil, isHeldByLimit(session) {
+                held += 1
+            } else {
+                counts[effectiveState(session), default: 0] += 1
+            }
+        }
+        let words: [(SessionRules.State, String)] = [(.active, "active"), (.waiting, "waiting"), (.idle, "idle"),
+                                                    (.unknown, "unknown")]
+        var parts = words.compactMap { state, word in counts[state].map { "\($0) \(word)" } }
+        if held > 0 { parts.append("\(held) limit hit") }
+        let paused = sessions.filter(\.stopped).count
+        if paused > 0 { parts.append("\(paused) paused") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// How many subagent lines one session shows before "…and N more".
+    static let maxSubagentLines = 5
+
+    /// One line per running subagent, indented one step per level of depth.
+    static func subagentItems(_ subagents: [Subagent]) -> [Item] {
+        var items = [Item]()
+        for subagent in subagents.prefix(maxSubagentLines) {
+            let indent = String(repeating: "  ", count: Swift.max(subagent.depth - 1, 0))
+            let text = subagent.description.map { "\(subagent.type): \($0)" } ?? subagent.type
+            items += noteLines("\(indent)↳ \(text)")
+        }
+        if subagents.count > maxSubagentLines {
+            items.append(.note("↳ …and \(subagents.count - maxSubagentLines) more"))
+        }
+        return items
+    }
+
+    /// "N process(es) not counted": what the scan saw and left out, wrapped
+    /// to the card's width.
+    static func notCountedItems(_ count: Int) -> [Item] {
+        noteLines(count == 1 ? "1 process not counted (a server, a helper or one with no terminal)"
+                  : "\(count) processes not counted (servers, helpers or ones with no terminal)")
+    }
+
+    /// Open sessions as a status list: a summary card (the count, how many are
+    /// in each state, Stop all and Quit all, a row with a dot, a name and a
+    /// state for each session that can't be controlled, and a note of what
+    /// was left out), a card of its own for each Claude Code session (its
+    /// first row is the same dot, name and state; below it the tokens,
+    /// process, subagents, plugins and Stop and Quit), a "Background" card
+    /// for background agents (listed, not counted), and, when `plugins` is
+    /// given (Claude Code's view or All AIs), what each plugin did. Before
+    /// the first scan (`scanned` false) it says it is looking, not that
+    /// there are 0 sessions.
     static func sessionsTab(_ view: Tools.View, _ sessions: [ActiveSessions.Session],
-                            plugins: [Plugins.Row]? = nil, now: Double? = nil) -> Tab {
+                            plugins: [Plugins.Row]? = nil, now: Double? = nil,
+                            background: [ActiveSessions.Session] = [], scanned: Bool = true,
+                            notCounted: Int = 0, error: String? = nil, limit: Limits.Level? = nil) -> Tab {
+        let now = now ?? Date().timeIntervalSince1970
+        func finish(_ cards: [Card]) -> Tab {
+            Tab(key: "sessions", title: "Active Sessions", short: "Live", icon: "terminal", cards: cards)
+        }
+        if !scanned {
+            return finish([Card(title: "Sessions", items: [.note(error ?? "Looking for sessions…")])])
+        }
         // Just the folder's name, as in Projects; two folders with one name
         // also show their parent ("app · b").
-        func key(_ session: ActiveSessions.Session) -> String { session.cwd ?? session.label }
         var foldersByName = [String: Set<String>]()
-        for session in sessions {
+        for session in sessions + background {
             foldersByName[folderParts(session.label).name, default: []].insert(session.label)
         }
         func name(_ session: ActiveSessions.Session) -> String {
@@ -534,8 +654,15 @@ extension PanelModel {
             return tagLines(tags).map { .tags($0) }
         }
 
-        let processes = sessions.filter { $0.pid != nil }
+        let processes = sessions.filter(\.isControllable)
         var items = [Item]()
+        if let error = error { items += noteLines(error) }
+        if sessions.isEmpty {
+            let who = view.key == "all" ? "" : "\(view.name) "
+            items.append(.note("No \(who)sessions running"))
+        } else {
+            items.append(.note(stateSummary(sessions, limit: limit)))
+        }
         if !processes.isEmpty {
             items.append(.buttons([Item.Button("Stop all", "pause.circle", "sessions_stop_all"),
                                    Item.Button("Quit all", "xmark.circle", "sessions_quit_all")]))
@@ -543,30 +670,15 @@ extension PanelModel {
                 items.append(.buttons([Item.Button("Resume all", "play.circle", "sessions_resume_all")]))
             }
         }
-
-        // The rest: one row per folder, since several can run in one. The
-        // first seen keeps its place (the list is most tokens first), the
-        // tokens add up, and the plugin tags show once each.
-        var order = [String]()
-        var groups = [String: [ActiveSessions.Session]]()
-        for session in sessions where session.pid == nil {
-            if groups[key(session)] == nil {
-                order.append(key(session))
-            }
-            groups[key(session), default: []].append(session)
+        // Sessions that can't be controlled (the other tools'): one row each,
+        // never grouped by folder, with the tool's name where several tools show.
+        for session in sessions where !session.isControllable {
+            let (word, dot) = stateWord(session, limit: limit)
+            let tool = view.key == "all" ? Tools.toolNames[session.tool ?? ""] : nil
+            items.append(.row(label: tool.map { "\($0) · \(name(session))" } ?? name(session), value: word,
+                              extras: LabelExtras(dot: dot)))
         }
-        for folder in order {
-            let group = groups[folder] ?? []
-            let counted = group.compactMap(\.tokens)
-            let label = group.count > 1 ? "\(name(group[0])) · \(group.count) sessions" : name(group[0])
-            items.append(.row(label: label,
-                              value: counted.isEmpty ? "running" : TokenMath.formatCount(counted.reduce(0, +))))
-            items += tagItems(group)
-        }
-        if sessions.isEmpty {
-            let who = view.key == "all" ? "" : "\(view.name) "
-            items = [.note("No \(who)sessions running")]
-        }
+        if notCounted > 0 { items += notCountedItems(notCounted) }
 
         var cards = [Card(title: "Sessions (\(sessions.count))", items: items)]
         for session in processes {
@@ -575,25 +687,36 @@ extension PanelModel {
                 : Item.Button("Stop", "pause.circle", "session_stop:\(pid)")
             // The chat's title (as the editor shows it) tells the cards apart;
             // without one, the folder's name does.
+            let (word, dot) = stateWord(session, limit: limit)
             var items: [Item] = [
-                .row(label: session.title ?? name(session), value: TokenMath.formatCount(session.tokens ?? 0)),
+                .row(label: session.title ?? name(session), value: word, extras: LabelExtras(dot: dot)),
             ]
             if session.stopped {
                 items.append(.alert(text: "Paused · click Resume to continue", showIcon: true))
             } else {
-                let state = processState(session, now: now ?? Date().timeIntervalSince1970)
+                let state = processState(session, now: now, limit: limit)
                 items.append(.note([session.kind, state].compactMap { $0 }.joined(separator: " · ")))
             }
-            items.append(.note([session.title != nil ? name(session) : nil, "process \(pid)"]
-                .compactMap { $0 }.joined(separator: " · ")))
+            items += noteLines([session.title != nil ? name(session) : nil, "process \(pid)",
+                                session.tokens.map { "\(TokenMath.formatCount($0)) tokens" }]
+                .compactMap { $0 }.joined(separator: " · "))
+            items += subagentItems(session.subagents)
             items += tagItems([session])
             items.append(.buttons([pause, Item.Button("Quit", "xmark.circle", "session_quit:\(pid)")]))
             cards.append(Card(title: nil, items: items))
         }
-        if let plugins = plugins {
-            cards.append(pluginsCard(plugins, now: now ?? Date().timeIntervalSince1970))
+        if !background.isEmpty {
+            var items: [Item] = [.note("Not counted in Sessions")]
+            for agent in background {
+                let (word, dot) = stateWord(agent)
+                items.append(.row(label: agent.title ?? name(agent), value: word, extras: LabelExtras(dot: dot)))
+            }
+            cards.append(Card(title: "Background (\(background.count))", items: items))
         }
-        return Tab(key: "sessions", title: "Active Sessions", short: "Live", icon: "terminal", cards: cards)
+        if let plugins = plugins {
+            cards.append(pluginsCard(plugins, now: now))
+        }
+        return finish(cards)
     }
 
     // MARK: - Leaderboard
@@ -634,8 +757,8 @@ extension PanelModel {
                 Item.Button("Pull Now", "arrow.down.circle", "leaderboard_pull"),
             ]),
             .note("Scores are self-reported and can be faked. Just for fun."),
-        ]
-        return Tab(key: "leaderboard", title: "Leaderboard (Beta)", short: "Friends", icon: "trophy",
+        ] + noteLines("The numbers are Claude Code totals, whichever AI you are viewing. Work in progress.")
+        return Tab(key: "leaderboard", title: "Leaderboard (Beta · WIP)", short: "Board", icon: "trophy",
                    cards: [Card(title: "Ranking", items: ranking), Card(title: nil, items: actions)])
     }
 }

@@ -262,11 +262,12 @@ func viewOf(_ daily: JSONObject, name: String = "Codex", key: String = "codex", 
     #expect(itemsOf(tabs["sessions"]!).contains(.note("No Codex sessions running")))
 }
 
-@Test func sessionsWithoutTokenCountsShowRunning() {
+@Test func sessionsWithoutAKnownStateShowUnknownWithAHollowDot() {
     let tabs = tabsByKey(buildTestPanel([:], [ActiveSessions.Session(label: "~/p", tokens: nil)], [],
                                         today: Day(2026, 7, 29), view: viewOf([:])))
 
-    #expect(itemsOf(tabs["sessions"]!).contains(.row(label: "p", value: "running")))
+    #expect(itemsOf(tabs["sessions"]!).contains(
+        .row(label: "p", value: "Unknown", extras: LabelExtras(dot: .hollow))))
 }
 
 @Test func leaderboardOnlyWhenRequested() {
@@ -924,4 +925,28 @@ private let july29 = Day(2026, 7, 29)
 
     guard case let .chart(values, caption, _) = card.items[2] else { Issue.record("no chart"); return }
     #expect(values == [0, 0, 0, 0, 0, 0] && caption == "No usage in this range")
+}
+
+@Test func theLeaderboardTabIsCalledBoardAndSaysItIsWorkInProgressAndClaudeCodeNumbers() {
+    let tabs = tabsByKey(buildTestPanel(["grand_total": 0, "leaderboard_enabled": true], [], [],
+                                        today: Day(2026, 7, 29), view: viewOf([:]), showLeaderboard: true))
+    let board = tabs["leaderboard"]!
+    #expect(board.short == "Board")
+    #expect(board.title == "Leaderboard (Beta · WIP)")
+    let notes = board.cards.flatMap(\.items).compactMap { item -> String? in
+        if case .note(let text) = item { return text }
+        return nil
+    }.joined(separator: " ")
+    #expect(notes.contains("Claude Code totals"))
+    #expect(notes.contains("Work in progress"))
+}
+
+@Test func theLeaderboardTabIsPresentInAToolViewAllAIsAndACompanyView() {
+    let state: JSONObject = ["grand_total": 0, "leaderboard_enabled": true]
+    for key in ["claude_code", "codex", "all", Providers.providerNames.keys.sorted()[0]] {
+        let panel = PanelModel.buildPanel(Tools.toolView(state, key), state: state, sessions: [], friends: [],
+                                          showLeaderboard: AppState.showsLeaderboard(key, state: state))
+        let keys = panel.map { $0.key }
+        #expect(keys.contains("leaderboard"), "\(key)")
+    }
 }

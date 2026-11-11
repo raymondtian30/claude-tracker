@@ -368,3 +368,14 @@ private struct Offline: Error {}
     AppState.applyChart(.quit, to: &state, today: Day(2026, 7, 29))
     #expect(state.count == 1)
 }
+
+@Test func theLeaderboardTabShowsInEveryViewWhenTurnedOn() {
+    let on: JSONObject = ["leaderboard_enabled": true]
+    let off: JSONObject = ["leaderboard_enabled": false]
+    let views = ["claude_code", "codex", "opencode", "gemini_cli", "all"] + Providers.providerNames.keys.sorted()
+    #expect(views.count > 5)  // includes the company views
+    for view in views {
+        #expect(AppState.showsLeaderboard(view, state: on), "\(view) should show it")
+        #expect(!AppState.showsLeaderboard(view, state: off), "\(view) should not show it")
+    }
+}

@@ -225,9 +225,14 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
     #expect(selectedOf(appearance(["appearance": "bogus"])) == 0)
 }
 
+private func dotRow(_ label: String, _ value: String, _ dot: LabelExtras.Dot) -> Item {
+    .row(label: label, value: value, extras: LabelExtras(dot: dot))
+}
+
 @Test func liveTabShowsPluginTagsAndPluginActivity() {
     let sessions = [ActiveSessions.Session(label: "~/proj", tokens: 1500,
-                                           plugins: [Plugins.Tag("superpowers", true), Plugins.Tag("caveman", false)])]
+                                           plugins: [Plugins.Tag("superpowers", true), Plugins.Tag("caveman", false)],
+                                           pid: 1, status: "busy")]
     let pluginRows = [
         Plugins.Row(label: "superpowers", sessions: 1, latest: Plugins.Activity(text: "Ran tdd skill", at: 1000.0),
                     today: ["skill": 2, "hook": 1]),
@@ -238,12 +243,16 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
                                      now: 1000.0 + 125)
 
     expectWellFormed(tab)
-    #expect(tab.cards.count == 2)
-    let (sessionsCard, pluginsCard) = (tab.cards[0], tab.cards[1])
+    #expect(tab.cards.count == 3)
+    let (sessionsCard, processCard, pluginsCard) = (tab.cards[0], tab.cards[1], tab.cards[2])
     #expect(sessionsCard.title == "Sessions (1)")
-    #expect(sessionsCard.items == [
-        .row(label: "proj", value: "1.5K"),
+    #expect(processCard.items == [
+        dotRow("proj", "Active", .green),
+        .note("busy now"),
+        .note("process 1 · 1.5K tokens"),
         .tags([Item.Tag("superpowers", true), Item.Tag("caveman", false)]),
+        .buttons([Item.Button("Stop", "pause.circle", "session_stop:1"),
+                  Item.Button("Quit", "xmark.circle", "session_quit:1")]),
     ])
     #expect(pluginsCard.title == "Plugins (2 enabled)")
     #expect(pluginsCard.items == [
@@ -260,7 +269,7 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
                                      plugins: nil, now: 0)
 
     #expect(tab.cards.map(\.title) == ["Sessions (1)"])
-    #expect(tab.cards[0].items == [.row(label: "g", value: "running")])
+    #expect(tab.cards[0].items == [.note("1 unknown"), dotRow("g", "Unknown", .hollow)])
 }
 
 @Test func liveTabWithNoPluginsSaysSo() {
@@ -337,78 +346,174 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
     #expect(planItems(tab)[0] == .bar(label: "Claude Code (Daily · Fable)", value: "50%", fraction: 0.5))
 }
 
-// One row per folder: several Claude Code processes can run in the same one
-// (each chat in VS Code, and the helpers it starts).
+// One row per session: never grouped by folder, since several can run in one
+// (each chat in VS Code, two terminals), and never merged across tools.
 
-private func sessionRows(_ sessions: [ActiveSessions.Session]) -> [Item] {
-    let tab = PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), sessions, plugins: nil, now: 0)
+private func sessionRows(_ sessions: [ActiveSessions.Session], view: String = "claude_code") -> [Item] {
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], view), sessions, plugins: nil, now: 0)
     return tab.cards[0].items
 }
 
-@Test func sessionsInOneFolderShareOneRow() {
+private func statusRows(_ items: [Item]) -> [Item] {
+    items.filter { if case .row = $0 { return true } else { return false } }
+}
+
+@Test func sessionsInOneFolderAreOneRowEachNeverGrouped() {
     let sessions = [
-        ActiveSessions.Session(label: "~/proj", tokens: 1500, cwd: "/Users/me/proj", log: "a",
-                               plugins: [Plugins.Tag("superpowers", true), Plugins.Tag("caveman", false)]),
-        ActiveSessions.Session(label: "~/proj", tokens: 500, cwd: "/Users/me/proj", log: "b",
-                               plugins: [Plugins.Tag("caveman", true), Plugins.Tag("egm", false)]),
-        ActiveSessions.Session(label: "~/proj", tokens: nil, cwd: "/Users/me/proj"),
-        ActiveSessions.Session(label: "~/other", tokens: 100, cwd: "/Users/me/other"),
+        ActiveSessions.Session(label: "~/proj", tokens: nil, cwd: "/Users/me/proj", tool: "codex"),
+        ActiveSessions.Session(label: "~/proj", tokens: nil, cwd: "/Users/me/proj", tool: "codex"),
+        ActiveSessions.Session(label: "~/proj", tokens: nil, cwd: "/Users/me/proj", tool: "codex"),
+        ActiveSessions.Session(label: "~/other", tokens: nil, cwd: "/Users/me/other", tool: "codex"),
     ]
 
-    let items = sessionRows(sessions)
+    let rows = statusRows(sessionRows(sessions, view: "codex"))
 
-    #expect(items.filter { if case .row = $0 { return true } else { return false } }
-            == [.row(label: "proj · 3 sessions", value: "2.0K"), .row(label: "other", value: "100")])
-    // The tags of the folder's sessions, once each; one that runs anywhere runs.
-    var tags = [Item.Tag]()
-    for item in items {
-        if case let .tags(line) = item { tags += line }
-    }
-    #expect(tags.map { $0.text } == ["superpowers", "caveman", "egm"])
-    #expect(tags.first { $0.text == "caveman" }?.isOn == true)
+    #expect(rows == [dotRow("proj", "Unknown", .hollow), dotRow("proj", "Unknown", .hollow),
+                     dotRow("proj", "Unknown", .hollow), dotRow("other", "Unknown", .hollow)])
+}
+
+@Test func sessionsOfDifferentToolsInOneFolderStayApartAndNameTheirTool() {
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "all"), [
+        ActiveSessions.Session(label: "~/app", tokens: nil, tool: "codex"),
+        ActiveSessions.Session(label: "~/app", tokens: nil, tool: "opencode"),
+    ], plugins: nil, now: 0)
+
+    #expect(tab.cards[0].title == "Sessions (2)")
+    #expect(statusRows(tab.cards[0].items) == [dotRow("Codex · app", "Unknown", .hollow),
+                                               dotRow("opencode · app", "Unknown", .hollow)])
 }
 
 @Test func sessionRowsShowOnlyTheFolderName() {
-    let rows = sessionRows([
-        ActiveSessions.Session(label: "~/Desktop/claude-token-counter", tokens: 10, cwd: "/Users/me/Desktop/claude-token-counter"),
-        ActiveSessions.Session(label: "~", tokens: nil),
-        ActiveSessions.Session(label: "/opt/tool/", tokens: nil),
-    ])
+    let rows = statusRows(sessionRows([
+        ActiveSessions.Session(label: "~/Desktop/claude-token-counter", tokens: nil, tool: "codex"),
+        ActiveSessions.Session(label: "~", tokens: nil, tool: "codex"),
+        ActiveSessions.Session(label: "/opt/tool/", tokens: nil, tool: "codex"),
+    ], view: "codex"))
 
-    #expect(rows == [.row(label: "claude-token-counter", value: "10"), .row(label: "~", value: "running"),
-                     .row(label: "tool", value: "running")])
+    #expect(rows == [dotRow("claude-token-counter", "Unknown", .hollow), dotRow("~", "Unknown", .hollow),
+                     dotRow("tool", "Unknown", .hollow)])
 }
 
 @Test func sessionFoldersWithOneNameShowTheirParent() {
-    let rows = sessionRows([
-        ActiveSessions.Session(label: "~/a/app", tokens: 2, cwd: "/Users/me/a/app"),
-        ActiveSessions.Session(label: "~/b/app", tokens: 1, cwd: "/Users/me/b/app"),
-    ])
+    let rows = statusRows(sessionRows([
+        ActiveSessions.Session(label: "~/a/app", tokens: nil, tool: "codex"),
+        ActiveSessions.Session(label: "~/b/app", tokens: nil, tool: "codex"),
+    ], view: "codex"))
 
-    #expect(rows == [.row(label: "app · a", value: "2"), .row(label: "app · b", value: "1")])
+    #expect(rows == [dotRow("app · a", "Unknown", .hollow), dotRow("app · b", "Unknown", .hollow)])
 }
 
-@Test func theSessionCountStillCountsEveryProcess() {
-    let sessions = (0..<5).map { _ in ActiveSessions.Session(label: "~/p", tokens: nil, cwd: "/p") }
-    let tab = PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), sessions, plugins: nil, now: 0)
+@Test func theSessionCountIsOneRowPerSession() {
+    let sessions = (0..<5).map { _ in ActiveSessions.Session(label: "~/p", tokens: nil, tool: "codex") }
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "codex"), sessions, plugins: nil, now: 0)
 
     #expect(tab.cards[0].title == "Sessions (5)")
-    #expect(tab.cards[0].items == [.row(label: "p · 5 sessions", value: "running")])
+    #expect(statusRows(tab.cards[0].items).count == 5)
 }
 
-@Test func aLoneSessionIsUnchanged() {
-    let items = sessionRows([ActiveSessions.Session(label: "~/p", tokens: nil, cwd: "/p")])
+@Test func nothingScannedYetSaysLookingNotZero() {
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), [], plugins: nil, now: 0, scanned: false)
 
-    #expect(items == [.row(label: "p", value: "running")])
+    #expect(tab.cards == [Card(title: "Sessions", items: [.note("Looking for sessions…")])])
 }
 
-@Test func sessionsWithoutAFolderAreGroupedByLabel() {
-    // Codex and opencode rows have a label only.
-    let items = sessionRows([ActiveSessions.Session(label: "~/g", tokens: nil),
-                             ActiveSessions.Session(label: "~/g", tokens: nil),
-                             ActiveSessions.Session(label: "~/h", tokens: nil)])
+@Test func afterAScanWithNothingRunningItIsAConfidentZero() {
+    let all = PanelModel.sessionsTab(Tools.toolView([:], "all"), [], plugins: nil, now: 0)
+    let codex = PanelModel.sessionsTab(Tools.toolView([:], "codex"), [], plugins: nil, now: 0)
 
-    #expect(items == [.row(label: "g · 2 sessions", value: "running"), .row(label: "h", value: "running")])
+    #expect(all.cards[0] == Card(title: "Sessions (0)", items: [.note("No sessions running")]))
+    #expect(codex.cards[0] == Card(title: "Sessions (0)", items: [.note("No Codex sessions running")]))
+}
+
+@Test func aFailedScanBeforeAnythingWasKnownShowsTheReason() {
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "all"), [], plugins: nil, now: 0, scanned: false,
+                                     error: "Couldn't list sessions: ps exited with 1")
+
+    #expect(tab.cards[0].items == [.note("Couldn't list sessions: ps exited with 1")])
+}
+
+@Test func theSummaryLineCountsEachStateAndPausedApart() {
+    func session(_ state: SessionRules.State, stopped: Bool = false) -> ActiveSessions.Session {
+        ActiveSessions.Session(label: "~/p", tokens: nil, stopped: stopped, tool: "codex", state: state)
+    }
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "codex"), [
+        session(.active), session(.active), session(.waiting), session(.idle), session(.unknown),
+        session(.active, stopped: true),
+    ], plugins: nil, now: 0)
+
+    #expect(tab.cards[0].items.first == .note("3 active · 1 waiting · 1 idle · 1 unknown · 1 paused"))
+}
+
+@Test func eachStateHasItsWordAndDot() {
+    func word(_ state: SessionRules.State?, stopped: Bool = false) -> Item {
+        let tab = PanelModel.sessionsTab(Tools.toolView([:], "codex"), [
+            ActiveSessions.Session(label: "~/p", tokens: nil, stopped: stopped, tool: "codex", state: state),
+        ], plugins: nil, now: 0)
+        return statusRows(tab.cards[0].items)[0]
+    }
+    #expect(word(.active) == dotRow("p", "Active", .green))
+    #expect(word(.waiting) == dotRow("p", "Waiting", .yellow))
+    #expect(word(.idle) == dotRow("p", "Idle", .grey))
+    #expect(word(.unknown) == dotRow("p", "Unknown", .hollow))
+    #expect(word(nil) == dotRow("p", "Unknown", .hollow))
+    #expect(word(.active, stopped: true) == dotRow("p", "Paused", .grey))
+}
+
+@Test func theFootnoteSaysHowManyProcessesWereLeftOut() {
+    func notes(_ count: Int) -> String {
+        let tab = PanelModel.sessionsTab(Tools.toolView([:], "codex"), [], plugins: nil, now: 0, notCounted: count)
+        return tab.cards[0].items.compactMap { item -> String? in
+            if case .note(let text) = item { return text }
+            return nil
+        }.joined(separator: " ")
+    }
+
+    #expect(!notes(0).contains("not counted"))
+    #expect(notes(1).hasSuffix("1 process not counted (a server, a helper or one with no terminal)"))
+    #expect(notes(3).hasSuffix("3 processes not counted (servers, helpers or ones with no terminal)"))
+    // Wrapped to the card: no single line is wider than a note may be.
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "codex"), [], plugins: nil, now: 0, notCounted: 3)
+    for case .note(let line) in tab.cards[0].items { #expect(line.count <= PanelModel.noteWidth) }
+}
+
+@Test func backgroundAgentsAreListedInTheirOwnCardAndNotCounted() {
+    let agent = ActiveSessions.Session(label: "~/a/app", tokens: nil, pid: 9, tool: "claude_code", state: .idle)
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), [], plugins: nil, now: 0, background: [agent])
+
+    #expect(tab.cards[0].title == "Sessions (0)")
+    #expect(tab.cards[1] == Card(title: "Background (1)", items: [.note("Not counted in Sessions"),
+                                                                  dotRow("app", "Idle", .grey)]))
+}
+
+@Test func runningSubagentsAreListedUnderTheirSessionAndCapped() {
+    let subagents = (1...7).map { Subagent(id: "agent-\($0)", type: "Explore", description: "job \($0)", depth: $0 == 2 ? 2 : 1) }
+    let tab = claudeTab([ActiveSessions.Session(label: "~/p", tokens: nil, pid: 4, status: "busy", subagents: subagents)])
+
+    let notes = tab.cards[1].items.compactMap { item -> String? in
+        if case .note(let text) = item, text.contains("↳") { return text }
+        return nil
+    }
+    #expect(notes == ["↳ Explore: job 1", "  ↳ Explore: job 2", "↳ Explore: job 3", "↳ Explore: job 4",
+                      "↳ Explore: job 5", "↳ …and 2 more"])
+}
+
+@Test func theTitleCountEqualsTheStatusRowsAndBulkTargetsAreAmongThem() {
+    // Two Claude processes (cards), one Codex row; one background agent that is not counted.
+    let sessions = [
+        ActiveSessions.Session(label: "~/a", tokens: 1, cwd: "/a", pid: 2, status: "busy", tool: "claude_code"),
+        ActiveSessions.Session(label: "~/b", tokens: 1, cwd: "/b", pid: 3, status: "idle", tool: "claude_code"),
+        ActiveSessions.Session(label: "~/c", tokens: nil, pid: 4, tool: "codex"),
+    ]
+    let agent = ActiveSessions.Session(label: "~/d", tokens: nil, pid: 5, tool: "claude_code", state: .idle)
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "all"), sessions, plugins: nil, now: 0, background: [agent])
+
+    let counted = tab.cards.dropFirst().prefix(2).count + statusRows(tab.cards[0].items).count
+    #expect(tab.cards[0].title == "Sessions (\(counted))")
+    let actions = tab.cards.flatMap(\.items).flatMap { item -> [String] in
+        if case .buttons(let buttons) = item { return buttons.map(\.action) } else { return [] }
+    }
+    #expect(actions.contains("session_stop:2") && actions.contains("session_stop:3"))
+    #expect(!actions.contains { $0.hasSuffix(":4") || $0.hasSuffix(":5") })  // Codex and the agent have no buttons
 }
 
 // MARK: - Stop and Quit for each Claude process
@@ -434,21 +539,31 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
     expectWellFormed(tab)
     #expect(tab.cards.count == 3)
     #expect(tab.cards[0].title == "Sessions (2)")
-    // The chat's title tells the cards apart; the folder, kind, state and process number are under it.
+    // The first row is the status row: the chat's title (or the folder) with its dot and state. Under it:
+    // kind and state, the folder (when a title is shown), process number and tokens, plugins, buttons.
     #expect(tab.cards[1].title == nil)
     #expect(tab.cards[1].items == [
-        .row(label: "Active plugins", value: "1.5K"),
+        dotRow("Active plugins", "Active", .green),
         .note("VS Code · busy now"),
-        .note("app · process 42"),
+        .note("app · process 42 · 1.5K tokens"),
         .tags([Item.Tag("caveman", true)]),
         .buttons([button("Stop", "pause.circle", "session_stop:42"), button("Quit", "xmark.circle", "session_quit:42")]),
     ])
     #expect(tab.cards[2].items == [
-        .row(label: "app", value: "500"),
+        dotRow("app", "Idle", .grey),
         .note("Terminal · idle for 2 hr"),
-        .note("process 43"),
+        .note("process 43 · 500 tokens"),
         .buttons([button("Stop", "pause.circle", "session_stop:43"), button("Quit", "xmark.circle", "session_quit:43")]),
     ])
+}
+
+@Test func aWaitingSessionSaysWhatItWaitsFor() {
+    let tab = claudeTab([
+        ActiveSessions.Session(label: "~/a", tokens: nil, cwd: "/a", log: "x", pid: 6, status: "waiting",
+                               tool: "claude_code", state: .waiting, waitingFor: "input needed"),
+    ])
+
+    #expect(tab.cards[1].items.prefix(2) == [dotRow("a", "Waiting", .yellow), .note("waiting: input needed")])
 }
 
 @Test func aPausedProcessSaysSoLoudlyAndOffersResume() {
@@ -458,9 +573,9 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
     ])
 
     #expect(tab.cards[1].items == [
-        .row(label: "Chart fix", value: "7"),
+        dotRow("Chart fix", "Paused", .grey),
         .alert(text: "Paused · click Resume to continue", showIcon: true),
-        .note("a · process 5"),
+        .note("a · process 5 · 7 tokens"),
         .buttons([button("Resume", "play.circle", "session_resume:5"), button("Quit", "xmark.circle", "session_quit:5")]),
     ])
 }
@@ -470,10 +585,12 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
     let paused = ActiveSessions.Session(label: "~/q", tokens: nil, cwd: "/q", log: "y", pid: 8, stopped: true)
 
     #expect(claudeTab([running]).cards[0].items == [
+        .note("1 unknown"),
         .buttons([button("Stop all", "pause.circle", "sessions_stop_all"),
                   button("Quit all", "xmark.circle", "sessions_quit_all")]),
     ])
     #expect(claudeTab([running, paused]).cards[0].items == [
+        .note("2 unknown · 1 paused"),
         .buttons([button("Stop all", "pause.circle", "sessions_stop_all"),
                   button("Quit all", "xmark.circle", "sessions_quit_all")]),
         .buttons([button("Resume all", "play.circle", "sessions_resume_all")]),
@@ -486,42 +603,34 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
         ActiveSessions.Session(label: "~/b/app", tokens: 1, cwd: "/Users/me/b/app", log: "y", pid: 3),
     ])
 
-    #expect(tab.cards[1].items.first == .row(label: "app · a", value: "2"))
-    #expect(tab.cards[2].items.first == .row(label: "app · b", value: "1"))
+    #expect(tab.cards[1].items.first == dotRow("app · a", "Unknown", .hollow))
+    #expect(tab.cards[2].items.first == dotRow("app · b", "Unknown", .hollow))
 }
 
-@Test func sessionsWithNoProcessKeepTheirGroupedRowsInTheSummary() {
+@Test func otherToolsSessionsAreRowsInTheSummaryCardWithNoButtons() {
     let tab = claudeTab([
         ActiveSessions.Session(label: "~/a", tokens: 5, cwd: "/Users/me/a", log: "x", pid: 9),
-        ActiveSessions.Session(label: "~/g", tokens: nil),
-        ActiveSessions.Session(label: "~/g", tokens: nil),
+        ActiveSessions.Session(label: "~/g", tokens: nil, pid: 90, tool: "codex"),
+        ActiveSessions.Session(label: "~/g", tokens: nil, tool: "opencode"),
     ])
 
     #expect(tab.cards[0].title == "Sessions (3)")
     #expect(tab.cards[0].items == [
+        .note("3 unknown"),
         .buttons([button("Stop all", "pause.circle", "sessions_stop_all"), button("Quit all", "xmark.circle", "sessions_quit_all")]),
-        .row(label: "g · 2 sessions", value: "running"),
+        dotRow("g", "Unknown", .hollow),
+        dotRow("g", "Unknown", .hollow),
     ])
-    #expect(tab.cards.count == 2)  // and one card for the process
+    #expect(tab.cards.count == 2)  // and one card for the one controllable process
 }
 
-@Test func theSameFolderSeenTwoWaysIsNotTwoFolders() {
-    // A Claude process knows its folder's path; another tool's row only its label.
-    let tab = claudeTab([
-        ActiveSessions.Session(label: "~/Desktop/app", tokens: 5, cwd: "/Users/me/Desktop/app", log: "x", pid: 9),
-        ActiveSessions.Session(label: "~/Desktop/app", tokens: nil),
-    ])
-
-    #expect(tab.cards[0].items.contains(.row(label: "app", value: "running")))
-    #expect(tab.cards[1].items.first == .row(label: "app", value: "5"))
-}
-
-@Test func aProcessWithNoLogShowsZeroTokensAndSaysItHasNoMessages() {
+@Test func aProcessWithNoLogSaysItHasNoMessages() {
     let tab = claudeTab([
         ActiveSessions.Session(label: "~/c", tokens: nil, cwd: "/c", pid: 4, status: "idle", since: 999_970),
     ])
 
-    #expect(tab.cards[1].items.prefix(2) == [.row(label: "c", value: "0"), .note("idle, no messages yet")])
+    #expect(tab.cards[1].items.prefix(3) == [dotRow("c", "Idle", .grey), .note("idle, no messages yet"),
+                                             .note("process 4")])
 }
 
 @Test func eachProcessSaysWhetherItIsBusyOrIdle() {
@@ -537,4 +646,79 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
     let states = (1...5).map { tab.cards[$0].items[1] }
     #expect(states == [.note("busy now"), .note("idle for 2 hr"), .note("idle for under a minute"),
                        .note("running"), .note("idle for 2 days")])
+}
+
+// MARK: - A hit plan limit pauses what would read as running
+
+private let fiveHourHit: JSONObject = ["claude_usage_enabled": false,
+                                       "claude_limit_hits": ["five_hour": LocalTime.timestamp(2026, 11, 8, 15, 30)]]
+
+@Test func aHitFiveHourLimitIsFoundUntilItResets() {
+    let level = Limits.hitClaudeLimit(fiveHourHit, now: limitsNow)
+    #expect(level?.label == "5-hour")
+    #expect(level?.resetsAt == LocalTime.timestamp(2026, 11, 8, 15, 30))
+    #expect(Limits.hitClaudeLimit(fiveHourHit, now: LocalTime.timestamp(2026, 11, 8, 15, 31)) == nil)
+    #expect(Limits.hitClaudeLimit(["claude_usage_enabled": false], now: limitsNow) == nil)
+}
+
+@Test func aFullPercentageFromAnthropicCountsAsHitAndAnythingLessDoesNot() {
+    let full = claudeUsageState(limits: [
+        ["kind": "five_hour", "window": "five_hour", "label": "5-hour", "percent": 100.0,
+         "resets_at": LocalTime.timestamp(2026, 11, 8, 15, 30)],
+    ])
+    #expect(Limits.hitClaudeLimit(full, now: limitsNow)?.window == "five_hour")
+    #expect(Limits.hitClaudeLimit(claudeUsageState(), now: limitsNow) == nil)  // 23%
+}
+
+@Test func runningClaudeSessionsReadPausedLimitHitInsteadOfRunning() {
+    let level = Limits.hitClaudeLimit(fiveHourHit, now: limitsNow)
+    let sessions = [
+        ActiveSessions.Session(label: "~/a", tokens: nil, cwd: "/a", log: "x", pid: 2, status: "busy", kind: "VS Code",
+                               tool: "claude_code", state: .active),
+        ActiveSessions.Session(label: "~/b", tokens: nil, cwd: "/b", log: "y", pid: 3, tool: "claude_code",
+                               state: .unknown),
+        ActiveSessions.Session(label: "~/c", tokens: nil, cwd: "/c", log: "z", pid: 4, status: "idle", tool: "claude_code",
+                               state: .idle),
+    ]
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), sessions, plugins: nil, now: limitsNow,
+                                     limit: level)
+
+    #expect(tab.cards[0].items.first == .note("1 idle · 2 limit hit"))
+    #expect(tab.cards[1].items.prefix(2) == [dotRow("a", "Limit hit", .yellow),
+                                             .note("VS Code · paused: 5-hour limit hit, resets 3:30 PM")])
+    #expect(tab.cards[2].items.first == dotRow("b", "Limit hit", .yellow))
+    #expect(tab.cards[3].items.first == dotRow("c", "Idle", .grey))  // not running: the limit changes nothing
+}
+
+@Test func aLimitDoesNotTouchOtherToolsOrPausedOrWaitingSessions() {
+    let level = Limits.hitClaudeLimit(fiveHourHit, now: limitsNow)
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "all"), [
+        ActiveSessions.Session(label: "~/a", tokens: nil, tool: "codex", state: .unknown),
+        ActiveSessions.Session(label: "~/b", tokens: nil, pid: 5, stopped: true, tool: "claude_code", state: .active),
+        ActiveSessions.Session(label: "~/c", tokens: nil, pid: 6, tool: "claude_code", state: .waiting),
+    ], plugins: nil, now: limitsNow, limit: level)
+
+    let words = tab.cards.flatMap(\.items).compactMap { item -> String? in
+        if case .row(_, let value, _) = item { return value }
+        return nil
+    }
+    #expect(words == ["Unknown", "Paused", "Waiting"])
+}
+
+@Test func withoutALimitNothingChanges() {
+    let session = ActiveSessions.Session(label: "~/a", tokens: nil, pid: 2, status: "busy", tool: "claude_code",
+                                         state: .active)
+    let tab = PanelModel.sessionsTab(Tools.toolView([:], "claude_code"), [session], plugins: nil, now: limitsNow)
+    #expect(tab.cards[1].items.first == dotRow("a", "Active", .green))
+}
+
+@Test func theLiveTabOfAWholePanelShowsTheLimitFromState() {
+    let session = ActiveSessions.Session(label: "~/a", tokens: nil, pid: 2, status: "busy", tool: "claude_code",
+                                         state: .active)
+    let live = LiveSnapshot(scanned: true, sessions: [session])
+    let panel = PanelModel.buildPanel(Tools.toolView(fiveHourHit, "claude_code"), state: fiveHourHit, sessions: [],
+                                      friends: [], showLeaderboard: false, today: Day(2026, 11, 8), now: limitsNow,
+                                      live: live)
+    let tab = panel.first { $0.key == "sessions" }!
+    #expect(tab.cards.flatMap(\.items).contains(dotRow("a", "Limit hit", .yellow)))
 }

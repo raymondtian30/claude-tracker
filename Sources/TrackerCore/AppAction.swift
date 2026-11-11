@@ -49,6 +49,8 @@ public enum AppAction: Equatable {
     case sessionsStopAll
     case sessionsQuitAll
     case sessionsResumeAll
+    /// Opens the session diagnostics window (Settings > Scanning).
+    case sessionDiagnostics
     case showEffort(Bool)
     case chartDays(Int)
     case chartAll
@@ -60,6 +62,8 @@ public enum AppAction: Equatable {
     /// Both Custom dates, once the check mark is clicked.
     case chartRange(Day, Day)
     case currency(String)
+    /// How the models card orders models: a `ModelTiers.Order` raw value.
+    case modelSort(String)
     case aboutView(showCredits: Bool)
     case checkUpdates
     case openRepo
@@ -116,6 +120,7 @@ public enum AppAction: Equatable {
         case "sessions_stop_all": return .sessionsStopAll
         case "sessions_quit_all": return .sessionsQuitAll
         case "sessions_resume_all": return .sessionsResumeAll
+        case "session_diagnostics": return .sessionDiagnostics
         case "show_effort": return .showEffort(isOn)
         case "chart_days":
             // The day counts, then "All", then "Custom".
@@ -131,6 +136,7 @@ public enum AppAction: Equatable {
             guard days.count == 2, let from = days[0], let to = days[1] else { return nil }
             return .chartRange(from, to)
         case "currency": return pick(value, Pricing.currencies.map(\.code)).map(AppAction.currency)
+        case "model_sort": return pick(value, ModelTiers.choices.map(\.order.rawValue)).map(AppAction.modelSort)
         case "about_view":
             return pick(value, [false, true]).map { .aboutView(showCredits: $0) }
         case "check_updates": return .checkUpdates

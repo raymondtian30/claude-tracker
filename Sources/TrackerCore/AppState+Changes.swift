@@ -183,6 +183,13 @@ extension AppState {
         viewKey == "claude_code" || (viewKey == "all" && enabled.contains("claude_code"))
     }
 
+    /// Whether the Leaderboard tab shows for `viewKey`: whenever it is turned on
+    /// in Settings, in every view (a tool's, All AIs, or a company's). Its
+    /// numbers are Claude Code totals whichever view is open; the page says so.
+    public static func showsLeaderboard(_ viewKey: String, state: JSONObject) -> Bool {
+        PanelModel.leaderboardEnabled(state)
+    }
+
     /// The menu bar's count for `view` in `titleMode`, or nil in icon-only mode.
     public static func menuBarCount(_ view: Tools.View, titleMode: String?, today: Day) -> String? {
         switch titleMode {

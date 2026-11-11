@@ -43,18 +43,30 @@ public struct Card: Equatable {
 }
 
 /// What a bar or row label can carry beyond its text: a grey tail, a
-/// chevron that opens a detail (`expandID`), and a tooltip.
+/// chevron that opens a detail (`expandID`), a tooltip, and (rows) a status dot.
 public struct LabelExtras: Equatable {
+    /// A status dot drawn before a row's label (the Live tab's status list).
+    public enum Dot: Equatable {
+        case green
+        case yellow
+        case grey
+        /// An outline only: the state isn't known.
+        case hollow
+    }
+
     public var greyTail: String?
     public var expandID: String?
     public var isOpen: Bool
     public var tip: String?
+    public var dot: Dot?
 
-    public init(greyTail: String? = nil, expandID: String? = nil, isOpen: Bool = false, tip: String? = nil) {
+    public init(greyTail: String? = nil, expandID: String? = nil, isOpen: Bool = false, tip: String? = nil,
+                dot: Dot? = nil) {
         self.greyTail = greyTail
         self.expandID = expandID
         self.isOpen = isOpen
         self.tip = tip
+        self.dot = dot
     }
 
     public static let none = LabelExtras()
@@ -88,6 +100,8 @@ public enum Item: Equatable {
     case tags([Tag])
     /// A label over a row of segments, any number of them on.
     case choices(label: String?, options: [String], selected: [Int], action: String)
+    /// A short semibold line that names what follows (a question in the FAQ).
+    case heading(String)
 
     /// A big number with its label and an optional SF Symbol.
     public struct Tile: Equatable {
@@ -142,6 +156,7 @@ public enum Item: Equatable {
         case .alert: return "alert"
         case .tags: return "tags"
         case .choices: return "choices"
+        case .heading: return "heading"
         }
     }
 }

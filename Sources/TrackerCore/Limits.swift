@@ -297,6 +297,17 @@ public enum Limits {
         return levels
     }
 
+    /// The Claude Code plan limit that is hit right now, if any: one its logs
+    /// say was reached, or Anthropic's percentage at 100, and not yet reset.
+    /// The 5-hour window comes first when several are. While one is hit, the
+    /// Live tab shows running sessions as paused by it.
+    public static func hitClaudeLimit(_ state: JSONObject, now: Double) -> Level? {
+        let hit = planLevels(state, toolKeys: ["claude_code"], now: now).filter { level in
+            (level.reached || level.percent >= 100) && (level.resetsAt ?? 0 == 0 || (level.resetsAt ?? 0) > now)
+        }
+        return hit.first { $0.window == "five_hour" } ?? hit.first
+    }
+
     /// The windows `toolKeys` have limits in, in `windows` order: Claude
     /// Code's two, plus whichever Codex has recorded.
     public static func limitWindows(_ state: JSONObject, toolKeys: [String], now: Double) -> [String] {
@@ -311,5 +322,21 @@ public enum Limits {
     public static func levelsForAlerts(_ state: JSONObject, now: Double) -> [Level] {
         let enabled = (state.array("enabled_tools") ?? []).compactMap(JSON.string)
         return planLevels(state, toolKeys: enabled, now: now)
+    }
+}
+
+/// How many free resets of a usage limit are left. The app only shows a number
+/// a source reports; today none does (not Anthropic's usage answer, not Claude
+/// Code's local files, not Codex's `rate_limits`), so `current` says
+/// unavailable and why. A source that appears later fills in `available`, and
+/// the `switch` in `PanelModel.freeResetsCard` makes the compiler point at
+/// every place that has to show it.
+public enum FreeResets: Equatable {
+    case available(count: Int, renewsAt: Double?)
+    case unavailable(reason: String)
+
+    /// What is known now. Never a guessed number.
+    public static func current(_ state: JSONObject, now: Double) -> FreeResets {
+        .unavailable(reason: "No count is reported anywhere this app reads.")
     }
 }

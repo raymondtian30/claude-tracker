@@ -30,15 +30,17 @@ public enum SessionControl {
 
     /// Sends `action` to `pid`, if `pid` is among `known` (the sessions the
     /// Live tab shows) and still runs `claude`.
-    public static func send(_ action: Action, to pid: Int32, among known: [Int32],
+    public static func send(_ action: Action, to pid: Int32, among known: [Int32], starts: [Int32: String] = [:],
                             run: Subprocess.Runner = Subprocess.run,
                             kill: Kill = { Darwin.kill($0, $1) }) -> Outcome {
         // 0, 1 and negative ids mean "every process", launchd, or a whole group.
         guard pid > 1, known.contains(pid) else {
             return .refused("That isn't one of the sessions listed.")
         }
-        guard isClaude(pid, run: run) else {
-            return .refused("That process is no longer a Claude session.")
+        switch identity(of: pid, start: starts[pid], run: run) {
+        case .matches: break
+        case .notClaude: return .refused("That process is no longer a Claude session.")
+        case .startDiffers: return .refused("That isn't the session that was listed any more.")
         }
         // A paused process only acts on SIGTERM once it is continued.
         let signals: [Int32]
@@ -54,20 +56,42 @@ public enum SessionControl {
         return .done
     }
 
-    /// Whether `pid` is a running `claude` process right now.
-    static func isClaude(_ pid: Int32, run: Subprocess.Runner) -> Bool {
-        let found = run(["ps", "-p", String(pid), "-o", "comm="], nil)
-        return found.status == 0
-            && ActiveSessions.basename(found.stdout.trimmingCharacters(in: .whitespacesAndNewlines)) == program
+    /// Whether `pid` is a running `claude` process right now, and, when its
+    /// start time (`ps` text under `TZ=UTC`) is given, the same one that was
+    /// listed: a process id can be reused by a later `claude`.
+    static func isClaude(_ pid: Int32, start: String? = nil, run: Subprocess.Runner) -> Bool {
+        identity(of: pid, start: start, run: run) == .matches
+    }
+
+    enum Identity: Equatable {
+        case matches
+        case notClaude
+        case startDiffers
+    }
+
+    static func identity(of pid: Int32, start: String?, run: Subprocess.Runner) -> Identity {
+        guard let expected = start else {
+            let found = run(["ps", "-p", String(pid), "-o", "comm="], nil)
+            let named = found.status == 0
+                && ActiveSessions.basename(found.stdout.trimmingCharacters(in: .whitespacesAndNewlines)) == program
+            return named ? .matches : .notClaude
+        }
+        let found = run(["env", "TZ=UTC", "ps", "-p", String(pid), "-o", "lstart=,comm="], nil)
+        // Five words of start time, then the program path.
+        let parts = found.stdout.split(maxSplits: 5, omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
+        guard found.status == 0, parts.count == 6,
+              ActiveSessions.basename(parts[5].trimmingCharacters(in: .whitespacesAndNewlines)) == program
+        else { return .notClaude }
+        return ProcessTable.sameStart(parts[0..<5].joined(separator: " "), expected) ? .matches : .startDiffers
     }
 
     /// Waits until `pid` is no longer a `claude` process (it can take a moment
     /// to shut down after Quit), up to `timeout` seconds. False if it is still there.
-    public static func waitUntilGone(_ pid: Int32, timeout: Double = 3, interval: Double = 0.1,
+    public static func waitUntilGone(_ pid: Int32, start: String? = nil, timeout: Double = 3, interval: Double = 0.1,
                                      run: Subprocess.Runner = Subprocess.run,
                                      sleep: (Double) -> Void = { Thread.sleep(forTimeInterval: $0) }) -> Bool {
         var waited = 0.0
-        while isClaude(pid, run: run) {
+        while isClaude(pid, start: start, run: run) {
             if waited >= timeout - 0.000_001 { return false }
             sleep(interval)
             waited += interval
@@ -91,13 +115,14 @@ public enum SessionControl {
     /// closing it from a terminal); the ones still there after `patience`
     /// seconds, all waited for together, are force-quit, then given two more
     /// seconds. Only a listed, still-running `claude` process is ever signalled.
-    public static func quit(_ pids: [Int32], among known: [Int32], patience: Double = 3, interval: Double = 0.1,
+    public static func quit(_ pids: [Int32], among known: [Int32], starts: [Int32: String] = [:],
+                            patience: Double = 3, interval: Double = 0.1,
                             run: Subprocess.Runner = Subprocess.run, kill: Kill = { Darwin.kill($0, $1) },
                             sleep: (Double) -> Void = { Thread.sleep(forTimeInterval: $0) }) -> [Int32: QuitOutcome] {
         var results = [Int32: QuitOutcome]()
         var asked = [Int32]()
         for pid in pids {
-            switch send(.quit, to: pid, among: known, run: run, kill: kill) {
+            switch send(.quit, to: pid, among: known, starts: starts, run: run, kill: kill) {
             case .done: asked.append(pid)
             case .refused(let reason): results[pid] = .refused(reason)
             }
@@ -107,7 +132,7 @@ public enum SessionControl {
             var remaining = pids
             var waited = 0.0
             while true {
-                remaining = remaining.filter { isClaude($0, run: run) }
+                remaining = remaining.filter { isClaude($0, start: starts[$0], run: run) }
                 if remaining.isEmpty || waited >= timeout - 0.000_001 { return remaining }
                 sleep(interval)
                 waited += interval
@@ -116,7 +141,7 @@ public enum SessionControl {
         let ignored = stillThere(asked, patience)
         for pid in asked where !ignored.contains(pid) { results[pid] = .closed }
         if !ignored.isEmpty {
-            for pid in ignored { _ = send(.forceQuit, to: pid, among: known, run: run, kill: kill) }
+            for pid in ignored { _ = send(.forceQuit, to: pid, among: known, starts: starts, run: run, kill: kill) }
             let survivors = stillThere(ignored, 2)
             for pid in ignored { results[pid] = survivors.contains(pid) ? .stuck : .forced }
         }
@@ -151,12 +176,12 @@ public enum SessionControl {
     }
 
     /// `send` to each of `pids`, all of which must be listed ones.
-    public static func sendAll(_ action: Action, among pids: [Int32],
+    public static func sendAll(_ action: Action, among pids: [Int32], starts: [Int32: String] = [:],
                                run: Subprocess.Runner = Subprocess.run,
                                kill: Kill = { Darwin.kill($0, $1) }) -> Tally {
         var tally = Tally(done: 0, refused: 0)
         for pid in pids {
-            if send(action, to: pid, among: pids, run: run, kill: kill) == .done {
+            if send(action, to: pid, among: pids, starts: starts, run: run, kill: kill) == .done {
                 tally.done += 1
             } else {
                 tally.refused += 1

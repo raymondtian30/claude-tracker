@@ -30,6 +30,7 @@ public enum PanelLayout {
         "alert": 17,
         "tags": 22,
         "choices": 52,
+        "heading": 22,
     ]
     public static let cardTitleHeight: CGFloat = 24
     public static let screenMargin: CGFloat = 40  // keep the panel this far from the bottom of the screen
@@ -136,11 +137,14 @@ public enum PanelLayout {
     }
 
     /// The width a bar's or row's label may take inside a card (312 wide);
-    /// a chevron takes 14 of it. `kind` is "bar" or "row".
-    public static func labelBudget(kind: String, hasChevron: Bool) -> CGFloat {
+    /// a chevron or a status dot takes 14 of it. `kind` is "bar" or "row".
+    public static func labelBudget(kind: String, hasChevron: Bool, hasDot: Bool = false) -> CGFloat {
         let card = inner - 2 * cardPad
-        return card - (kind == "bar" ? 120 : 110) - (hasChevron ? 14 : 0)
+        return card - (kind == "bar" ? 120 : 110) - (hasChevron ? 14 : 0) - (hasDot ? dotWidth : 0)
     }
+
+    /// The room a status dot takes before a row's label.
+    public static let dotWidth: CGFloat = 14
 
     /// Tiles are already boxes, so a card holding only tiles (and no title)
     /// is drawn without the card around them.
