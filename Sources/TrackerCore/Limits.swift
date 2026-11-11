@@ -168,7 +168,9 @@ public enum Limits {
     static let monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-    /// Which alerts to send now. `thresholds` are the percents to alert at;
+    /// Which alerts to send now. A message names the threshold that was crossed
+    /// ("usage reached 50%"), even if the percentage is a little past it by the
+    /// time it is noticed. `thresholds` are the percents to alert at;
     /// `above` lists "id@threshold" keys already alerted and still over that
     /// threshold. Returns (messages, new `above`). A level alerts once when it
     /// reaches each threshold, and again only after it has dropped back below it
@@ -194,7 +196,13 @@ public enum Limits {
             if seeding || keys.allSatisfy({ above.contains($0) }) {
                 continue
             }
-            var message = "\(displayName(level)) usage is at \(String(format: "%.0f", level.percent))%."
+            // The threshold that was crossed, not the percentage at the moment
+            // of looking: Claude's percentages arrive every few minutes, so a
+            // 50% alert that went out at 54% should still say 50%. A limit that
+            // is full says 100%.
+            let crossed = level.percent >= 100 || level.reached
+                ? 100 : thresholds.sorted().last { level.percent >= Double($0) } ?? Int(level.percent)
+            var message = "\(displayName(level)) usage reached \(crossed)%."
             if let resetsAt = level.resetsAt, resetsAt != 0 {
                 let when = formatReset(resetsAt, now: now ?? Date().timeIntervalSince1970)
                 let startsWithDigit = when.first?.isNumber ?? false
