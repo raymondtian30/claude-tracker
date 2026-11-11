@@ -10,14 +10,21 @@ public struct SessionDetails: Equatable {
     public var log: String?
     public var plugins: [Plugins.Tag]?
     public var subagents: [Subagent]
+    /// State and timestamp when read from the tool's own database or logs
+    /// (e.g. opencode's `session_v2`), overriding `.unknown` from the process scan.
+    public var state: SessionRules.State?
+    public var since: Double?
 
     public init(tokens: Int? = nil, title: String? = nil, log: String? = nil,
-                plugins: [Plugins.Tag]? = nil, subagents: [Subagent] = []) {
+                plugins: [Plugins.Tag]? = nil, subagents: [Subagent] = [],
+                state: SessionRules.State? = nil, since: Double? = nil) {
         self.tokens = tokens
         self.title = title
         self.log = log
         self.plugins = plugins
         self.subagents = subagents
+        self.state = state
+        self.since = since
     }
 }
 
@@ -84,7 +91,8 @@ public enum SessionEnrichment {
     /// dropping the session. `cache` is updated and pruned to what is live.
     public static func enrich(_ scan: SessionRules.Scan, cache: inout EnrichmentCache, withPlugins: Bool,
                               projectsDir: URL = TokenMath.claudeProjectsDir,
-                              claudeDir: URL = Plugins.claudeDir) -> EnrichmentResult {
+                              claudeDir: URL = Plugins.claudeDir,
+                              opencodeDB: URL = OpencodeSource.opencodeDB) -> EnrichmentResult {
         let sessions = scan.entries.filter { $0.counted && $0.tool == "claude_code" }
         let manager = FileManager.default
 
@@ -134,6 +142,10 @@ public enum SessionEnrichment {
                 subagentDirs.append(dir.appendingPathComponent(id).path + "/")
             }
             details[entry.pid] = detail
+        }
+
+        for (pid, detail) in OpencodeSource.liveDetails(for: scan.entries, dbPath: opencodeDB) {
+            details[pid] = detail
         }
 
         var pluginRows: [Plugins.Row]?

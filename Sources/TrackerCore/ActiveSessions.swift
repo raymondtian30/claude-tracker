@@ -62,10 +62,9 @@ public enum ActiveSessions {
             self.stopped = stopped
         }
 
-        /// Whether the Live tab offers Stop, Resume and Quit for it: only a
-        /// Claude Code session with a known process. Other tools' sessions
-        /// have a pid too, but nothing here may signal them.
-        public var isControllable: Bool { pid != nil && (tool ?? "claude_code") == "claude_code" }
+        /// Whether the Live tab offers Stop, Resume and Quit for it: any
+        /// session with a known process id.
+        public var isControllable: Bool { pid != nil }
     }
 
     /// A command that must succeed didn't (Python's CalledProcessError).

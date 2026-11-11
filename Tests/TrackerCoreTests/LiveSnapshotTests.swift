@@ -54,9 +54,9 @@ private func snapshot() -> SessionRegistry.Snapshot {
 @Test func theCountTheRowsAndTheBulkTargetsComeFromOneArray() {
     let live = LiveSnapshot(snapshot(), tools: Tools.tools.map(\.key))
     #expect(live.sessions.count == 3)
-    #expect(live.controllablePids == [10, 20])  // Codex has a pid but is not controllable
+    #expect(live.controllablePids == [10, 20, 40])
     #expect(Set(live.controllablePids).isSubset(of: Set(live.sessions.compactMap(\.pid))))
-    #expect(live.starts == [10: start, 20: start])
+    #expect(live.starts == [10: start, 20: start, 40: start])
 }
 
 @Test func aSessionCarriesWhatTheRegistryKnew() {

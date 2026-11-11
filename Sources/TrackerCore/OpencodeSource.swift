@@ -140,6 +140,112 @@ public enum OpencodeSource {
         SourceFile.total(sourceState.object("daily") ?? [:])
     }
 
+    static let liveQuery = """
+        select id, directory, title,
+               tokens_input + tokens_output + tokens_reasoning + tokens_cache_read + tokens_cache_write,
+               time_updated, time_idle, time_busy, parent_id, agent
+        from session_v2
+        where time_archived is null
+        order by time_updated desc, id desc
+    """
+
+    /// Live session details for counted `opencode` entries, read from `session_v2`.
+    /// Each `opencode` process in a folder is paired with the most recently
+    /// updated non-archived top-level session in that folder (in pid order when
+    /// multiple processes share one folder). A failed read returns what it can
+    /// and never drops a session.
+    public static func liveDetails(for entries: [SessionRules.Entry],
+                                   dbPath: URL = opencodeDB) -> [Int32: SessionDetails] {
+        let sessions = entries.filter { $0.counted && $0.tool == "opencode" }
+        guard !sessions.isEmpty, FileManager.default.fileExists(atPath: dbPath.path),
+              let db = try? Database(readOnly: dbPath)
+        else { return [:] }
+        defer { db.close() }
+        guard let rows = try? db.rows(liveQuery) else { return [:] }
+
+        struct Row {
+            var id: String
+            var directory: String
+            var title: String?
+            var tokens: Int
+            var updatedMs: Double
+            var idleMs: Double
+            var busyMs: Double
+            var parentId: String?
+            var agent: String?
+        }
+
+        func cleanPath(_ path: String) -> String {
+            var trimmed = path
+            while trimmed.count > 1 && trimmed.hasSuffix("/") { trimmed.removeLast() }
+            return trimmed
+        }
+
+        var byFolder = [String: [Row]]()
+        var childrenByParent = [String: [Row]]()
+        for raw in rows where raw.count >= 9 {
+            guard let id = raw[0] as? String, !id.isEmpty,
+                  let dir = raw[1] as? String, !dir.isEmpty
+            else { continue }
+            let row = Row(id: id, directory: cleanPath(dir), title: ActiveSessions.oneLine(raw[2] as? String),
+                          tokens: JSON.int(raw[3]) ?? 0, updatedMs: JSON.double(raw[4]) ?? 0,
+                          idleMs: JSON.double(raw[5]) ?? 0, busyMs: JSON.double(raw[6]) ?? 0,
+                          parentId: CodexSource.nonEmpty(raw[7] as? String),
+                          agent: CodexSource.nonEmpty(raw[8] as? String))
+            if let parent = row.parentId {
+                childrenByParent[parent, default: []].append(row)
+            } else {
+                byFolder[row.directory, default: []].append(row)
+            }
+        }
+
+        func runningSubagents(of sessionId: String, depth: Int = 1, seen: Set<String> = []) -> [Subagent] {
+            guard depth <= 8, !seen.contains(sessionId) else { return [] }
+            let nextSeen = seen.union([sessionId])
+            var found = [Subagent]()
+            for child in (childrenByParent[sessionId] ?? []).reversed() {
+                if child.busyMs > 0 && child.busyMs > child.idleMs {
+                    found.append(Subagent(id: child.id, type: child.agent ?? "subagent",
+                                          description: child.title, depth: depth))
+                    found += runningSubagents(of: child.id, depth: depth + 1, seen: nextSeen)
+                }
+            }
+            return found
+        }
+
+        var details = [Int32: SessionDetails]()
+        let folders = Set(sessions.compactMap { $0.folder.map(cleanPath) }).sorted()
+        for folder in folders {
+            let here = sessions.filter { $0.folder.map(cleanPath) == folder }.sorted { $0.pid < $1.pid }
+            let available = byFolder[folder] ?? []
+            for (position, entry) in here.enumerated() {
+                guard position < available.count else {
+                    details[entry.pid] = SessionDetails(state: .idle)
+                    continue
+                }
+                let matched = available[position]
+                var detail = SessionDetails(title: matched.title,
+                                            subagents: runningSubagents(of: matched.id))
+                if matched.tokens > 0 {
+                    detail.tokens = matched.tokens
+                    detail.log = dbPath.path
+                }
+                if matched.busyMs > 0 && matched.busyMs > matched.idleMs {
+                    detail.state = .active
+                    detail.since = matched.busyMs / 1000.0
+                } else if matched.idleMs > 0 {
+                    detail.state = .idle
+                    detail.since = matched.idleMs / 1000.0
+                } else if matched.updatedMs > 0 {
+                    detail.state = .idle
+                    detail.since = matched.updatedMs / 1000.0
+                }
+                details[entry.pid] = detail
+            }
+        }
+        return details
+    }
+
     /// A message's `data` column as a JSON object.
     static func decodeObject(_ value: Any) throws -> JSONObject {
         let data: Data?

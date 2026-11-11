@@ -511,7 +511,7 @@ extension PanelModel {
         case "busy": return "busy now"
         case "waiting": return session.waitingFor.map { "waiting: \($0)" } ?? "waiting for you"
         case "idle":
-            if session.log == nil { return "idle, no messages yet" }
+            if session.log == nil && session.tokens == nil && session.title == nil { return "idle, no messages yet" }
             guard let since = session.since else { return "idle" }
             return "idle for " + formatDuration(Swift.max(now - since, 0))
         default: return "running"
@@ -672,39 +672,41 @@ extension PanelModel {
                 items.append(.buttons([Item.Button("Resume all", "play.circle", "sessions_resume_all")]))
             }
         }
-        // Sessions that can't be controlled (the other tools'): one row each,
-        // never grouped by folder, with the tool's name where several tools show.
-        for session in sessions where !session.isControllable {
-            let (word, dot) = stateWord(session, limit: limit)
-            let tool = view.key == "all" ? Tools.toolNames[session.tool ?? ""] : nil
-            items.append(.row(label: tool.map { "\($0) · \(name(session))" } ?? name(session), value: word,
-                              extras: LabelExtras(dot: dot)))
-        }
         if notCounted > 0 { items += notCountedItems(notCounted) }
 
         var cards = [Card(title: "Sessions (\(sessions.count))", items: items)]
-        for session in processes {
-            guard let pid = session.pid else { continue }
-            let pause = session.stopped ? Item.Button("Resume", "play.circle", "session_resume:\(pid)")
-                : Item.Button("Stop", "pause.circle", "session_stop:\(pid)")
+        for session in sessions {
             // The chat's title (as the editor shows it) tells the cards apart;
-            // without one, the folder's name does.
+            // without one, the folder's name does (with the tool's name where
+            // several tools show).
             let (word, dot) = stateWord(session, limit: limit)
+            let tool = view.key == "all" ? Tools.toolNames[session.tool ?? ""] : nil
+            let label = session.title ?? (tool.map { "\($0) · \(name(session))" } ?? name(session))
             var items: [Item] = [
-                .row(label: session.title ?? name(session), value: word, extras: LabelExtras(dot: dot)),
+                .row(label: label, value: word, extras: LabelExtras(dot: dot)),
             ]
             if session.stopped {
                 items.append(.alert(text: "Paused · click Resume to continue", showIcon: true))
             } else {
                 let state = processState(session, now: now, limit: limit)
-                items.append(.note([session.kind, state].compactMap { $0 }.joined(separator: " · ")))
+                let toolNote = session.title != nil ? tool : nil
+                items.append(.note([toolNote, session.kind, state].compactMap { $0 }.joined(separator: " · ")))
             }
-            items += noteLines([session.title != nil ? name(session) : nil, "process \(pid)",
-                                session.tokens.map { "\(TokenMath.formatCount($0)) tokens" }]
-                .compactMap { $0 }.joined(separator: " · "))
+            let info = [session.stopped && session.title != nil ? tool : nil,
+                        session.title != nil ? name(session) : nil,
+                        session.pid.map { "process \($0)" },
+                        session.tokens.map { "\(TokenMath.formatCount($0)) tokens" }]
+                .compactMap { $0 }.joined(separator: " · ")
+            if !info.isEmpty {
+                items += noteLines(info)
+            }
             items += subagentItems(session.subagents)
             items += tagItems([session])
-            items.append(.buttons([pause, Item.Button("Quit", "xmark.circle", "session_quit:\(pid)")]))
+            if session.isControllable, let pid = session.pid {
+                let pause = session.stopped ? Item.Button("Resume", "play.circle", "session_resume:\(pid)")
+                    : Item.Button("Stop", "pause.circle", "session_stop:\(pid)")
+                items.append(.buttons([pause, Item.Button("Quit", "xmark.circle", "session_quit:\(pid)")]))
+            }
             cards.append(Card(title: nil, items: items))
         }
         if !background.isEmpty {

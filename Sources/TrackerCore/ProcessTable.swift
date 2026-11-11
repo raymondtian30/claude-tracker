@@ -57,9 +57,12 @@ public enum ProcessTable {
         if let tool = programTools[program] { return tool }
         guard program == "node" else { return nil }
         let words = args.split(whereSeparator: \.isWhitespace).map(String.init)
-        for (tool, script) in ActiveSessions.nodeScripts
-        where words.count >= 2 && ActiveSessions.basename(words[0]) == "node"
-            && ActiveSessions.basename(words[1]) == script {
+        guard let first = words.first, ActiveSessions.basename(first) == "node",
+              let script = words.dropFirst().first(where: { !$0.hasPrefix("-") })
+        else { return nil }
+        let name = ActiveSessions.basename(script)
+        if let tool = programTools[name] { return tool }
+        for (tool, match) in ActiveSessions.nodeScripts where name == match {
             return tool
         }
         return nil

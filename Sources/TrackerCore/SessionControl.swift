@@ -27,6 +27,7 @@ public enum SessionControl {
     public typealias Kill = (_ pid: Int32, _ signal: Int32) -> Int32
 
     public static let program = "claude"
+    public static let programs: Set<String> = ProcessTable.candidatePrograms
 
     /// Sends `action` to `pid`, if `pid` is among `known` (the sessions the
     /// Live tab shows) and still runs `claude`.
@@ -77,14 +78,14 @@ public enum SessionControl {
         guard let expected = start else {
             let found = run(["ps", "-p", String(pid), "-o", "comm="], nil)
             let named = found.status == 0
-                && ActiveSessions.basename(found.stdout.trimmingCharacters(in: .whitespacesAndNewlines)) == program
+                && programs.contains(ActiveSessions.basename(found.stdout.trimmingCharacters(in: .whitespacesAndNewlines)))
             return named ? .matches : .notClaude
         }
         let found = run(["env", "TZ=UTC", "LC_ALL=C", "ps", "-p", String(pid), "-o", "lstart=,comm="], nil)
         // Five words of start time, then the program path.
         let parts = found.stdout.split(maxSplits: 5, omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
         guard found.status == 0, parts.count == 6,
-              ActiveSessions.basename(parts[5].trimmingCharacters(in: .whitespacesAndNewlines)) == program
+              programs.contains(ActiveSessions.basename(parts[5].trimmingCharacters(in: .whitespacesAndNewlines)))
         else { return .notClaude }
         return ProcessTable.sameStart(parts[0..<5].joined(separator: " "), expected) ? .matches : .startDiffers
     }

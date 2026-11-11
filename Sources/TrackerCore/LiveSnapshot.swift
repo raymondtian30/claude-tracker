@@ -36,19 +36,23 @@ public struct LiveSnapshot: Equatable {
     public init(_ snapshot: SessionRegistry.Snapshot, tools: [String], home: String? = nil) {
         func session(_ entry: SessionRules.Entry) -> ActiveSessions.Session {
             let details = snapshot.details[entry.pid]
+            let state = details?.state ?? entry.state
+            let since = details?.since ?? entry.since
             let status: String?
-            switch entry.state {
+            switch state {
             case .active: status = "busy"
             case .idle: status = "idle"
             case .waiting: status = "waiting"
             case .unknown: status = nil
             }
+            let kind = ActiveSessions.kindLabel(entrypoint: entry.entrypoint)
+                ?? (entry.terminal != nil ? "Terminal" : nil)
             return ActiveSessions.Session(
                 label: entry.folder.map { ActiveSessions.displayName($0, home: home) } ?? "unknown folder",
                 tokens: details?.tokens, cwd: entry.folder, log: details?.log, plugins: details?.plugins,
-                pid: entry.pid, stopped: entry.paused, status: status, since: entry.since,
-                title: details?.title, kind: ActiveSessions.kindLabel(entrypoint: entry.entrypoint),
-                tool: entry.tool, state: entry.state, waitingFor: entry.waitingFor, start: entry.start,
+                pid: entry.pid, stopped: entry.paused, status: status, since: since,
+                title: details?.title, kind: kind,
+                tool: entry.tool, state: state, waitingFor: entry.waitingFor, start: entry.start,
                 subagents: details?.subagents ?? [])
         }
         let inView = snapshot.scan.entries.filter { tools.contains($0.tool) }

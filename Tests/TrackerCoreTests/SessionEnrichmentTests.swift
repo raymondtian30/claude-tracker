@@ -2,6 +2,7 @@
 // found. None of it can add or remove a session.
 
 import Foundation
+import SQLite3
 import Testing
 @testable import TrackerCore
 
@@ -248,4 +249,62 @@ private func subagentFiles(_ tmp: TempDir, session: String = "s1", _ metas: [Str
     _ = try FileManager.default.replaceItemAt(log, withItemAt: other)
     let result = enrich([entry(100, session: "s1")], &cache, projects: tmp.url("projects"))
     #expect(result.details[100]?.tokens == 40)
+}
+
+// MARK: opencode live session enrichment
+
+@Test func opencodeSessionsAreEnrichedWithTitleTokensStateAndSubagents() throws {
+    let tmp = TempDir()
+    let dbURL = tmp.url("opencode.db")
+    var handle: OpaquePointer?
+    try #require(sqlite3_open(dbURL.path, &handle) == SQLITE_OK)
+    defer { sqlite3_close(handle) }
+    let schema = """
+        create table session_v2 (
+            id text primary key,
+            directory text not null,
+            title text,
+            tokens_input integer default 0,
+            tokens_output integer default 0,
+            tokens_reasoning integer default 0,
+            tokens_cache_read integer default 0,
+            tokens_cache_write integer default 0,
+            time_updated integer not null,
+            time_idle integer,
+            time_busy integer,
+            parent_id text,
+            agent text,
+            time_archived integer
+        );
+        insert into session_v2 values
+            ('ses_1', '/w/checker', 'macOS website security checker', 500, 200, 50, 1000, 0, 2000000, 2000000, 1900000, null, 'build', null),
+            ('ses_2', '/w/tracker', 'File upload capability', 100, 50, 0, 300, 0, 3000000, 2500000, 3000000, null, 'build', null),
+            ('ses_child', '/w/tracker', 'Search files', 10, 5, 0, 0, 0, 3000000, null, 3000000, 'ses_2', 'explore', null);
+    """
+    try #require(sqlite3_exec(handle, schema, nil, nil, nil) == SQLITE_OK)
+
+    let opencode1 = Rules.Entry(tool: "opencode", pid: 501, start: "Tue Nov 10 18:00:00 2026", folder: "/w/checker",
+                                recordFolder: nil, terminal: "ttys001", sessionId: nil, entrypoint: nil,
+                                role: .session, counted: true, state: .unknown, paused: false, since: nil,
+                                waitingFor: nil, children: [], claimsLog: true, reasons: [.hasTerminal])
+    let opencode2 = Rules.Entry(tool: "opencode", pid: 502, start: "Tue Nov 10 18:00:00 2026", folder: "/w/tracker",
+                                recordFolder: nil, terminal: "ttys002", sessionId: nil, entrypoint: nil,
+                                role: .session, counted: true, state: .unknown, paused: false, since: nil,
+                                waitingFor: nil, children: [], claimsLog: true, reasons: [.hasTerminal])
+    var cache = EnrichmentCache()
+    let enriched = SessionEnrichment.enrich(scan([opencode1, opencode2]), cache: &cache, withPlugins: false,
+                                            projectsDir: tmp.url("projects"), claudeDir: tmp.url("claude"),
+                                            opencodeDB: dbURL)
+
+    #expect(enriched.details[501]?.title == "macOS website security checker")
+    #expect(enriched.details[501]?.tokens == 1750)
+    #expect(enriched.details[501]?.state == .idle)
+    #expect(enriched.details[501]?.since == 2000.0)
+    #expect(enriched.details[501]?.subagents.isEmpty == true)
+
+    #expect(enriched.details[502]?.title == "File upload capability")
+    #expect(enriched.details[502]?.tokens == 450)
+    #expect(enriched.details[502]?.state == .active)
+    #expect(enriched.details[502]?.since == 3000.0)
+    #expect(enriched.details[502]?.subagents == [Subagent(id: "ses_child", type: "explore", description: "Search files", depth: 1)])
 }
