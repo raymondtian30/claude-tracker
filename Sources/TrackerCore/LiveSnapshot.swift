@@ -56,7 +56,9 @@ public struct LiveSnapshot: Equatable {
                   sessions: inView.filter(\.counted).map(session),
                   background: inView.filter { $0.role == .background }.map(session),
                   notCounted: inView.filter { !$0.counted && $0.role != .background }.count,
-                  plugins: snapshot.pluginRows, error: snapshot.error)
+                  // Plugins belong to Claude Code: another tool's view has no plugin card,
+                  // even if the last scan worked them out for a view that did.
+                  plugins: tools.contains("claude_code") ? snapshot.pluginRows : nil, error: snapshot.error)
     }
 
     /// The sessions Stop, Resume and Quit may act on.

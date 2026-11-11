@@ -97,12 +97,23 @@ public final class SessionRegistry {
     private var scanning = false
     private var scanAgain = false
     private var generation = 0
+    /// Numbers each scan, so the result of one that was given up on (see
+    /// `scanTimeout`) is ignored when it finally arrives.
+    private var scanSerial = 0
+    private var scanStartedAt = 0.0
+    private let uptime: () -> Double
+
+    /// A scan running longer than this is given up on, so one stuck command
+    /// (an `lsof` waiting on a dead network folder) cannot stop all later scans.
+    public static let scanTimeout = 30.0
 
     /// `onScan` is called on the main queue after every scan that was kept,
     /// with whether the snapshot differs from the one before.
     public init(source: @escaping Source, enrich: @escaping Enrich = { _, _, _ in EnrichmentResult() },
                 background: @escaping Dispatch, main: @escaping Dispatch,
-                onScan: @escaping (Snapshot, Bool) -> Void, report: @escaping (String) -> Void = { _ in }) {
+                onScan: @escaping (Snapshot, Bool) -> Void, report: @escaping (String) -> Void = { _ in },
+                uptime: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime }) {
+        self.uptime = uptime
         self.source = source
         self.enrich = enrich
         self.background = background
@@ -117,11 +128,22 @@ public final class SessionRegistry {
     /// Starts a scan, or, if one is running, asks for another right after it.
     /// Main queue only.
     public func refresh() {
-        guard !scanning else {
-            scanAgain = true
-            return
+        if scanning {
+            guard uptime() - scanStartedAt > Self.scanTimeout else {
+                scanAgain = true
+                return
+            }
+            // Stuck: let go of it. Its thread stays blocked, but its result,
+            // if it ever comes, is dropped.
+            report("A scan took more than \(Int(Self.scanTimeout)) seconds; starting another.")
+            scanSerial += 1
+            scanning = false
+            scanAgain = false
         }
         scanning = true
+        scanStartedAt = uptime()
+        scanSerial += 1
+        let serial = scanSerial
         let started = generation
         let previous = snapshot
         var workingCache = cache
@@ -139,7 +161,7 @@ public final class SessionRegistry {
             } catch {
                 outcome = .failure(error)
             }
-            main { self.finish(outcome, started: started) }
+            main { self.finish(outcome, started: started, serial: serial) }
         }
     }
 
@@ -154,7 +176,8 @@ public final class SessionRegistry {
         snapshot.apply(action, to: pids)
     }
 
-    private func finish(_ outcome: Result<(Snapshot, EnrichmentCache), Error>, started: Int) {
+    private func finish(_ outcome: Result<(Snapshot, EnrichmentCache), Error>, started: Int, serial: Int) {
+        guard serial == scanSerial else { return }  // given up on, and replaced
         scanning = false
         if started != generation {
             scanAgain = false

@@ -105,3 +105,12 @@ private func snapshot() -> SessionRegistry.Snapshot {
     #expect(LiveSnapshot(snapshot(), tools: ["claude_code"]) == LiveSnapshot(snapshot(), tools: ["claude_code"]))
     #expect(live != LiveSnapshot(snapshot(), tools: ["claude_code"]))
 }
+
+@Test func pluginRowsShowOnlyInViewsOfClaudeCode() {
+    var made = snapshot()
+    made.pluginRows = [Plugins.Row(label: "caveman", sessions: 1, latest: nil, today: [:])]
+    #expect(LiveSnapshot(made, tools: ["claude_code"]).plugins?.count == 1)
+    #expect(LiveSnapshot(made, tools: Tools.tools.map(\.key)).plugins?.count == 1)
+    #expect(LiveSnapshot(made, tools: ["codex"]).plugins == nil)
+    #expect(LiveSnapshot(made, tools: []).plugins == nil)
+}

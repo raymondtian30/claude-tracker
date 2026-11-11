@@ -304,7 +304,7 @@ private let listedStart = "Tue Nov 10 18:46:36 2026"
 private func identityRunner(_ start: String, comm: String = "/x/native-binary/claude",
                             status: Int32 = 0) -> Subprocess.Runner {
     { arguments, _ in
-        #expect(arguments.prefix(3) == ["env", "TZ=UTC", "ps"] && arguments.last == "lstart=,comm=")
+        #expect(arguments.prefix(4) == ["env", "TZ=UTC", "LC_ALL=C", "ps"] && arguments.last == "lstart=,comm=")
         return Subprocess.Result(status: status, stdout: status == 0 ? "\(start) \(comm)\n" : "")
     }
 }

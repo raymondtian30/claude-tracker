@@ -140,6 +140,7 @@ private final class Harness {
     let queues = Queues()
     var inputs = Registry.Inputs(processes: [], records: [:], now: 0)
     var failing = false
+    var clock = 0.0
     var reads = 0
     var delivered = [(snapshot: Registry.Snapshot, changed: Bool)]()
     var reports = [String]()
@@ -152,7 +153,8 @@ private final class Harness {
         background: { [unowned self] in self.queues.dispatchBackground($0) },
         main: { [unowned self] in self.queues.dispatchMain($0) },
         onScan: { [unowned self] snapshot, changed in self.delivered.append((snapshot, changed)) },
-        report: { [unowned self] in self.reports.append($0) })
+        report: { [unowned self] in self.reports.append($0) },
+        uptime: { [unowned self] in self.clock })
 
     func set(_ processes: [ProcInfo], _ records: [ClaudeRecords.Record] = []) {
         inputs = Registry.Inputs(processes: processes,
@@ -256,4 +258,28 @@ private final class Harness {
     harness.registry.refresh()
     harness.queues.drain()
     #expect(harness.registry.snapshot.counted.isEmpty)
+}
+
+@Test func aScanThatNeverEndsIsGivenUpOnAndLaterScansStillRun() {
+    let harness = Harness()
+    harness.set([claude(100)], [record(100, session: "a")])
+    harness.registry.refresh()  // queued, and the test never lets it finish: a stuck command
+    harness.clock = 10
+    harness.registry.refresh()  // too soon to give up: only noted
+    #expect(harness.queues.background.count == 1)
+    harness.clock = 31
+    harness.registry.refresh()  // past the timeout: another scan starts
+    #expect(harness.queues.background.count == 2)
+    #expect(harness.reports.count == 1)
+    // The new scan finishes and shows its result; the stuck one then ends and is ignored.
+    let stuck = harness.queues.background.removeFirst()
+    harness.queues.runBackground()
+    harness.queues.runMain()
+    #expect(harness.registry.snapshot.counted.map(\.pid) == [100])
+    harness.set([])
+    stuck()
+    harness.queues.runMain()
+    #expect(harness.registry.snapshot.counted.map(\.pid) == [100])  // the old result did not replace it
+    #expect(harness.delivered.count == 1)
+    #expect(!harness.registry.isScanning)
 }

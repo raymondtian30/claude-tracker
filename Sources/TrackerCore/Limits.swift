@@ -168,7 +168,9 @@ public enum Limits {
     static let monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-    /// Which alerts to send now. `thresholds` are the percents to alert at;
+    /// Which alerts to send now. A message names the threshold that was crossed
+    /// ("usage reached 50%"), even if the percentage is a little past it by the
+    /// time it is noticed. `thresholds` are the percents to alert at;
     /// `above` lists "id@threshold" keys already alerted and still over that
     /// threshold. Returns (messages, new `above`). A level alerts once when it
     /// reaches each threshold, and again only after it has dropped back below it
@@ -194,7 +196,13 @@ public enum Limits {
             if seeding || keys.allSatisfy({ above.contains($0) }) {
                 continue
             }
-            var message = "\(displayName(level)) usage is at \(String(format: "%.0f", level.percent))%."
+            // The threshold that was crossed, not the percentage at the moment
+            // of looking: Claude's percentages arrive every few minutes, so a
+            // 50% alert that went out at 54% should still say 50%. Of several
+            // crossed at once, the highest new one. A limit that is full says 100%.
+            let fresh = thresholds.sorted().filter { level.percent >= Double($0) && !above.contains("\(level.id)@\($0)") }
+            let crossed = level.percent >= 100 || level.reached ? 100 : (fresh.last ?? 0)
+            var message = "\(displayName(level)) usage reached \(crossed)%."
             if let resetsAt = level.resetsAt, resetsAt != 0 {
                 let when = formatReset(resetsAt, now: now ?? Date().timeIntervalSince1970)
                 let startsWithDigit = when.first?.isNumber ?? false
@@ -297,13 +305,17 @@ public enum Limits {
         return levels
     }
 
-    /// The Claude Code plan limit that is hit right now, if any: one its logs
-    /// say was reached, or Anthropic's percentage at 100, and not yet reset.
+    /// The Claude Code plan limit for all models that is hit right now, if any:
+    /// one its logs say was reached, or Anthropic's percentage at 100, and not
+    /// yet reset.
     /// The 5-hour window comes first when several are. While one is hit, the
     /// Live tab shows running sessions as paused by it.
     public static func hitClaudeLimit(_ state: JSONObject, now: Double) -> Level? {
         let hit = planLevels(state, toolKeys: ["claude_code"], now: now).filter { level in
-            (level.reached || level.percent >= 100) && (level.resetsAt ?? 0 == 0 || (level.resetsAt ?? 0) > now)
+            // A limit for one model (Opus only, say) does not stop sessions on others:
+            // only the all-model limits, whose kind is their window's own, count.
+            (level.kind == nil || level.kind == level.window)
+                && (level.reached || level.percent >= 100) && (level.resetsAt ?? 0 == 0 || (level.resetsAt ?? 0) > now)
         }
         return hit.first { $0.window == "five_hour" } ?? hit.first
     }

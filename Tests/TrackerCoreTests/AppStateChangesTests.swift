@@ -118,7 +118,7 @@ private func alertState(enabled: Bool = true) -> JSONObject {
 
     let first = AppState.checkAlerts(&state, now: NOW)
     #expect(first.messages.count == 1)
-    #expect(first.messages.first?.hasPrefix("Claude Code (5-hour) usage is at 100%.") == true)
+    #expect(first.messages.first?.hasPrefix("Claude Code (5-hour) usage reached 100%.") == true)
     #expect(first.changed)
     #expect(jsonEqual(state["alerts_above"], ["claude_code:five_hour@75"]))
 

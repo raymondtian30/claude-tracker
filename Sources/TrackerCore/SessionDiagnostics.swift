@@ -4,8 +4,9 @@ import Foundation
 /// counted or not. Built on demand from one fresh scan by a pure function, and
 /// pasted into bug reports, so it carries only what is needed to explain a
 /// decision: the program name, known subcommand words and flag names (never
-/// their values, prompts or full paths), the home folder as `~`, and no
-/// environment, chat title or subagent description.
+/// their values or prompts), each session's project folder (written with `~`
+/// for the home folder; the one thing in it that names your work), and no
+/// environment, command-line value, chat title or subagent description.
 public enum SessionDiagnostics {
     /// Bumped when the report's layout changes, so a pasted report says which
     /// layout it has.
@@ -86,7 +87,9 @@ public enum SessionDiagnostics {
             if word.hasPrefix("-") {
                 guard flags < 12 else { continue }
                 flags += 1
-                shown.append(String(word.prefix { $0 != "=" }))
+                // Only the name: a value glued on (`-C/some/folder`, `--key=value`) is cut off.
+                let name = String(word.prefix { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
+                if name.count >= 2 { shown.append(name) }
             } else if knownWords.contains(word) {
                 shown.append(word)
             }
@@ -116,6 +119,7 @@ public enum SessionDiagnostics {
         case .hasTerminal: return "has a terminal"
         case .noTerminal: return "no terminal"
         case .server: return "server command"
+        case .commandUnreadable: return "its command line could not be read, so it is not counted"
         case .backgroundAgent(let kind): return "background agent (\(raw(kind)))"
         case .otherToolChild(let pid): return "started by the session with pid \(pid) (another tool)"
         case .duplicateSessionId(let pid): return "same session id as pid \(pid) (newer); does not claim the log"
