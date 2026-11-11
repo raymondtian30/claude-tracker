@@ -7,6 +7,14 @@ import Testing
 
 private typealias Registry = SessionRegistry
 
+// What the tests read off a snapshot; the app reads the same things through
+// `LiveSnapshot`, so none of this is in the app's code.
+private extension SessionRegistry.Snapshot {
+    var counted: [SessionRules.Entry] { scan.entries.filter(\.counted) }
+    var background: [SessionRules.Entry] { scan.entries.filter { $0.role == .background } }
+    var notCountedCount: Int { scan.entries.filter { !$0.counted && $0.role != .background }.count }
+}
+
 private let t1 = "Tue Nov 10 18:00:00 2026"
 private let t2 = "Tue Nov 10 19:30:00 2026"
 

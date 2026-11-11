@@ -9,7 +9,7 @@ private typealias Rules = SessionRules
 
 private func entry(_ pid: Int32, session: String?, folder: String = "/w/app", counted: Bool = true,
                    role: Rules.Role = .session, claimsLog: Bool = true) -> Rules.Entry {
-    Rules.Entry(tool: "claude_code", pid: pid, start: "Tue Nov 10 18:00:00 2026", parentPid: 1, folder: folder,
+    Rules.Entry(tool: "claude_code", pid: pid, start: "Tue Nov 10 18:00:00 2026", folder: folder,
                 recordFolder: session == nil ? nil : folder, terminal: nil, sessionId: session, entrypoint: nil,
                 role: role, counted: counted, state: .idle, paused: false, since: nil, waitingFor: nil,
                 children: [], claimsLog: claimsLog, reasons: [])

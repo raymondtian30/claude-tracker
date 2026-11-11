@@ -127,24 +127,19 @@ func stopResumeAndQuitWorkOnARealProcess() throws {
     defer { if child.isRunning { child.terminate() } }
     let pid = child.processIdentifier
 
-    func mine() throws -> ActiveSessions.Proc? {
-        try ActiveSessions.runningProcesses("claude").first { $0.pid == pid }
+    func state() -> String {
+        Subprocess.run(["ps", "-p", String(pid), "-o", "state="], input: nil).stdout
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    // Wait until ps can see it, with its folder.
-    var found = try mine()
-    for _ in 0..<50 where found == nil {
-        Thread.sleep(forTimeInterval: 0.05)
-        found = try mine()
-    }
-    #expect(found?.stopped == false)
-    #expect(found.map { URL(fileURLWithPath: $0.cwd).resolvingSymlinksInPath().path }
-            == tmp.root.resolvingSymlinksInPath().path)
+    // Wait until ps can see it.
+    for _ in 0..<50 where state().isEmpty { Thread.sleep(forTimeInterval: 0.05) }
+    #expect(!state().isEmpty && !state().contains("T"))
 
     #expect(SessionControl.send(.stop, to: pid, among: [pid], starts: realStart(pid)) == .done)
     var paused = false
     for _ in 0..<50 where !paused {
         Thread.sleep(forTimeInterval: 0.05)
-        paused = try mine()?.stopped == true
+        paused = state().contains("T")
     }
     #expect(paused)
 

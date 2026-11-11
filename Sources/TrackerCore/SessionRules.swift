@@ -59,7 +59,6 @@ public enum SessionRules {
         public var tool: String
         public var pid: Int32
         public var start: String
-        public var parentPid: Int32
         public var folder: String?
         /// The folder Claude Code's record names; it decides which project
         /// folder holds the session's log.
@@ -211,7 +210,7 @@ public enum SessionRules {
     private static func entry(_ process: ProcInfo, _ tool: String,
                               own: (record: ClaudeRecords.Record, verified: Bool)?,
                               role: Role, counted: Bool, reasons: [Reason]) -> Entry {
-        Entry(tool: tool, pid: process.pid, start: process.start, parentPid: process.ppid,
+        Entry(tool: tool, pid: process.pid, start: process.start,
               folder: process.folder ?? own?.record.cwd, recordFolder: own?.record.cwd, terminal: process.tty,
               sessionId: own?.record.sessionId, entrypoint: own?.record.entrypoint, role: role,
               counted: counted, state: .unknown, paused: process.stopped, since: nil, waitingFor: nil,

@@ -89,20 +89,6 @@ public enum SessionControl {
         return ProcessTable.sameStart(parts[0..<5].joined(separator: " "), expected) ? .matches : .startDiffers
     }
 
-    /// Waits until `pid` is no longer a `claude` process (it can take a moment
-    /// to shut down after Quit), up to `timeout` seconds. False if it is still there.
-    public static func waitUntilGone(_ pid: Int32, start: String? = nil, timeout: Double = 3, interval: Double = 0.1,
-                                     run: Subprocess.Runner = Subprocess.run,
-                                     sleep: (Double) -> Void = { Thread.sleep(forTimeInterval: $0) }) -> Bool {
-        var waited = 0.0
-        while isClaude(pid, start: start, run: run) {
-            if waited >= timeout - 0.000_001 { return false }
-            sleep(interval)
-            waited += interval
-        }
-        return true
-    }
-
     /// How ending a session went.
     public enum QuitOutcome: Equatable {
         /// It shut down when asked.
