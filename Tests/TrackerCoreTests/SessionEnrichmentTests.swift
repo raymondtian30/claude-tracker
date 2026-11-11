@@ -234,3 +234,18 @@ private func subagentFiles(_ tmp: TempDir, session: String = "s1", _ metas: [Str
     #expect(result.details[1]?.subagents.isEmpty == true)
     #expect(result.details[2]?.subagents.count == 1)
 }
+
+@Test func aLogReplacedByALongerFileIsReadAgainFromTheStart() throws {
+    let tmp = TempDir()
+    let dir = tmp.mkdir("projects/-w-app")
+    let log = dir.appendingPathComponent("s1.jsonl")
+    writeJSONL(log, [assistant(1, 1)])
+    var cache = EnrichmentCache()
+    _ = enrich([entry(100, session: "s1")], &cache, projects: tmp.url("projects"))
+    // A longer file renamed over the old one: not shorter, but not the same file.
+    let other = tmp.url("replacement.jsonl")
+    writeJSONL(other, [assistant(10, 10), assistant(10, 10)])
+    _ = try FileManager.default.replaceItemAt(log, withItemAt: other)
+    let result = enrich([entry(100, session: "s1")], &cache, projects: tmp.url("projects"))
+    #expect(result.details[100]?.tokens == 40)
+}

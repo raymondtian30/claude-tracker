@@ -283,3 +283,17 @@ private final class Harness {
     #expect(harness.delivered.count == 1)
     #expect(!harness.registry.isScanning)
 }
+
+@Test func aStaleSnapshotReadsAsNotScannedUntilTheNextScanLands() {
+    let harness = Harness()
+    harness.set([claude(100)], [record(100, session: "a")])
+    harness.registry.refresh()
+    harness.queues.drain()
+    #expect(harness.registry.snapshot.scanned)
+    harness.registry.markStale()
+    harness.registry.refresh()
+    #expect(!harness.registry.snapshot.scanned)  // the old rows are not shown while it runs
+    harness.queues.drain()
+    #expect(harness.registry.snapshot.scanned)
+    #expect(harness.registry.snapshot.counted.map(\.pid) == [100])
+}

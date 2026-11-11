@@ -46,8 +46,8 @@ public struct EnrichmentCache: Equatable {
         /// Bytes of complete lines already summed.
         var offset = 0
         var tokens = 0
-        var size = 0
-        var mtime = 0.0
+        /// The file it was read from; another one at the same path starts over.
+        var inode: UInt64 = 0
         var title: String?
         /// The size and time the title was read at.
         var titleSize = -1
@@ -163,7 +163,8 @@ public enum SessionEnrichment {
         guard let stat = SourceFile.Stat(path) else { return nil }
         let known = cache.logs[path]
         var log = known ?? EnrichmentCache.Log()
-        if stat.size < log.offset { log = EnrichmentCache.Log() }  // shorter than before: a new file
+        // Shorter than before, or not the same file: a replacement, read from the start.
+        if known != nil, stat.size < log.offset || stat.inode != log.inode { log = EnrichmentCache.Log() }
         if known == nil || stat.size > log.offset {
             guard let (more, newOffset) = try? TokenMath.sumUsageSince(path, offset: log.offset) else {
                 return known == nil ? nil : log.tokens
@@ -171,8 +172,7 @@ public enum SessionEnrichment {
             log.tokens += more
             log.offset = newOffset
         }
-        log.size = stat.size
-        log.mtime = stat.mtime
+        log.inode = stat.inode
         cache.logs[path] = log
         return log.tokens
     }
