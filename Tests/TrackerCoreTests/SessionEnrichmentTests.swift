@@ -9,7 +9,7 @@ private typealias Rules = SessionRules
 
 private func entry(_ pid: Int32, session: String?, folder: String = "/w/app", counted: Bool = true,
                    role: Rules.Role = .session, claimsLog: Bool = true) -> Rules.Entry {
-    Rules.Entry(tool: "claude_code", pid: pid, start: "Tue Nov 10 18:00:00 2026", parentPid: 1, folder: folder,
+    Rules.Entry(tool: "claude_code", pid: pid, start: "Tue Nov 10 18:00:00 2026", folder: folder,
                 recordFolder: session == nil ? nil : folder, terminal: nil, sessionId: session, entrypoint: nil,
                 role: role, counted: counted, state: .idle, paused: false, since: nil, waitingFor: nil,
                 children: [], claimsLog: claimsLog, reasons: [])
@@ -233,4 +233,19 @@ private func subagentFiles(_ tmp: TempDir, session: String = "s1", _ metas: [Str
                         projects: tmp.url("projects"))
     #expect(result.details[1]?.subagents.isEmpty == true)
     #expect(result.details[2]?.subagents.count == 1)
+}
+
+@Test func aLogReplacedByALongerFileIsReadAgainFromTheStart() throws {
+    let tmp = TempDir()
+    let dir = tmp.mkdir("projects/-w-app")
+    let log = dir.appendingPathComponent("s1.jsonl")
+    writeJSONL(log, [assistant(1, 1)])
+    var cache = EnrichmentCache()
+    _ = enrich([entry(100, session: "s1")], &cache, projects: tmp.url("projects"))
+    // A longer file renamed over the old one: not shorter, but not the same file.
+    let other = tmp.url("replacement.jsonl")
+    writeJSONL(other, [assistant(10, 10), assistant(10, 10)])
+    _ = try FileManager.default.replaceItemAt(log, withItemAt: other)
+    let result = enrich([entry(100, session: "s1")], &cache, projects: tmp.url("projects"))
+    #expect(result.details[100]?.tokens == 40)
 }

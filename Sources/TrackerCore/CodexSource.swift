@@ -191,11 +191,14 @@ enum SourceFile {
     struct Stat {
         let size: Int
         let mtime: Double
+        /// The file's identity: a file put in its place has another one.
+        let inode: UInt64
 
         init?(_ path: String) {
             var info = stat()
             guard stat(path, &info) == 0 else { return nil }
             size = Int(info.st_size)
+            inode = UInt64(info.st_ino)
             // Python's st_mtime: seconds + nanoseconds * 1e-9, as a double.
             mtime = Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) * 1e-9
         }

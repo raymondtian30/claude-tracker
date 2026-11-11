@@ -7,6 +7,14 @@ import Testing
 
 private typealias Registry = SessionRegistry
 
+// What the tests read off a snapshot; the app reads the same things through
+// `LiveSnapshot`, so none of this is in the app's code.
+private extension SessionRegistry.Snapshot {
+    var counted: [SessionRules.Entry] { scan.entries.filter(\.counted) }
+    var background: [SessionRules.Entry] { scan.entries.filter { $0.role == .background } }
+    var notCountedCount: Int { scan.entries.filter { !$0.counted && $0.role != .background }.count }
+}
+
 private let t1 = "Tue Nov 10 18:00:00 2026"
 private let t2 = "Tue Nov 10 19:30:00 2026"
 
@@ -282,4 +290,18 @@ private final class Harness {
     #expect(harness.registry.snapshot.counted.map(\.pid) == [100])  // the old result did not replace it
     #expect(harness.delivered.count == 1)
     #expect(!harness.registry.isScanning)
+}
+
+@Test func aStaleSnapshotReadsAsNotScannedUntilTheNextScanLands() {
+    let harness = Harness()
+    harness.set([claude(100)], [record(100, session: "a")])
+    harness.registry.refresh()
+    harness.queues.drain()
+    #expect(harness.registry.snapshot.scanned)
+    harness.registry.markStale()
+    harness.registry.refresh()
+    #expect(!harness.registry.snapshot.scanned)  // the old rows are not shown while it runs
+    harness.queues.drain()
+    #expect(harness.registry.snapshot.scanned)
+    #expect(harness.registry.snapshot.counted.map(\.pid) == [100])
 }

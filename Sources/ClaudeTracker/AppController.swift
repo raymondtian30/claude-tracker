@@ -57,13 +57,10 @@ final class AppController {
     /// The session diagnostics window (Settings > Scanning).
     lazy var diagnosticsWindow = DiagnosticsWindow()
 
-    /// What the Live tab shows for the current view: the registry's snapshot,
-    /// cut to the tools this view tracks.
-    var liveView: LiveSnapshot {
-        let view = AppState.currentView(state, detected: Tools.detectTools())
-        let tools = AppState.sessionTools(view.key, enabled: AppState.strings(state["enabled_tools"]))
-        return LiveSnapshot(registry.snapshot, tools: tools)
-    }
+    /// What the Live tab showed at the last draw. Stop, Resume and Quit act
+    /// on this (the rows and start times the person saw), never on a later
+    /// scan: a pid reused in between would then pass the start-time check.
+    var liveView = LiveSnapshot()
     private var renderWaiting = false
     /// Rows whose detail is open, by row id. Not saved: opening the panel or
     /// changing tab closes them all.
@@ -291,12 +288,14 @@ final class AppController {
         if !registry.snapshot.scanned && registry.snapshot.error == nil && !registry.isScanning {
             searchLive()
         }
+        let drawnLive = LiveSnapshot(registry.snapshot, tools: tools)
+        liveView = drawnLive
         let result = PanelModel.buildPanelResult(
             view, state: state, sessions: [], friends: friends,
             showLeaderboard: AppState.showsLeaderboard(view.key, state: state),
             projectsExpanded: projectsExpanded, plugins: nil, rangeOpen: rangeOpen,
             context: PanelContext(open: openRows, measure: TextMeasures.live),
-            live: LiveSnapshot(registry.snapshot, tools: tools))
+            live: drawnLive)
         let tabs = result.tabs
         rowInfo = result.rows
         OpenRows.prune(&openRows, present: Set(result.rows.keys))
@@ -323,8 +322,14 @@ final class AppController {
     /// waits for the next run-loop turn: this runs inside `selectTab`, which
     /// must not be re-entered.
     private func tabChanged(to key: String) {
-        if key == "sessions" { searchLive() }  // the Live tab is never older than its last look
         var changed = !openRows.isEmpty || projectsExpanded
+        if key == "sessions" {
+            // The Live tab is never older than its last look: until the scan
+            // lands it says it is looking, not the previous scan's rows.
+            registry.markStale()
+            changed = true
+            searchLive()
+        }
         openRows = [:]
         projectsExpanded = false
         if rangeOpen && key != "range" {

@@ -30,14 +30,18 @@ public enum SessionControl {
 
     /// Sends `action` to `pid`, if `pid` is among `known` (the sessions the
     /// Live tab shows) and still runs `claude`.
-    public static func send(_ action: Action, to pid: Int32, among known: [Int32], starts: [Int32: String] = [:],
+    public static func send(_ action: Action, to pid: Int32, among known: [Int32], starts: [Int32: String],
                             run: Subprocess.Runner = Subprocess.run,
                             kill: Kill = { Darwin.kill($0, $1) }) -> Outcome {
         // 0, 1 and negative ids mean "every process", launchd, or a whole group.
         guard pid > 1, known.contains(pid) else {
             return .refused("That isn't one of the sessions listed.")
         }
-        switch identity(of: pid, start: starts[pid], run: run) {
+        // Without the start time that was listed, a reused pid could not be told apart.
+        guard let start = starts[pid] else {
+            return .refused("That isn't the session that was listed any more.")
+        }
+        switch identity(of: pid, start: start, run: run) {
         case .matches: break
         case .notClaude: return .refused("That process is no longer a Claude session.")
         case .startDiffers: return .refused("That isn't the session that was listed any more.")
@@ -85,20 +89,6 @@ public enum SessionControl {
         return ProcessTable.sameStart(parts[0..<5].joined(separator: " "), expected) ? .matches : .startDiffers
     }
 
-    /// Waits until `pid` is no longer a `claude` process (it can take a moment
-    /// to shut down after Quit), up to `timeout` seconds. False if it is still there.
-    public static func waitUntilGone(_ pid: Int32, start: String? = nil, timeout: Double = 3, interval: Double = 0.1,
-                                     run: Subprocess.Runner = Subprocess.run,
-                                     sleep: (Double) -> Void = { Thread.sleep(forTimeInterval: $0) }) -> Bool {
-        var waited = 0.0
-        while isClaude(pid, start: start, run: run) {
-            if waited >= timeout - 0.000_001 { return false }
-            sleep(interval)
-            waited += interval
-        }
-        return true
-    }
-
     /// How ending a session went.
     public enum QuitOutcome: Equatable {
         /// It shut down when asked.
@@ -115,7 +105,7 @@ public enum SessionControl {
     /// closing it from a terminal); the ones still there after `patience`
     /// seconds, all waited for together, are force-quit, then given two more
     /// seconds. Only a listed, still-running `claude` process is ever signalled.
-    public static func quit(_ pids: [Int32], among known: [Int32], starts: [Int32: String] = [:],
+    public static func quit(_ pids: [Int32], among known: [Int32], starts: [Int32: String],
                             patience: Double = 3, interval: Double = 0.1,
                             run: Subprocess.Runner = Subprocess.run, kill: Kill = { Darwin.kill($0, $1) },
                             sleep: (Double) -> Void = { Thread.sleep(forTimeInterval: $0) }) -> [Int32: QuitOutcome] {
@@ -176,7 +166,7 @@ public enum SessionControl {
     }
 
     /// `send` to each of `pids`, all of which must be listed ones.
-    public static func sendAll(_ action: Action, among pids: [Int32], starts: [Int32: String] = [:],
+    public static func sendAll(_ action: Action, among pids: [Int32], starts: [Int32: String],
                                run: Subprocess.Runner = Subprocess.run,
                                kill: Kill = { Darwin.kill($0, $1) }) -> Tally {
         var tally = Tally(done: 0, refused: 0)

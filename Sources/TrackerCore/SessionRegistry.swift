@@ -39,14 +39,6 @@ public final class SessionRegistry {
         public static let initial = Snapshot(scanned: false, scan: SessionRules.Scan(entries: [], staleRecords: []),
                                              ended: [], details: [:], pluginRows: nil, error: nil)
 
-        /// The sessions in "Sessions (N)".
-        public var counted: [SessionRules.Entry] { scan.entries.filter(\.counted) }
-        /// Background agents, listed on the Live tab and not counted.
-        public var background: [SessionRules.Entry] { scan.entries.filter { $0.role == .background } }
-        /// Tool processes that are neither counted nor listed: servers,
-        /// processes with no terminal, other tools' children.
-        public var notCountedCount: Int { scan.entries.filter { !$0.counted && $0.role != .background }.count }
-
         /// What Stop, Resume or Quit did to the processes with these ids,
         /// shown at once; the next scan confirms it.
         public mutating func apply(_ action: SessionControl.Action, to pids: Set<Int32>) {
@@ -169,6 +161,13 @@ public final class SessionRegistry {
     /// that scan's result is dropped and a new one starts. Main queue only.
     public func invalidate() {
         generation += 1
+    }
+
+    /// The snapshot is out of date (the Live tab was just picked): until the
+    /// next scan lands it reads as not scanned yet. Main queue only.
+    public func markStale() {
+        snapshot.scanned = false
+        snapshot.error = nil
     }
 
     /// Shows what an action did at once. Main queue only.
