@@ -184,3 +184,66 @@ private func addSessionTotals(_ path: URL, _ sessionId: String, model: String, c
 
     #expect(JSON.int(dig(try OpencodeSource.readOpencode(path), "2026-07-29", "models", "gemini-4-argon", "input")) == 100)
 }
+
+@Test func opencodeScansBYOKCredentialsCatalogModelsLimitsAndEffortAcrossTabs() throws {
+    let tmp = TempDir()
+    let path = makeDB(tmp.url("o.db"), [
+        message(input: 1000, output: 500, model: "gemini-4-argon",
+                extra: ["model": ["id": "gemini-4-argon", "providerID": "google", "variant": "medium"] as JSONObject]),
+    ])
+    let db = TestDB(path)
+    db.exec("create table credential (id text primary key, integration_id text, label text, value text, active int)")
+    db.exec("insert into credential values ('c1', 'google', 'Google', '{\"type\":\"key\",\"key\":\"AIzaSyTestKey123456\"}', 1)")
+    db.exec("create table kv (key text primary key, value text)")
+    let catalogBody: JSONObject = [
+        "google": [
+            "models": [
+                "gemini-4-argon": [
+                    "id": "gemini-4-argon",
+                    "name": "Gemini 4 Argon",
+                    "limit": ["context": 1_048_576, "output": 32_768],
+                    "cost": ["text": ["input": ["price": 2.0, "cache": ["read": 0.1]], "output": ["price": 10.0]]],
+                ] as JSONObject,
+            ] as JSONObject,
+        ] as JSONObject,
+    ]
+    let catalogWrapper: JSONObject = ["body": jsonText(catalogBody)]
+    db.exec("insert into kv values ('models-dev:v2:catalog', \(literal(jsonText(catalogWrapper))))")
+    db.close()
+
+    var sourceState = JSONObject()
+    OpencodeSource.scanOpencode(&sourceState, dbPath: path)
+    let state: JSONObject = ["enabled_tools": ["opencode"], "sources": ["opencode": sourceState]]
+
+    // Secret key is loaded on demand and never stored in state.json.
+    #expect(!jsonText(state).contains("AIzaSyTestKey123456"))
+    #expect(OpencodeSource.loadCredentialKeys(dbPath: path)["google"] == "AIzaSyTestKey123456")
+    #expect(OpencodeSource.byokProviders(state) == ["google"])
+    #expect(OpencodeSource.byokModels(state)["gemini-4-argon"]?.string("name") == "Gemini 4 Argon")
+    #expect(OpencodeSource.byokModels(state)["gemini-4-argon"]?.int("context") == 1_048_576)
+    #expect(OpencodeSource.byokModels(state)["gemini-4-argon"]?.int("output") == 32_768)
+
+    // Check that all applicable tabs (Home, Models, Cost, Limits) use the BYOK key, models, and limits.
+    let view = Tools.toolView(state, "opencode")
+    let tabs = Dictionary(uniqueKeysWithValues: PanelModel.buildPanel(
+        view, state: state, sessions: [], friends: [], showLeaderboard: false, today: Day(2026, 7, 29)
+    ).map { ($0.key, $0) })
+
+    // Home tab shows BYOK API key card
+    let overviewItems = tabs["overview"]!.cards.flatMap(\.items)
+    #expect(overviewItems.contains(.row(label: "Google (BYOK)", value: "1 model")))
+
+    // Models tab uses display name + effort and lists available BYOK models with limits
+    let modelsItems = tabs["models"]!.cards.flatMap(\.items)
+    #expect(modelsItems.contains(.bar(label: "Gemini 4 Argon (Medium)", value: "1.5K · 100%", fraction: 1.0)))
+    #expect(modelsItems.contains(.row(label: "Gemini 4 Argon", value: "1.0M · 32.8K out")))
+
+    // Cost tab prices tokens using the BYOK catalog prices ($2/M input * 1000 + $10/M output * 500 = $0.007 -> $0.01)
+    let costItems = tabs["cost"]!.cards.flatMap(\.items)
+    #expect(!costItems.contains { if case let .note(t) = $0 { return t.contains("unknown models") } else { return false } })
+
+    // Limits tab shows BYOK API key and model context/output limits instead of "doesn't record plan limits"
+    let limitsItems = tabs["limits"]!.cards.flatMap(\.items)
+    #expect(limitsItems.contains(.row(label: "Google API key", value: "Active (opencode)")))
+    #expect(limitsItems.contains(.row(label: "Gemini 4 Argon", value: "1.0M ctx · 32.8K out")))
+}

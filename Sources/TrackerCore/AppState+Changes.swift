@@ -216,6 +216,22 @@ extension AppState {
         }
     }
 
+    /// BYOK providers whose models and limits should be fetched now: scanned
+    /// from opencode while opencode (or that provider) is tracked, not already
+    /// in flight, and due (every 15 minutes).
+    public static func byokProvidersToFetch(_ state: JSONObject, inFlight: Set<String>,
+                                            now: Double = Date().timeIntervalSince1970) -> [String] {
+        let enabledTools = Set(strings(state["enabled_tools"]))
+        let enabledProviders = Set(strings(state["enabled_providers"]))
+        let fetched = OpencodeSource.byokState(state).object("fetched") ?? [:]
+        return OpencodeSource.byokProviders(state).filter { provider in
+            (enabledTools.contains("opencode") || enabledProviders.contains(provider))
+                && Accounts.byokAllowedHosts[provider] != nil
+                && !inFlight.contains("byok:\(provider)")
+                && Accounts.accountDue(fetched.object(provider), now: now)
+        }
+    }
+
     /// A failed account fetch's result, shaped like a good one so it can be
     /// stored (its numbers stay empty).
     public static func failedAccountResult(_ error: String, now: Double) -> JSONObject {

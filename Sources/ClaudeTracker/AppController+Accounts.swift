@@ -44,7 +44,8 @@ extension AppController {
     // MARK: - Account numbers
 
     /// Start a background fetch for each enabled provider with a key whose
-    /// numbers are due (every 15 minutes) or `force`d.
+    /// numbers are due (every 15 minutes) or `force`d, and for each BYOK
+    /// provider scanned from opencode.
     func fetchAccounts(force: String? = nil) {
         for provider in AppState.accountsToFetch(state, inFlight: fetchingAccounts, force: force) {
             fetchingAccounts.insert(provider)
@@ -58,12 +59,35 @@ extension AppController {
                 self?.showFetchedAccount(provider, result)
             })
         }
+        for provider in AppState.byokProvidersToFetch(state, inFlight: fetchingAccounts) {
+            let token = "byok:\(provider)"
+            fetchingAccounts.insert(token)
+            inBackground({
+                let keys = OpencodeSource.loadCredentialKeys()
+                guard let key = keys[provider] else {
+                    return AppState.failedAccountResult("the BYOK key is no longer in opencode",
+                                                        now: Date().timeIntervalSince1970)
+                }
+                return Accounts.fetchBYOK(provider, key)
+            }, then: { [weak self] result in
+                self?.showFetchedBYOK(provider, result)
+            })
+        }
     }
 
     private func showFetchedAccount(_ provider: String, _ result: JSONObject) {
         fetchingAccounts.remove(provider)
         if AppState.strings(state["provider_keys"]).contains(provider) {  // not removed meanwhile
             Accounts.storeResult(&state, provider, result)
+        }
+        save()
+        renderPanel()
+    }
+
+    private func showFetchedBYOK(_ provider: String, _ result: JSONObject) {
+        fetchingAccounts.remove("byok:\(provider)")
+        if OpencodeSource.byokProviders(state).contains(provider) {
+            OpencodeSource.storeBYOKFetch(&state, provider: provider, result: result)
         }
         save()
         renderPanel()

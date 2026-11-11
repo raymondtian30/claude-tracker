@@ -28,6 +28,8 @@ final class PanelController: NSObject {
     private var drawnTab: String?
 
     let popover = NSPopover()
+    let rangePopover = NSPopover()
+    private let rangeRoot = FlippedView(frame: .zero)
     /// The panel's content, in flipped coordinates; it scrolls when it's
     /// taller than the screen allows.
     let root = FlippedView(frame: NSRect(x: 0, y: 0, width: PanelLayout.width, height: 400))
@@ -81,6 +83,11 @@ final class PanelController: NSObject {
         popover.behavior = .applicationDefined
         popover.animates = false
         popover.contentSize = NSSize(width: PanelLayout.width, height: 400)
+        let rangeController = NSViewController()
+        rangeController.view = rangeRoot
+        rangePopover.contentViewController = rangeController
+        rangePopover.behavior = .applicationDefined
+        rangePopover.animates = true
     }
 
     // MARK: - Wiring
@@ -166,6 +173,7 @@ final class PanelController: NSObject {
     /// Close the panel; `animated` folds it up first (if the animation is
     /// on). Dialogs and the Settings window close it straight away.
     func close(animated: Bool = false) {
+        closeRangePopup()
         if animated && animationSeconds > 0 && popover.isShown {
             if let animation = animation, !animation.unfolding {
                 return  // already folding
@@ -231,7 +239,13 @@ final class PanelController: NSObject {
             let isEsc = event.keyCode == 53
             let window = event.window
             let closed = onMain { () -> Bool in
-                guard let self = self, isEsc, window === self.root.window else { return false }
+                guard let self = self, isEsc else { return false }
+                if self.rangePopover.isShown, window === self.rangeRoot.window || window === self.root.window {
+                    self.closeRangePopup()
+                    self.onAction("chart_cancel", .none)
+                    return true
+                }
+                guard window === self.root.window else { return false }
                 self.close(animated: true)
                 return true
             }
@@ -405,5 +419,28 @@ final class PanelController: NSObject {
         hosting.sizingOptions = []  // sized here, from PanelLayout
         hosting.frame = NSRect(x: 0, y: y, width: PanelLayout.width, height: height)
         return hosting
+    }
+
+    /// Shows the Custom date range calendars in a popup attached to the panel.
+    func showRangePopup(_ card: Card) {
+        let cardH = PanelLayout.cardHeight(card)
+        let size = NSSize(width: PanelLayout.width, height: cardH + 2 * PanelLayout.pad)
+        rangeRoot.subviews.forEach { $0.removeFromSuperview() }
+        rangeRoot.setFrameSize(size)
+        let view = CardView(card: card, onAction: onAction)
+            .padding(PanelLayout.pad)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+        rangeRoot.addSubview(hosting(view, y: 0, height: size.height))
+        rangePopover.contentSize = size
+        rangePopover.appearance = NSApp.effectiveAppearance
+        if popover.isShown && !rangePopover.isShown {
+            rangePopover.show(relativeTo: wrapper.bounds, of: wrapper, preferredEdge: .minX)
+        }
+    }
+
+    func closeRangePopup() {
+        if rangePopover.isShown {
+            rangePopover.close()
+        }
     }
 }

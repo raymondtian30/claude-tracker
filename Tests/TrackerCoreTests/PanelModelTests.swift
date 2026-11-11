@@ -726,18 +726,19 @@ private func labels(_ tab: Tab) -> [String] {
 
 @Test func chartRangeIsSevenFourteenOrThirty() {
     #expect(PanelModel.chartDays(from: [:]) == 14)
-    for days in [7, 14, 30] { #expect(PanelModel.chartDays(from: ["chart_days": days]) == days) }
+    for days in [1, 7, 14, 30] { #expect(PanelModel.chartDays(from: ["chart_days": days]) == days) }
     for bad: Any in [10, 0, -7, "30", NSNull(), 30.5, true] { #expect(PanelModel.chartDays(from: ["chart_days": bad]) == 14) }
 }
 
 @Test func overviewChartFollowsTheRangeAndHasDayLabels() {
     var daily = JSONObject()
     UsageStats.recordEntry(&daily, panelEntry("2026-07-29T12:00:00.000Z", ["input_tokens": 15]))
-    for days in [7, 14, 30] {
+    for days in [1, 7, 14, 30] {
         let tab = tabsFor(daily, state: ["chart_days": days])["overview"]!
-        let card = tab.cards.first { $0.title == "Last \(days) days" }!
-        #expect(card.items[0] == .segmented(label: nil, options: ["7 days", "14 days", "30 days", "All", "Custom"],
-                                            selected: [7, 14, 30].firstIndex(of: days)!, action: "chart_days"))
+        let expectedTitle = days == 1 ? "Last 1 day" : "Last \(days) days"
+        let card = tab.cards.first { $0.title == expectedTitle }!
+        #expect(card.items[0] == .segmented(label: nil, options: ["1 day", "7 days", "14 days", "30 days", "All", "Custom"],
+                                            selected: [1, 7, 14, 30].firstIndex(of: days)!, action: "chart_days"))
         guard case let .chart(values, _, chartLabels) = card.items[1] else { Issue.record("no chart"); return }
         #expect(values.count == days && chartLabels.count == days)
         #expect(chartLabels.last == "Jul 29th" && values.last == 15)
@@ -835,8 +836,8 @@ private let july29 = Day(2026, 7, 29)
     let tab = tabsFor(daily, state: ["chart_mode": "all"])["overview"]!
     let card = tab.cards.first { $0.title == "All time" }!
 
-    #expect(card.items[0] == .segmented(label: nil, options: ["7 days", "14 days", "30 days", "All", "Custom"],
-                                        selected: 3, action: "chart_days"))
+    #expect(card.items[0] == .segmented(label: nil, options: ["1 day", "7 days", "14 days", "30 days", "All", "Custom"],
+                                        selected: 4, action: "chart_days"))
     guard case let .chart(values, caption, chartLabels) = card.items[1] else { Issue.record("no chart"); return }
     #expect(values.reduce(0, +) == 24 && values.count <= 60 && values.count == chartLabels.count)
     #expect(chartLabels.first?.hasPrefix("May 1st") == true && chartLabels.last?.hasSuffix("Jul 29th") == true)
@@ -851,9 +852,9 @@ private let july29 = Day(2026, 7, 29)
     let tab = tabsFor(daily, state: state)["overview"]!
     let card = tab.cards.first { $0.title == "Jul 10th – Jul 14th" }!
 
-    #expect(card.items[0] == .segmented(label: nil, options: ["7 days", "14 days", "30 days", "All", "Custom"],
-                                        selected: 4, action: "chart_days"))
-    // The dates are picked on a page of their own; this opens it again.
+    #expect(card.items[0] == .segmented(label: nil, options: ["1 day", "7 days", "14 days", "30 days", "All", "Custom"],
+                                        selected: 5, action: "chart_days"))
+    // The dates are picked in a popup; this opens it again.
     #expect(card.items[1] == .buttons([Item.Button("Change dates", "calendar", "chart_edit")]))
     guard case let .chart(values, _, _) = card.items[2] else { Issue.record("no chart"); return }
     #expect(values == [9, 0, 0, 0, 0])
@@ -868,9 +869,9 @@ private let july29 = Day(2026, 7, 29)
     }
 }
 
-// MARK: - The Custom range page
+// MARK: - The Custom range popup
 
-@Test func theCustomRangePageIsATabOnlyWhileItIsOpen() {
+@Test func theCustomRangeIsAPopupAndNeverATab() {
     var daily = JSONObject()
     UsageStats.recordEntry(&daily, panelEntry("2026-07-10T12:00:00.000Z", ["input_tokens": 9]))
     let view = viewOf(daily, name: "Claude Code", key: "claude_code")
@@ -881,26 +882,25 @@ private let july29 = Day(2026, 7, 29)
                                      rangeOpen: true)
 
     #expect(!closed.map(\.key).contains("range"))
-    #expect(open.map(\.key) == ["overview", "range"] + closed.map(\.key).dropFirst())  // right after Home
-    let page = open[1]
-    #expect(page.title == "Custom Range" && page.short == "Range" && page.icon == "calendar")
-    #expect(page.cards.count == 1 && page.cards[0].title == "Custom range")
-    #expect(page.cards[0].items.first == .rangePicker(from: Day(2026, 7, 12), to: Day(2026, 7, 20),
-                                                      earliest: Day(2026, 7, 10), latest: july29))
-    #expect(page.cards[0].items.contains(.note("Usage is recorded from Jul 10th.")))
+    #expect(open.map(\.key) == closed.map(\.key))
+    let popup = PanelModel.rangePopupCard(view, state: state, today: july29)
+    #expect(popup.title == "Custom range")
+    #expect(popup.items.first == .rangePicker(from: Day(2026, 7, 12), to: Day(2026, 7, 20),
+                                              earliest: Day(2026, 7, 10), latest: july29))
+    #expect(popup.items.contains(.note("Usage is recorded from Jul 10th.")))
 }
 
-@Test func theCustomRangePageStartsFromTheShownRange() {
+@Test func theCustomRangePopupStartsFromTheShownRange() {
     var daily = JSONObject()
     UsageStats.recordEntry(&daily, panelEntry("2026-07-01T12:00:00.000Z", ["input_tokens": 9]))
     let view = viewOf(daily, name: "Claude Code", key: "claude_code")
     func page(_ state: JSONObject) -> Item? {
-        PanelModel.buildPanel(view, state: state, sessions: [], friends: [], showLeaderboard: false, today: july29,
-                              rangeOpen: true)[1].cards[0].items.first
+        PanelModel.rangePopupCard(view, state: state, today: july29).items.first
     }
 
     // Not custom yet: the range the chart shows (the last 14 days unless picked otherwise, or all of it).
     #expect(page([:]) == .rangePicker(from: Day(2026, 7, 16), to: july29, earliest: Day(2026, 7, 1), latest: july29))
+    #expect(page(["chart_days": 1]) == .rangePicker(from: july29, to: july29, earliest: Day(2026, 7, 1), latest: july29))
     #expect(page(["chart_days": 7]) == .rangePicker(from: Day(2026, 7, 23), to: july29, earliest: Day(2026, 7, 1), latest: july29))
     #expect(page(["chart_mode": "all"]) == .rangePicker(from: Day(2026, 7, 1), to: july29, earliest: Day(2026, 7, 1), latest: july29))
 }

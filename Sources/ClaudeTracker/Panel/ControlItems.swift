@@ -44,7 +44,7 @@ struct SegmentedItem: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             ControlLabel(text: label)
-            SegmentedControl(options: options, selected: [selected], multiple: false) { picked in
+            SegmentedControl(options: options, selected: [selected], multiple: false, small: options.count > 5) { picked in
                 onAction(action, .index(picked.first ?? 0))
             }
             .frame(maxWidth: .infinity, minHeight: 24, maxHeight: 24)

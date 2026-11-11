@@ -91,11 +91,12 @@ import Testing
 @Test func roundTwoActions() {
     #expect(AppAction.parse("show_effort", .bool(true)) == .showEffort(true))
     #expect(AppAction.parse("show_effort", .bool(false)) == .showEffort(false))
-    #expect(AppAction.parse("chart_days", .index(0)) == .chartDays(7))
-    #expect(AppAction.parse("chart_days", .index(2)) == .chartDays(30))
-    #expect(AppAction.parse("chart_days", .index(3)) == .chartAll)
-    #expect(AppAction.parse("chart_days", .index(4)) == .chartCustom)
-    #expect(AppAction.parse("chart_days", .index(5)) == nil)
+    #expect(AppAction.parse("chart_days", .index(0)) == .chartDays(1))
+    #expect(AppAction.parse("chart_days", .index(1)) == .chartDays(7))
+    #expect(AppAction.parse("chart_days", .index(3)) == .chartDays(30))
+    #expect(AppAction.parse("chart_days", .index(4)) == .chartAll)
+    #expect(AppAction.parse("chart_days", .index(5)) == .chartCustom)
+    #expect(AppAction.parse("chart_days", .index(6)) == nil)
     #expect(AppAction.parse("chart_edit", .none) == .chartEdit)
     #expect(AppAction.parse("chart_cancel", .none) == .chartCancel)
     // Both dates at once, when Apply is clicked.

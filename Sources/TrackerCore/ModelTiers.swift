@@ -38,10 +38,18 @@ public enum ModelTiers {
     /// `totals` (already most tokens first, as `UsageStats.modelTotals` gives
     /// them) in `order`. By tier: lowest tier first, then most tokens first,
     /// then name; models with no tier after all the others, most tokens first.
-    public static func sorted(_ totals: [UsageStats.NamedTotal], by order: Order) -> [UsageStats.NamedTotal] {
+    public static func sorted(_ totals: [UsageStats.NamedTotal], by order: Order,
+                              catalog: [String: JSONObject] = [:]) -> [UsageStats.NamedTotal] {
         guard order == .tier else { return totals }
+        func rank(_ name: String) -> Double {
+            if let t = tier(of: name) { return Double(t) }
+            if let outPrice = catalog[name]?.double("output_price"), outPrice > 0 {
+                return 100.0 + outPrice
+            }
+            return .infinity
+        }
         return totals.sorted { left, right in
-            let (a, b) = (tier(of: left.name) ?? Int.max, tier(of: right.name) ?? Int.max)
+            let (a, b) = (rank(left.name), rank(right.name))
             if a != b { return a < b }
             if left.tokens != right.tokens { return left.tokens > right.tokens }
             return left.name < right.name

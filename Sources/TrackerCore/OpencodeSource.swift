@@ -75,10 +75,14 @@ public enum OpencodeSource {
             guard let created = data.object("time")?.double("created"), created != 0,
                   parts.values.reduce(0, +) != 0
             else { continue }
-            let model = CodexSource.nonEmpty(data.object("model")?.string("id")) ?? "unknown"
+            let modelObject = data.object("model")
+            let model = CodexSource.nonEmpty(modelObject?.string("id")) ?? "unknown"
+            let effort = UsageStats.normalizeEffort(modelObject?["variant"])
+                ?? UsageStats.normalizeEffort(modelObject?["effort"])
             let cost = data.double("cost")
             UsageStats.addUsage(&daily, day: Day(timestamp: created / 1000), model: model,
-                                project: UsageStats.projectLabel(row[1] as? String), parts: parts, cost: cost)
+                                project: UsageStats.projectLabel(row[1] as? String), parts: parts, cost: cost,
+                                effort: effort)
             var seen = counted[hashable(row[2])] ?? Counted()
             for (category, count) in parts {
                 seen.parts[category, default: 0] += count
@@ -109,10 +113,12 @@ public enum OpencodeSource {
         else { return }
         let modelObject = (modelJSON as? String).flatMap { JSON.parseObject(Data($0.utf8)) }
         let model = CodexSource.nonEmpty(modelObject?.string("id")) ?? "unknown"
+        let effort = UsageStats.normalizeEffort(modelObject?["variant"])
+            ?? UsageStats.normalizeEffort(modelObject?["effort"])
         let extraCost = max((JSON.double(cost) ?? 0.0) - already.cost, 0.0)
         UsageStats.addUsage(&daily, day: Day(timestamp: createdMs / 1000), model: model,
                             project: UsageStats.projectLabel(directory as? String), parts: leftover,
-                            cost: extraCost != 0 ? extraCost : nil)
+                            cost: extraCost != 0 ? extraCost : nil, effort: effort)
     }
 
     /// Update `sourceState` from opencode's database. Sets
@@ -126,10 +132,224 @@ public enum OpencodeSource {
         }
         do {
             let current = try readOpencode(dbPath)
-            sourceState["daily"] = UsageStats.mergeMaxDaily(saved, current)
+            let merged = UsageStats.mergeMaxDaily(saved, current)
+            sourceState["daily"] = merged
+            scanBYOK(&sourceState, dbPath: dbPath, daily: merged)
         } catch {
             sourceState["error"] = "opencode's database couldn't be read (\(error))"
         }
+    }
+
+    // MARK: - BYOK credentials, catalog models and limits
+
+    static let credentialQuery = """
+        select integration_id, label, value, active
+        from credential
+    """
+
+    static let catalogQuery = """
+        select value from kv where key = 'models-dev:v2:catalog'
+    """
+
+    /// Active BYOK API keys configured in opencode (`credential` table in
+    /// `opencode.db` and `auth.json` beside it), keyed by canonical provider id.
+    /// Never written to `state.json`.
+    public static func loadCredentialKeys(dbPath: URL = opencodeDB, authPath: URL? = nil) -> [String: String] {
+        var keys = [String: String]()
+        let authFile = authPath ?? dbPath.deletingLastPathComponent().appendingPathComponent("auth.json")
+        if let data = try? Data(contentsOf: authFile), let obj = JSON.parseObject(data) {
+            for (rawProvider, entry) in obj {
+                guard let provider = Providers.normalizeProvider(rawProvider),
+                      let key = extractKey(from: entry), Accounts.validKey(key)
+                else { continue }
+                keys[provider] = key
+            }
+        }
+        if FileManager.default.fileExists(atPath: dbPath.path),
+           let db = try? Database(readOnly: dbPath) {
+            defer { db.close() }
+            if let rows = try? db.rows(credentialQuery) {
+                for row in rows where row.count >= 4 {
+                    if let active = JSON.int(row[3]), active == 0 {
+                        continue
+                    }
+                    let rawProvider = (row[0] as? String) ?? (row[1] as? String)
+                    guard let provider = Providers.normalizeProvider(rawProvider),
+                          let key = extractKey(from: row[2]), Accounts.validKey(key)
+                    else { continue }
+                    keys[provider] = key
+                }
+            }
+        }
+        return keys
+    }
+
+    private static func extractKey(from raw: Any?) -> String? {
+        if let text = raw as? String {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("{"), let obj = JSON.parseObject(Data(trimmed.utf8)) {
+                return extractKeyFromObject(obj)
+            }
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if let obj = JSON.object(raw) {
+            return extractKeyFromObject(obj)
+        }
+        return nil
+    }
+
+    private static func extractKeyFromObject(_ obj: JSONObject) -> String? {
+        for field in ["key", "apiKey", "api_key", "token"] {
+            if let val = obj.string(field)?.trimmingCharacters(in: .whitespacesAndNewlines), !val.isEmpty {
+                return val
+            }
+        }
+        return nil
+    }
+
+    /// Reads BYOK provider keys (names only, never secret values) and model
+    /// metadata (display names, context/output limits, prices) from `dbPath`
+    /// into `sourceState["byok"]`.
+    public static func scanBYOK(_ sourceState: inout JSONObject, dbPath: URL = opencodeDB, daily: JSONObject = [:]) {
+        let credKeys = loadCredentialKeys(dbPath: dbPath)
+        let providers = Providers.providers.map(\.key).filter { credKeys[$0] != nil }
+        let usedModels = Set(UsageStats.modelsAllTime(daily).keys)
+        var byok = sourceState.object("byok") ?? [:]
+        var models = byok.object("models") ?? [:]
+
+        if FileManager.default.fileExists(atPath: dbPath.path),
+           let db = try? Database(readOnly: dbPath) {
+            defer { db.close() }
+            if let rows = try? db.rows(catalogQuery), let raw = rows.first?.first as? String,
+               let wrapper = JSON.parseObject(Data(raw.utf8)) {
+                let body: JSONObject?
+                if let bodyStr = wrapper.string("body") {
+                    body = JSON.parseObject(Data(bodyStr.utf8))
+                } else {
+                    body = wrapper.object("body")
+                }
+                if let catalog = body {
+                    let wantedProviders = Set(providers)
+                    for (vendorKey, vendorVal) in catalog {
+                        let provider = Providers.normalizeProvider(vendorKey)
+                        guard let vendorObj = JSON.object(vendorVal),
+                              let vendorModels = vendorObj.object("models")
+                        else { continue }
+                        for (modelId, modelVal) in vendorModels {
+                            let inferred = provider ?? Providers.providerOf(modelId)
+                            let isWantedProvider = inferred.map(wantedProviders.contains) ?? false
+                            guard isWantedProvider || usedModels.contains(modelId),
+                                  let mObj = JSON.object(modelVal)
+                            else { continue }
+                            var entry = models.object(modelId) ?? [:]
+                            if let name = CodexSource.nonEmpty(mObj.string("name")) {
+                                entry["name"] = name
+                            }
+                            if let inferred = inferred {
+                                entry["provider"] = inferred
+                            }
+                            if let limit = mObj.object("limit") {
+                                let ctx = limit.int("context") ?? limit.int("input") ?? 0
+                                let out = limit.int("output") ?? 0
+                                if ctx > 0 { entry["context"] = ctx }
+                                if out > 0 { entry["output"] = out }
+                            }
+                            if let textCost = mObj.object("cost")?.object("text") {
+                                if let inPrice = textCost.object("input")?.double("price") {
+                                    entry["input_price"] = inPrice
+                                }
+                                if let outPrice = textCost.object("output")?.double("price") {
+                                    entry["output_price"] = outPrice
+                                }
+                                if let cacheRead = textCost.object("input")?.object("cache")?.double("read") {
+                                    entry["cache_read_price"] = cacheRead
+                                }
+                            }
+                            if !entry.isEmpty {
+                                models[modelId] = entry
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if providers.isEmpty && models.isEmpty && byok.isEmpty {
+            return
+        }
+        byok["providers"] = providers
+        byok["models"] = models
+        sourceState["byok"] = byok
+    }
+
+    public static func byokState(_ state: JSONObject) -> JSONObject {
+        state.object("sources")?.object("opencode")?.object("byok") ?? [:]
+    }
+
+    /// Canonical provider keys that have an active BYOK API key in opencode.
+    public static func byokProviders(_ state: JSONObject) -> [String] {
+        (byokState(state).array("providers") ?? []).compactMap(JSON.string)
+    }
+
+    /// Model metadata discovered from opencode's catalog or BYOK API keys:
+    /// `{modelId: {"name", "provider", "context", "output", "input_price", "output_price", "cache_read_price"}}`.
+    public static func byokModels(_ state: JSONObject) -> [String: JSONObject] {
+        guard let raw = byokState(state).object("models") else { return [:] }
+        var result = [String: JSONObject]()
+        for (id, value) in raw {
+            if let obj = JSON.object(value) {
+                result[id] = obj
+            }
+        }
+        return result
+    }
+
+    /// Prices per 1M tokens for models discovered via BYOK/opencode.
+    public static func byokPrices(_ state: JSONObject) -> [String: Pricing.Price] {
+        var prices = [String: Pricing.Price]()
+        for (modelId, info) in byokModels(state) {
+            guard let input = info.double("input_price"),
+                  let output = info.double("output_price")
+            else { continue }
+            let cacheRead = info.double("cache_read_price") ?? (input * 0.1)
+            prices[modelId] = Pricing.Price(input, output, cacheRead)
+        }
+        return prices
+    }
+
+    /// Merge live models/limits fetched with a BYOK API key into `state`.
+    public static func storeBYOKFetch(_ state: inout JSONObject, provider: String, result: JSONObject) {
+        var sources = state.object("sources") ?? [:]
+        var opencode = sources.object("opencode") ?? [:]
+        var byok = opencode.object("byok") ?? [:]
+        var models = byok.object("models") ?? [:]
+        if let fetchedModels = result.object("models") {
+            for (modelId, value) in fetchedModels {
+                guard let mObj = JSON.object(value) else { continue }
+                var entry = models.object(modelId) ?? [:]
+                for (k, v) in mObj {
+                    entry[k] = v
+                }
+                entry["provider"] = provider
+                models[modelId] = entry
+            }
+        }
+        byok["models"] = models
+        var fetched = byok.object("fetched") ?? [:]
+        var providerInfo = fetched.object(provider) ?? [:]
+        if JSON.truthy(result["error"]) {
+            providerInfo["error"] = result["error"]
+            providerInfo["attempted_at"] = result["fetched_at"]
+        } else {
+            providerInfo = result
+            providerInfo["models"] = nil  // stored in byok["models"] above
+            providerInfo["attempted_at"] = result["fetched_at"]
+        }
+        fetched[provider] = providerInfo
+        byok["fetched"] = fetched
+        opencode["byok"] = byok
+        sources["opencode"] = opencode
+        state["sources"] = sources
     }
 
     public static func opencodeDaily(_ sourceState: JSONObject) -> JSONObject {

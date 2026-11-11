@@ -43,10 +43,10 @@ public enum PanelModel {
     public static let leaderboardViews: [(key: String, label: String)] = [
         ("total", "Total"), ("day", "Yesterday"),
     ]
-    public static let chartRanges = [7, 14, 30]
+    public static let chartRanges = [1, 7, 14, 30]
     public static let defaultChartDays = 14
 
-    /// How many days the Home chart shows: 7, 14 or 30 (anything else reads as 14).
+    /// How many days the Home chart shows: 1, 7, 14 or 30 (anything else reads as 14).
     public static func chartDays(from state: JSONObject) -> Int {
         guard let value = state["chart_days"], JSON.isInteger(value), let days = JSON.int(value),
               chartRanges.contains(days)
@@ -149,8 +149,13 @@ public enum PanelModel {
         return "\(minutes) minute" + (minutes == 1 ? "" : "s")
     }
 
-    /// 'claude-opus-5-5' -> 'Opus 5.5', 'claude-haiku-4-5-20251001' -> 'Haiku 4.5'.
-    public static func modelDisplayName(_ modelId: String) -> String {
+    /// 'claude-opus-5-5' -> 'Opus 5.5', 'claude-haiku-4-5-20251001' -> 'Haiku 4.5',
+    /// or the display name from a BYOK catalog (e.g. 'gemini-4-argon' -> 'Gemini 4 Argon').
+    public static func modelDisplayName(_ modelId: String, catalog: [String: JSONObject] = [:]) -> String {
+        if let name = catalog[modelId]?.string("name")?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !name.isEmpty {
+            return name
+        }
         let parts = modelId.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
         guard parts.count >= 2, parts[0] == "claude", modelFamilies.contains(parts[1]) else {
             return modelId
@@ -226,6 +231,8 @@ public enum PanelModel {
         let grandTotal: Int
         let earlier: Int
         let todayTotal: Int
+        let byokProviders: [String]
+        let byokModels: [String: JSONObject]
 
         init(_ view: Tools.View, today: Day, state: JSONObject) {
             self.view = view
@@ -243,6 +250,8 @@ public enum PanelModel {
             grandTotal = view.grandTotal
             earlier = Swift.max(grandTotal - detailed, 0)
             todayTotal = UsageStats.modelTotals(todayModels).reduce(0) { $0 + $1.tokens }
+            byokProviders = OpencodeSource.byokProviders(state)
+            byokModels = OpencodeSource.byokModels(state)
         }
     }
 
@@ -279,10 +288,6 @@ public enum PanelModel {
             costTab(d),
             limitsTab(d, now: now ?? Date().timeIntervalSince1970),
         ]
-        // The Custom range page is a tab while it's open, right after Home.
-        if rangeOpen {
-            tabs.insert(rangeTab(d), at: 1)
-        }
         // A running session can't be tied to one provider, so provider views
         // have no Live tab.
         if Providers.providerNames[view.key] == nil {

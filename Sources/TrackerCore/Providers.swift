@@ -50,6 +50,17 @@ public enum Providers {
         ("minimax", #"minimax"#),
     ].map { ($0.0, try! NSRegularExpression(pattern: $0.1)) }
 
+    /// Canonical provider key for a vendor or integration name (e.g. "moonshotai" -> "kimi"), or nil.
+    public static func normalizeProvider(_ raw: String?) -> String? {
+        guard let lowered = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !lowered.isEmpty
+        else { return nil }
+        if providerNames[lowered] != nil {
+            return lowered
+        }
+        return vendors[lowered]
+    }
+
     /// The provider key whose model this is, or nil.
     public static func providerOf(_ model: String?) -> String? {
         // Python's str.rpartition("/"): no "/" leaves the vendor empty.
@@ -79,6 +90,7 @@ public enum Providers {
 
     /// Usage of `key`'s models through every tool with data on this Mac.
     public static func providerView(_ state: JSONObject, _ key: String) -> Tools.View {
+        let catalog = OpencodeSource.byokModels(state)
         var views = [Tools.View]()
         var errors = [String]()
         for (tool, _) in Tools.tools {
@@ -86,7 +98,9 @@ public enum Providers {
             if let error = view.error {
                 errors.append("\(view.name): \(error)")
             }
-            let daily = UsageStats.filterDaily(view.daily) { providerOf($0) == key }
+            let daily = UsageStats.filterDaily(view.daily) { model in
+                (providerOf(model) ?? catalog[model]?.string("provider")) == key
+            }
             if !daily.isEmpty {
                 view.daily = daily
                 view.grandTotal = SourceFile.total(daily)

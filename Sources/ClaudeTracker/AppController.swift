@@ -312,15 +312,19 @@ final class AppController {
             tabToShow = nil
             panel.select(key: key)
         }
+        if rangeOpen {
+            panel.showRangePopup(PanelModel.rangePopupCard(view, state: state))
+        } else {
+            panel.closeRangePopup()
+        }
         settingsWindow.render(PanelModel.settingsTab(state, intervalChoices: AppState.scanIntervalChoices,
                                                      detected: detected, updateStatus: updateStatus,
                                                      showCredits: aboutShowsCredits))
     }
 
     /// Picking another tab closes every open row, "Show less" the projects
-    /// and the Custom range page (unless that is the tab picked). The redraw
-    /// waits for the next run-loop turn: this runs inside `selectTab`, which
-    /// must not be re-entered.
+    /// and the Custom range popup. The redraw waits for the next run-loop
+    /// turn: this runs inside `selectTab`, which must not be re-entered.
     private func tabChanged(to key: String) {
         var changed = !openRows.isEmpty || projectsExpanded
         if key == "sessions" {
@@ -332,7 +336,7 @@ final class AppController {
         }
         openRows = [:]
         projectsExpanded = false
-        if rangeOpen && key != "range" {
+        if rangeOpen {
             closeRangePage()
             changed = true
         }
@@ -342,18 +346,17 @@ final class AppController {
         }
     }
 
-    /// Opens the Custom range page as a tab, and shows it.
+    /// Opens the Custom range popup.
     private func openRangePage() {
         RangeDraft.clear()
         rangeOpen = true
-        tabToShow = "range"
     }
 
-    /// Closes the Custom range page; the draw after this drops its tab, and
-    /// the panel goes back to Home.
+    /// Closes the Custom range popup.
     private func closeRangePage() {
         rangeOpen = false
         RangeDraft.clear()
+        panel.closeRangePopup()
     }
 
     /// Starts a scan for open sessions and plugin activity off the main
@@ -458,10 +461,10 @@ final class AppController {
             let earliest = UsageStats.earliestDay(AppState.currentView(state, detected: Tools.detectTools()).daily)
             AppState.applyChart(parsed, to: &state, today: Day.today(), earliest: earliest)
             save()
-            // Custom, and Change dates, open a page to pick the dates on; Apply closes it.
+            // Custom, and Change dates, open a popup to pick the dates on; Apply or another range closes it.
             if parsed == .chartCustom {
                 openRangePage()
-            } else if case .chartRange = parsed {
+            } else {
                 closeRangePage()
             }
         case .chartEdit: openRangePage()

@@ -55,11 +55,13 @@ public enum Pricing {
     /// Estimate USD for {model: {category: tokens}}.
     ///
     /// `recorded` is {model: dollars} a tool recorded itself (opencode does);
-    /// those models use that amount instead of the price table.
+    /// those models use that amount instead of the price table. `extraPrices`
+    /// supplies prices discovered from a BYOK catalog (e.g. opencode).
     /// Returns (dollars, unpriced): tokens from models with no known
     /// price are left out of the dollar figure and counted separately.
     public static func estimateCost(_ models: UsageStats.Models,
-                                    recorded: [String: Double] = [:]) -> (dollars: Double, unpriced: Int) {
+                                    recorded: [String: Double] = [:],
+                                    extraPrices: [String: Price] = [:]) -> (dollars: Double, unpriced: Int) {
         var dollars = 0.0
         var unpriced = 0
         for (model, parts) in models {
@@ -67,7 +69,7 @@ public enum Pricing {
                 dollars += amount
                 continue
             }
-            guard let price = priceFor(model) else {
+            guard let price = priceFor(model) ?? extraPrices[model] else {
                 unpriced += parts.values.reduce(0, +)
                 continue
             }

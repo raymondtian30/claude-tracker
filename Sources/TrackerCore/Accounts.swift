@@ -434,4 +434,129 @@ public enum Accounts {
         else { return true }
         return now - last >= refreshSeconds
     }
+
+    // MARK: - BYOK live model & limit discovery
+
+    public static let byokAllowedHosts: [String: Set<String>] = [
+        "google": ["generativelanguage.googleapis.com"],
+        "openai": ["api.openai.com"],
+        "anthropic": ["api.anthropic.com"],
+        "deepseek": ["api.deepseek.com"],
+        "kimi": ["api.moonshot.ai", "api.moonshot.cn"],
+        "xai": ["api.x.ai"],
+        "mistral": ["api.mistral.ai"],
+    ]
+
+    /// GETs `url` with a BYOK `key`, sending the header each provider's API expects.
+    public static func httpGetBYOKJSON(_ url: String, key: String, provider: String,
+                                       send: HTTP.Send = HTTP.send) throws -> Any {
+        let parsed = URL(string: url)
+        let host = parsed.flatMap { HTTP.host(of: $0) }
+        let scheme = parsed?.scheme?.lowercased() ?? ""
+        guard let parsed = parsed, scheme == "https", let allowed = host,
+              byokAllowedHosts[provider]?.contains(allowed) == true
+        else {
+            throw HTTP.RefusedURL(description:
+                "refusing to send a \(provider) key to \(scheme)://\(host ?? "None")")
+        }
+        var request = URLRequest(url: parsed, timeoutInterval: 20)
+        if provider == "google" {
+            request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+        } else if provider == "anthropic" {
+            request.setValue(key, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        } else {
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("ClaudeTracker/\(Version.version)", forHTTPHeaderField: "User-Agent")
+        return try HTTP.json(send(request, false))
+    }
+
+    /// Queries `provider`'s API with a BYOK `key` to find available models,
+    /// their token limits (context & output), and any balance or account info.
+    public static func fetchBYOK(_ provider: String, _ key: String, get: Get? = nil,
+                                 today: Day? = nil,
+                                 now: Double = Date().timeIntervalSince1970) -> JSONObject {
+        let get = get ?? { url, key in try httpGetBYOKJSON(url, key: key, provider: provider) }
+        let name = Providers.providerNames[provider] ?? names[provider] ?? provider
+        var result: JSONObject = [
+            "models": JSONObject(), "rows": [Any](), "notes": [Any](), "error": NSNull(),
+            "fetched_at": isoSeconds(now),
+        ]
+        do {
+            switch provider {
+            case "google":
+                let data = try get("https://generativelanguage.googleapis.com/v1beta/models?pageSize=100", key)
+                var models = JSONObject()
+                for item in try list(field(data, "models")) {
+                    guard let obj = JSON.object(item),
+                          let rawName = obj.string("name"), !rawName.isEmpty
+                    else { continue }
+                    let id = rawName.hasPrefix("models/") ? String(rawName.dropFirst("models/".count)) : rawName
+                    var entry: JSONObject = ["provider": "google"]
+                    if let display = CodexSource.nonEmpty(obj.string("displayName")) {
+                        entry["name"] = display
+                    }
+                    if let ctx = obj.int("inputTokenLimit"), ctx > 0 {
+                        entry["context"] = ctx
+                    }
+                    if let out = obj.int("outputTokenLimit"), out > 0 {
+                        entry["output"] = out
+                    }
+                    models[id] = entry
+                }
+                result["models"] = models
+                result["rows"] = [["Models available", "\(models.count)"]]
+            case "openai", "xai", "mistral", "anthropic":
+                let base: String
+                switch provider {
+                case "openai": base = "https://api.openai.com/v1/models"
+                case "xai": base = "https://api.x.ai/v1/models"
+                case "mistral": base = "https://api.mistral.ai/v1/models"
+                default: base = "https://api.anthropic.com/v1/models"
+                }
+                let data = try get(base, key)
+                var models = JSONObject()
+                for item in try list(field(data, "data")) {
+                    guard let obj = JSON.object(item),
+                          let id = CodexSource.nonEmpty(obj.string("id"))
+                    else { continue }
+                    var entry: JSONObject = ["provider": provider]
+                    if let display = CodexSource.nonEmpty(obj.string("display_name") ?? obj.string("name")) {
+                        entry["name"] = display
+                    }
+                    if let ctx = obj.int("context_window") ?? obj.int("max_context_length"), ctx > 0 {
+                        entry["context"] = ctx
+                    }
+                    models[id] = entry
+                }
+                result["models"] = models
+                result["rows"] = [["Models available", "\(models.count)"]]
+            case "deepseek":
+                let account = try fetchDeepSeek(key, today ?? Day.today(now: now), now, get)
+                result["rows"] = account["rows"] ?? [Any]()
+                result["notes"] = account["notes"] ?? [Any]()
+                if let data = try? get("https://api.deepseek.com/models", key),
+                   let items = try? list(field(data, "data")) {
+                    var models = JSONObject()
+                    for item in items {
+                        guard let obj = JSON.object(item), let id = CodexSource.nonEmpty(obj.string("id")) else { continue }
+                        models[id] = ["provider": "deepseek", "name": id] as JSONObject
+                    }
+                    result["models"] = models
+                }
+            case "kimi":
+                let account = try fetchKimi(key, today ?? Day.today(now: now), now, get)
+                result["rows"] = account["rows"] ?? [Any]()
+                result["notes"] = account["notes"] ?? [Any]()
+                result["daily"] = account["daily"] ?? JSONObject()
+            default:
+                break
+            }
+        } catch {
+            result["error"] = describe(error, name)
+        }
+        return result
+    }
 }

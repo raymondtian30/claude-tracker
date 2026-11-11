@@ -16,7 +16,7 @@ By default it never connects to the internet or sends your data anywhere. The on
   - **opencode:** its database at `~/.local/share/opencode/opencode.db`, opened read-only
   - **Gemini CLI:** its saved chat sessions in `~/.gemini/tmp/<project>/chats/` (and each project's `.project_root` file, for the folder name)
 
-  From these it reads only token counts, which model was used (and the effort level it ran at, such as medium or high), when, and which project folder, plus, for open Claude Code sessions, which plugin skills, agents, hooks and MCP tools ran and when, and (for the Live tab) each chat's title and whether Claude is busy or idle. It skips your prompts, code and replies, and never touches opencode's account or credential tables.
+  From these it reads only token counts, which model was used (and the effort level it ran at, such as medium or high), when, and which project folder, plus, for open Claude Code sessions, which plugin skills, agents, hooks and MCP tools ran and when, (for the Live tab) each chat's title and whether Claude is busy or idle, and (for opencode BYOK) which provider API key is configured and its model catalog and token limits (keys are never saved to `state.json` or logs). It skips your prompts, code and replies.
 - `launchctl`, macOS's own built-in tool, only to turn its "start at login" setting on or off
 - `/usr/bin/security`, macOS's own Keychain tool, only for the Claude Code sign-in, API keys and Leaderboard token described below -- as before, the app reaches your Keychain only through this tool
 
@@ -54,7 +54,7 @@ The first time you open it, it asks which AI tools you use (Claude Code, Codex, 
 
 A panel opens with a row of tabs along the top. It always opens on **Overview**; click an icon to switch tabs:
 
-- **Overview** -- today's and lifetime totals, a chart of the last 7, 14 or 30 days, **All** your history, or a **Custom** range (pick it above the chart; long ranges are grouped, for example by week, so they stay readable; move the pointer over the chart to see a day's or group's date and tokens). **Custom** opens a **Range** tab of its own with two calendars side by side, **From** and **To**, so both dates are in view; the days between them are tinted in both, and days with no data (before your first usage, or in the future) can't be picked. Nothing changes until you click the big **Apply** button; **Cancel**, or any other tab, leaves the range as it was. **Change dates** under the chart opens it again, and yesterday / last 7 days / this month / your biggest day
+- **Overview** -- today's and lifetime totals, a chart of the last 1, 7, 14 or 30 days, **All** your history, or a **Custom** range (pick it above the chart; long ranges are grouped, for example by week, so they stay readable; move the pointer over the chart to see a day's or group's date and tokens). **Custom** opens a popup with two calendars side by side, **From** and **To**, so both dates are in view; the days between them are tinted in both, and days with no data (before your first usage, or in the future) can't be picked. Nothing changes until you click the big **Apply** button; **Cancel** or `Esc` leaves the range as it was. **Change dates** under the chart opens the popup again, and yesterday / last 7 days / this month / your biggest day
 - **Token Types** -- today's and lifetime tokens split into input, output, cache write and cache read, each with a bar showing its share
 - **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...), split by effort level where the tool records it, for example "Sonnet 5.5 (High)" and "Sonnet 5.5 (Medium)" (history from before this was added shows as a plain model row). A **Show effort** switch at the top turns the split off to see one row per model. **Settings > Models > Sort model token usage by** orders the rows by token usage (the default) or by model, lowest tier first (Claude: Haiku, Sonnet, Opus, Mythos, Fable; models with no known tier come last)
 - **Projects** -- every folder you used tokens in over the last 7 days, most first: the top 5, and the rest behind **Show more** (it opens short every time; usage in the home folder itself shows as its own "~" row). Each row shows only the folder's name, with the full path as its tooltip; two folders with the same name also show their parent folder, for example "app · work"
@@ -129,7 +129,7 @@ This removes it from starting at login and deletes **Claude Tracker** from your 
 
 ## Version and credits
 
-Current version: **3.7.3**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
+Current version: **3.7.4**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
 
 - Original app by Brody Kretz ([BrodyKretz](https://github.com/BrodyKretz/claude-token-counter))
 - Redesign, new features and the Swift rewrite by Raymond Tian ([raymondtian30](https://github.com/raymondtian30/claude-tracker))

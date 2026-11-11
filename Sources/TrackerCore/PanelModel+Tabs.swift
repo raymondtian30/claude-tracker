@@ -11,8 +11,8 @@ extension PanelModel {
         let (first, last, title, selectedRange): (Day, Day, String, Int)
         switch range {
         case let .days(days):
-            (first, last, title) = (d.today.adding(days: -(days - 1)), d.today, "Last \(days) days")
-            selectedRange = chartRanges.firstIndex(of: days) ?? 1
+            (first, last, title) = (d.today.adding(days: -(days - 1)), d.today, "Last \(plural(days, "day"))")
+            selectedRange = chartRanges.firstIndex(of: days) ?? chartRanges.firstIndex(of: defaultChartDays) ?? 0
         case let .allTime(from):
             (first, last, title, selectedRange) = (from, d.today, "All time", chartRanges.count)
         case let .custom(from, to):
@@ -42,11 +42,11 @@ extension PanelModel {
             ]),
         ])
         var chartItems: [Item] = [
-            .segmented(label: nil, options: chartRanges.map { "\($0) days" } + ["All", "Custom"],
+            .segmented(label: nil, options: chartRanges.map { plural($0, "day") } + ["All", "Custom"],
                        selected: selectedRange, action: "chart_days"),
         ]
         if case .custom = range {
-            // The dates are picked on a page of their own (rangeTab).
+            // The dates are picked in a popup (rangePopupCard).
             chartItems.append(.buttons([Item.Button("Change dates", "calendar", "chart_edit")]))
         }
         chartItems.append(.chart(
@@ -57,13 +57,18 @@ extension PanelModel {
                 : "\(formatShortDate($0.start)) – \(formatShortDate($0.end))" }))
         let chart = Card(title: title, items: chartItems)
         return Tab(key: "overview", title: "Overview", short: "Home", icon: "square.grid.2x2",
-                   cards: [tiles] + accountCards(d) + [chart, Card(title: "History", items: historyItems)]
-                       + accountInvite(d))
+                   cards: [tiles] + accountCards(d) + byokOverviewCards(d)
+                       + [chart, Card(title: "History", items: historyItems)] + accountInvite(d))
     }
 
-    /// The Custom range page: two calendars side by side, From and To. It
-    /// starts from the range the chart shows (or the last 30 days).
-    static func rangeTab(_ d: PanelData) -> Tab {
+    /// The Custom range popup's card: two calendars side by side, From and To.
+    /// It starts from the range the chart shows (or the last 30 days).
+    public static func rangePopupCard(_ view: Tools.View, state: JSONObject, today: Day? = nil) -> Card {
+        let d = PanelData(view, today: today ?? Day.today(), state: state)
+        return rangeCard(d)
+    }
+
+    static func rangeCard(_ d: PanelData) -> Card {
         let earliest = Swift.min(UsageStats.earliestDay(d.daily) ?? d.today, d.today)
         let (from, to): (Day, Day)
         switch chartRange(from: d.state, today: d.today, earliest: earliest) {
@@ -71,12 +76,15 @@ extension PanelModel {
         case let .allTime(a): (from, to) = (a, d.today)
         case let .days(days): (from, to) = (Swift.max(d.today.adding(days: -(days - 1)), earliest), d.today)
         }
-        return Tab(key: "range", title: "Custom Range", short: "Range", icon: "calendar", cards: [
-            Card(title: "Custom range", items: [
-                .rangePicker(from: from, to: to, earliest: earliest, latest: d.today),
-                .note("Usage is recorded from \(formatShortDate(earliest))."),
-            ]),
+        return Card(title: "Custom range", items: [
+            .rangePicker(from: from, to: to, earliest: earliest, latest: d.today),
+            .note("Usage is recorded from \(formatShortDate(earliest))."),
         ])
+    }
+
+    /// The Custom range page (kept for callers that build the tab directly).
+    static func rangeTab(_ d: PanelData) -> Tab {
+        Tab(key: "range", title: "Custom Range", short: "Range", icon: "calendar", cards: [rangeCard(d)])
     }
 
     /// For a provider view: numbers from the provider's own API, kept apart
@@ -145,11 +153,78 @@ extension PanelModel {
         return String(format: "%d:%02d %@", hour, parts.minute, parts.hour < 12 ? "AM" : "PM")
     }
 
+    /// BYOK providers relevant to the current view: for `opencode` (or `all`
+    /// with `opencode` tracked), all BYOK providers found in opencode; for a
+    /// provider view, that provider if its key was found via BYOK.
+    static func relevantBYOKProviders(_ d: PanelData) -> [String] {
+        let key = d.view.key
+        if key == "opencode" {
+            return d.byokProviders
+        }
+        if key == "all" && strings(d.state["enabled_tools"]).contains("opencode") {
+            return d.byokProviders
+        }
+        if Providers.providerNames[key] != nil && d.byokProviders.contains(key) {
+            return [key]
+        }
+        return []
+    }
+
+    /// Models in the BYOK catalog that belong to the current view.
+    static func relevantBYOKModels(_ d: PanelData) -> [(id: String, info: JSONObject)] {
+        let providers = Set(relevantBYOKProviders(d))
+        guard !providers.isEmpty else { return [] }
+        return d.byokModels.compactMap { id, info -> (id: String, info: JSONObject)? in
+            let p = info.string("provider") ?? Providers.providerOf(id) ?? ""
+            guard providers.contains(p) else { return nil }
+            return (id, info)
+        }.sorted { a, b in
+            let nameA = modelDisplayName(a.id, catalog: d.byokModels)
+            let nameB = modelDisplayName(b.id, catalog: d.byokModels)
+            return nameA < nameB
+        }
+    }
+
+    /// Overview card(s) for BYOK credentials scanned from opencode.
+    static func byokOverviewCards(_ d: PanelData) -> [Card] {
+        let providers = relevantBYOKProviders(d)
+        guard !providers.isEmpty else { return [] }
+        // Don't duplicate a provider card if the user also added a manual Keychain key for that provider view.
+        if Providers.providerNames[d.view.key] != nil, strings(d.state["provider_keys"]).contains(d.view.key) {
+            return []
+        }
+        let fetched = OpencodeSource.byokState(d.state).object("fetched") ?? [:]
+        var items = [Item]()
+        for provider in providers {
+            let pName = Providers.providerNames[provider] ?? provider
+            let count = d.byokModels.values.filter { ($0.string("provider") ?? "") == provider }.count
+            let summary = count > 0 ? "\(count) model\(count == 1 ? "" : "s")" : "API key active"
+            items.append(.row(label: "\(pName) (BYOK)", value: summary))
+            if let pFetched = fetched.object(provider) {
+                for row in pFetched.array("rows") ?? [] {
+                    let pair = JSON.array(row) ?? []
+                    guard pair.count == 2, let label = JSON.string(pair[0]), let value = JSON.string(pair[1]),
+                          label != "Models available"
+                    else { continue }
+                    items.append(.row(label: "\(pName) · \(label)", value: value))
+                }
+                if let error = pFetched.string("error"), !error.isEmpty {
+                    items += noteLines("\(pName): \(error)")
+                }
+            }
+        }
+        items.append(.note("Scanned from opencode's configured API key."))
+        return [Card(title: "BYOK API key", items: items)]
+    }
+
     /// For a provider view without a key: a quiet, optional way to add one,
     /// below everything else. The numbers above never need it.
     static func accountInvite(_ d: PanelData) -> [Card] {
         let key = d.view.key
-        guard let help = Accounts.keyHelp[key], !strings(d.state["provider_keys"]).contains(key) else {
+        guard let help = Accounts.keyHelp[key],
+              !strings(d.state["provider_keys"]).contains(key),
+              !d.byokProviders.contains(key)
+        else {
             return []  // no account API supported, or a key is already added
         }
         var items = noteLines("Usage from other computers or the website "
@@ -184,15 +259,16 @@ extension PanelModel {
     /// hold more than the model has); what's left over, when there is any,
     /// stays a plain model row. So the rows always add up to the model's total.
     static func modelsCard(_ title: String, _ models: UsageStats.Models,
-                           efforts: [String: [String: Int]] = [:], order: ModelTiers.Order = .tokens) -> Card {
-        let totals = ModelTiers.sorted(UsageStats.modelTotals(models), by: order)
+                           efforts: [String: [String: Int]] = [:], order: ModelTiers.Order = .tokens,
+                           catalog: [String: JSONObject] = [:]) -> Card {
+        let totals = ModelTiers.sorted(UsageStats.modelTotals(models), by: order, catalog: catalog)
         let whole = totals.reduce(0) { $0 + $1.tokens }
         if totals.isEmpty {
             return Card(title: title, items: [.note("No usage yet")])
         }
         var items = [Item]()
         for total in totals {
-            let name = modelDisplayName(total.name)
+            let name = modelDisplayName(total.name, catalog: catalog)
             var left = total.tokens
             var shownAny = false
             let known = (efforts[total.name] ?? [:]).sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
@@ -216,17 +292,52 @@ extension PanelModel {
         let todayEfforts = showEffort ? d.todayEfforts : [:]
         let lifetimeEfforts = showEffort ? d.lifetimeEfforts : [:]
         let order = ModelTiers.order(from: d.state["model_sort"])
-        var lifetime = modelsCard("Lifetime", d.lifetimeModels, efforts: lifetimeEfforts, order: order)
+        var lifetime = modelsCard("Lifetime", d.lifetimeModels, efforts: lifetimeEfforts, order: order,
+                                  catalog: d.byokModels)
         if d.earlier != 0 {
             lifetime.items.append(.note("Plus \(TokenMath.formatCount(d.earlier)) older tokens with no model detail"))
         }
-        var cards = [modelsCard("Today", d.todayModels, efforts: todayEfforts, order: order), lifetime]
+        var cards = [modelsCard("Today", d.todayModels, efforts: todayEfforts, order: order,
+                                catalog: d.byokModels), lifetime]
+        cards += byokModelsCards(d)
         if hasEfforts {
             cards.insert(Card(title: nil, items: [
                 .switch(label: "Show effort", isOn: showEffort, action: "show_effort"),
             ]), at: 0)
         }
         return Tab(key: "models", title: "Models", short: "Models", icon: "brain", cards: cards)
+    }
+
+    /// Available models discovered from a BYOK API key, with their context/output limits.
+    static func byokModelsCards(_ d: PanelData) -> [Card] {
+        let available = relevantBYOKModels(d)
+        guard !available.isEmpty else { return [] }
+        let used = Set(d.lifetimeModels.keys)
+        // Put used models first, then others with context limits.
+        let sorted = available.sorted { a, b in
+            let (aUsed, bUsed) = (used.contains(a.id), used.contains(b.id))
+            if aUsed != bUsed { return aUsed }
+            return modelDisplayName(a.id, catalog: d.byokModels) < modelDisplayName(b.id, catalog: d.byokModels)
+        }
+        let shown = Array(sorted.prefix(8))
+        var items: [Item] = shown.map { entry in
+            let name = modelDisplayName(entry.id, catalog: d.byokModels)
+            let ctx = entry.info.int("context") ?? 0
+            let out = entry.info.int("output") ?? 0
+            let value: String
+            if ctx > 0 && out > 0 {
+                value = "\(TokenMath.formatCount(ctx)) · \(TokenMath.formatCount(out)) out"
+            } else if ctx > 0 {
+                value = "\(TokenMath.formatCount(ctx)) ctx"
+            } else {
+                value = Providers.providerNames[entry.info.string("provider") ?? ""] ?? "Available"
+            }
+            return .row(label: name, value: value)
+        }
+        if available.count > shown.count {
+            items.append(.note("Plus \(available.count - shown.count) more models on this API key"))
+        }
+        return [Card(title: "Available BYOK models (\(available.count))", items: items)]
     }
 
     // MARK: - Projects
@@ -291,11 +402,13 @@ extension PanelModel {
         // Price each tool on its own: a cost one tool recorded for a model must
         // not stand in for another tool's tokens of the same model.
         let dailies = (d.view.views ?? [d.view]).map(\.daily)
+        let extraPrices = OpencodeSource.byokPrices(d.state)
         var costs = [String: (dollars: Double, unpriced: Int)]()
         for range in ranges {
             let perTool = dailies.map { daily in
                 Pricing.estimateCost(UsageStats.modelsInRange(daily, range.start, range.end),
-                                     recorded: UsageStats.recordedCostInRange(daily, range.start, range.end))
+                                     recorded: UsageStats.recordedCostInRange(daily, range.start, range.end),
+                                     extraPrices: extraPrices)
             }
             costs[range.key] = (perTool.reduce(0.0) { $0 + $1.dollars }, perTool.reduce(0) { $0 + $1.unpriced })
         }
@@ -394,11 +507,17 @@ extension PanelModel {
                 plan += noteLines(prefix + "Codex hasn't recorded its plan limits yet.")
             }
         }
-        if plan.isEmpty {
+        let byokLimits = byokLimitItems(d)
+        if plan.isEmpty && byokLimits.isEmpty {
             plan += noteLines("\(view.name) doesn't record plan limits on this Mac.")
+        } else if plan.isEmpty {
+            plan = byokLimits
         }
 
         var cards = [Card(title: "Plan limits", items: plan)]
+        if !byokLimits.isEmpty && plan != byokLimits {
+            cards.append(Card(title: "BYOK limits", items: byokLimits))
+        }
         // Claude Code's limits are the ones with free resets, so the line shows
         // in its view and in All AIs when it is tracked.
         if toolKeys.contains("claude_code") {
@@ -409,6 +528,54 @@ extension PanelModel {
             cards.append(alertsCard(d.state, windows: windows))
         }
         return Tab(key: "limits", title: "Usage Limits", short: "Limits", icon: "speedometer", cards: cards)
+    }
+
+    /// Limits discovered from BYOK credentials and catalog (balance/rate rows
+    /// and model context/output token limits).
+    static func byokLimitItems(_ d: PanelData) -> [Item] {
+        let providers = relevantBYOKProviders(d)
+        let available = relevantBYOKModels(d)
+        guard !providers.isEmpty || !available.isEmpty else { return [] }
+        var items = [Item]()
+        let fetched = OpencodeSource.byokState(d.state).object("fetched") ?? [:]
+        for provider in providers {
+            let pName = Providers.providerNames[provider] ?? provider
+            items.append(.row(label: "\(pName) API key", value: "Active (opencode)"))
+            if let pFetched = fetched.object(provider) {
+                for row in pFetched.array("rows") ?? [] {
+                    let pair = JSON.array(row) ?? []
+                    guard pair.count == 2, let label = JSON.string(pair[0]), let value = JSON.string(pair[1]) else {
+                        continue
+                    }
+                    items.append(.row(label: "\(pName) · \(label)", value: value))
+                }
+            }
+        }
+        let used = Set(d.lifetimeModels.keys)
+        let withLimits = available.filter { ($0.info.int("context") ?? 0) > 0 || ($0.info.int("output") ?? 0) > 0 }
+        let sorted = withLimits.sorted { a, b in
+            let (aUsed, bUsed) = (used.contains(a.id), used.contains(b.id))
+            if aUsed != bUsed { return aUsed }
+            return modelDisplayName(a.id, catalog: d.byokModels) < modelDisplayName(b.id, catalog: d.byokModels)
+        }
+        let shown = sorted.filter { used.contains($0.id) }.isEmpty
+            ? Array(sorted.prefix(5))
+            : sorted.filter { used.contains($0.id) }
+        for entry in shown {
+            let name = modelDisplayName(entry.id, catalog: d.byokModels)
+            let ctx = entry.info.int("context") ?? 0
+            let out = entry.info.int("output") ?? 0
+            let limitText: String
+            if ctx > 0 && out > 0 {
+                limitText = "\(TokenMath.formatCount(ctx)) ctx · \(TokenMath.formatCount(out)) out"
+            } else if ctx > 0 {
+                limitText = "\(TokenMath.formatCount(ctx)) ctx"
+            } else {
+                limitText = "\(TokenMath.formatCount(out)) out"
+            }
+            items.append(.row(label: name, value: limitText))
+        }
+        return items
     }
 
     /// When to be notified, for the limit `windows` this view has.

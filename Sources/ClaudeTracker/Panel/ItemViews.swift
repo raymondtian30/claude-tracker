@@ -73,7 +73,11 @@ struct ChartItem: View {
                         .onContinuousHover { phase in
                             switch phase {
                             case let .active(point):
-                                guard values.count >= 2, proxy.size.width > 0 else { return }
+                                guard !values.isEmpty, proxy.size.width > 0 else { return }
+                                if values.count == 1 {
+                                    hovered = 0
+                                    return
+                                }
                                 let step = proxy.size.width / CGFloat(values.count - 1)
                                 let index = Int((point.x / step).rounded())
                                 hovered = Swift.min(Swift.max(index, 0), values.count - 1)
