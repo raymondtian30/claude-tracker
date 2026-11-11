@@ -92,6 +92,11 @@ extension PanelModel {
         return Tab(key: "settings", title: "Settings", short: "Settings", icon: "slider.horizontal.3", cards: [
             toolsCard(state, detected: detected),
             appearanceCard(state),
+            Card(title: "Models", items: [
+                .popup(label: "Sort model token usage by", options: ModelTiers.choices.map(\.label),
+                       selected: ModelTiers.choices.firstIndex { $0.order == ModelTiers.order(from: state["model_sort"]) } ?? 0,
+                       action: "model_sort"),
+            ]),
             Card(title: "Menu bar", items: [
                 .segmented(label: "Shows", options: titleModes.map(\.label),
                            selected: index(of: mode, in: titleModes.map(\.key)) ?? 0, action: "title_mode"),
@@ -106,9 +111,12 @@ extension PanelModel {
             Card(title: "Scanning", items: [
                 .popup(label: "Scan every", options: intervalChoices.map(formatInterval),
                        selected: index(of: interval, in: intervalChoices) ?? 0, action: "scan_interval"),
+                .buttons([Item.Button("Session diagnostics", "list.bullet.rectangle", "session_diagnostics")]),
+                .note("Why each process was or was not counted as a session."),
             ]),
             Card(title: "General", items: general),
             Card(title: "About", items: about),
+            Card(title: "FAQ", items: FaqEntries.items()),
         ])
     }
 

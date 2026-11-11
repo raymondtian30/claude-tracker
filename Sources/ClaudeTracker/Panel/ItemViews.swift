@@ -188,14 +188,37 @@ private struct ShareBar: View {
 struct RowItem: View {
     let label: String
     let value: String
+    var dot: LabelExtras.Dot?
     let width: CGFloat
 
     var body: some View {
         HStack(spacing: 0) {
-            LabelText(text: label, truncation: .middle).frame(width: PanelLayout.labelBudget(kind: "row", hasChevron: false))
+            if let dot = dot {
+                StatusDot(dot: dot).frame(width: PanelLayout.dotWidth, alignment: .leading)
+            }
+            LabelText(text: label, truncation: .middle)
+                .frame(width: PanelLayout.labelBudget(kind: "row", hasChevron: false, hasDot: dot != nil))
             LabelText(text: value, weight: .semibold, digits: true, alignment: .trailing).frame(width: 110)
         }
         .padding(.top, 2)
+    }
+}
+
+/// The colored dot before a status row: green, yellow, grey, or an outline
+/// when the state isn't known.
+struct StatusDot: View {
+    let dot: LabelExtras.Dot
+
+    var body: some View {
+        ZStack {
+            switch dot {
+            case .green: Circle().fill(Color(nsColor: .systemGreen))
+            case .yellow: Circle().fill(Color(nsColor: .systemYellow))
+            case .grey: Circle().fill(Color.faint(0.4))
+            case .hollow: Circle().stroke(Color.secondaryLabel, lineWidth: 1.2).padding(0.6)
+            }
+        }
+        .frame(width: 8, height: 8)
     }
 }
 

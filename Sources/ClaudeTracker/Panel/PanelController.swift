@@ -92,6 +92,17 @@ final class PanelController: NSObject {
         button.target = self
         button.action = #selector(statusItemClicked(_:))
         self.button = button
+        // The pointer reaching the icon is the best sign of a click to come:
+        // `onHover` lets the app have the panel ready before it.
+        button.addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                              owner: self, userInfo: nil))
+    }
+
+    /// Called when the pointer enters the menu bar icon.
+    var onHover: (() -> Void)?
+
+    @objc func mouseEntered(with event: NSEvent) {
+        onHover?()
     }
 
     @objc private func statusItemClicked(_ sender: Any?) {

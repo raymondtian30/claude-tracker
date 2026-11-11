@@ -281,3 +281,45 @@ private let NOW = LocalTime.parseISO("2026-11-08T12:00:00+00:00")!
     // Both installs share one tag on the session.
     #expect(sessions[0].plugins == [Tag("superpowers", true)])
 }
+
+// MARK: Reading a log once
+
+@Test func cachedLogEventsReadOnlyWhatWasAddedAndEqualAFullRead() {
+    let tmp = TempDir()
+    let log = tmp.url("a.jsonl")
+    writeLog(log, [toolUse("Skill", ts(9, 1), ["skill": "superpowers:brainstorming"])])
+    #expect(Plugins.cachedLogEvents(log.path) == Plugins.logEvents(log.path))
+    #expect(Plugins.cachedLogEvents(log.path).count == 1)
+
+    appendText(log, jsonLine(toolUse("Skill", ts(9, 2), ["skill": "superpowers:tdd"])))
+    let grown = Plugins.cachedLogEvents(log.path)
+    #expect(grown.count == 2)
+    #expect(grown == Plugins.logEvents(log.path))
+    // Unchanged: the same answer without touching the file again.
+    #expect(Plugins.cachedLogEvents(log.path) == grown)
+}
+
+@Test func aHalfWrittenLastLineIsReadOnceItIsComplete() {
+    let tmp = TempDir()
+    let log = tmp.url("b.jsonl")
+    let second = jsonLine(toolUse("Skill", ts(9, 2), ["skill": "superpowers:tdd"]))
+    writeLog(log, [toolUse("Skill", ts(9, 1), ["skill": "superpowers:brainstorming"])])
+    appendText(log, String(second.prefix(40)))  // cut off mid-line
+    #expect(Plugins.cachedLogEvents(log.path).count == 1)
+    appendText(log, String(second.dropFirst(40)))
+    let done = Plugins.cachedLogEvents(log.path)
+    #expect(done.count == 2)
+    #expect(done == Plugins.logEvents(log.path))
+}
+
+@Test func aLogThatGotShorterIsReadAgainFromTheStart() {
+    let tmp = TempDir()
+    let log = tmp.url("c.jsonl")
+    writeLog(log, [toolUse("Skill", ts(9, 1), ["skill": "superpowers:brainstorming"]),
+                   toolUse("Skill", ts(9, 2), ["skill": "superpowers:tdd"])])
+    #expect(Plugins.cachedLogEvents(log.path).count == 2)
+    writeLog(log, [toolUse("Skill", ts(9, 3), ["skill": "superpowers:debugging"])])
+    let events = Plugins.cachedLogEvents(log.path)
+    #expect(events.count == 1)
+    #expect(events == Plugins.logEvents(log.path))
+}

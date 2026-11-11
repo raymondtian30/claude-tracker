@@ -26,10 +26,29 @@ public enum ActiveSessions {
         public var title: String?
         /// Where it runs: "VS Code" or "Terminal", when Claude Code says.
         public var kind: String?
+        /// Which tool it is (a key of `Tools.tools`); nil where it isn't
+        /// known, which `Plugins.livePlugins` reads as Claude Code.
+        public var tool: String?
+        /// What the registry decided it is doing; nil where it didn't say.
+        public var state: SessionRules.State?
+        /// What it waits for ("input needed"), when it is waiting.
+        public var waitingFor: String?
+        /// When its process started (`ps` text under `TZ=UTC`); with the pid,
+        /// what Stop and Quit check before signalling.
+        public var start: String?
+        /// Subagents running in it (Claude Code only).
+        public var subagents: [Subagent]
 
         public init(label: String, tokens: Int?, cwd: String? = nil, log: String? = nil,
                     plugins: [Plugins.Tag]? = nil, pid: Int32? = nil, stopped: Bool = false,
-                    status: String? = nil, since: Double? = nil, title: String? = nil, kind: String? = nil) {
+                    status: String? = nil, since: Double? = nil, title: String? = nil, kind: String? = nil,
+                    tool: String? = nil, state: SessionRules.State? = nil, waitingFor: String? = nil,
+                    start: String? = nil, subagents: [Subagent] = []) {
+            self.tool = tool
+            self.state = state
+            self.waitingFor = waitingFor
+            self.start = start
+            self.subagents = subagents
             self.status = status
             self.since = since
             self.title = title
@@ -42,6 +61,11 @@ public enum ActiveSessions {
             self.pid = pid
             self.stopped = stopped
         }
+
+        /// Whether the Live tab offers Stop, Resume and Quit for it: only a
+        /// Claude Code session with a known process. Other tools' sessions
+        /// have a pid too, but nothing here may signal them.
+        public var isControllable: Bool { pid != nil && (tool ?? "claude_code") == "claude_code" }
     }
 
     /// What a command printed and how it exited.
@@ -185,7 +209,7 @@ public enum ActiveSessions {
     }
 
     /// `text` on one line of at most 60 characters, or nil if nothing is left.
-    private static func oneLine(_ text: String?) -> String? {
+    static func oneLine(_ text: String?) -> String? {
         let words = (text ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
         if words.isEmpty { return nil }
         return words.count > 60 ? String(words.prefix(59)) + "…" : words

@@ -127,3 +127,7 @@ import Testing
     #expect(AppAction.sessionQuit(42).opensDialog && AppAction.sessionsQuitAll.opensDialog)
     #expect(!AppAction.sessionStop(42).opensDialog && !AppAction.sessionsStopAll.opensDialog)
 }
+
+@Test func theDiagnosticsButtonParses() {
+    #expect(AppAction.parse("session_diagnostics", .none) == .sessionDiagnostics)
+}

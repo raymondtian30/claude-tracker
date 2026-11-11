@@ -464,3 +464,40 @@ private func claudeState(percentages: Bool, limits: [JSONObject]) -> JSONObject 
                                             above: [], now: NOW)
     #expect(messages.isEmpty)
 }
+
+// MARK: Free resets
+
+@Test func freeResetsAreUnavailableTodayWithAReasonAndNeverANumber() {
+    let resets = FreeResets.current([:], now: 0)
+    guard case .unavailable(let reason) = resets else { Issue.record("expected unavailable"); return }
+    #expect(!reason.isEmpty)
+    #expect(!reason.contains { $0.isNumber })
+}
+
+@Test func theFreeResetLineShowsUnavailableWithItsReason() {
+    let card = PanelModel.freeResetsCard(.unavailable(reason: "No source."), now: 0)
+    #expect(card.items == [.row(label: "Free resets remaining", value: "Unavailable"), .note("No source.")])
+}
+
+@Test func aRealCountWouldShowAsTheNumberWithItsRenewalDate() {
+    let renews = LocalTime.timestamp(2026, 11, 20, 18, 46)
+    let now = LocalTime.timestamp(2026, 11, 8, 12, 0)
+    let card = PanelModel.freeResetsCard(.available(count: 2, renewsAt: renews), now: now)
+    #expect(card.items == [.row(label: "Free resets remaining", value: "2"), .note("Renews Nov 20")])
+    #expect(PanelModel.freeResetsCard(.available(count: 0, renewsAt: nil), now: now).items
+            == [.row(label: "Free resets remaining", value: "0")])
+}
+
+@Test func theFreeResetLineIsOnTheLimitsTabOfClaudeCodeAndAllAIsOnly() {
+    func titles(_ key: String, enabled: [String]) -> Bool {
+        let state: JSONObject = ["enabled_tools": enabled, "grand_total": 0]
+        let panel = PanelModel.buildPanel(Tools.toolView(state, key), state: state, sessions: [], friends: [],
+                                          showLeaderboard: false, today: Day(2026, 11, 8))
+        let limits = panel.first { $0.key == "limits" }!
+        return limits.cards.contains { $0.items.contains(.row(label: "Free resets remaining", value: "Unavailable")) }
+    }
+    #expect(titles("claude_code", enabled: ["claude_code"]))
+    #expect(titles("all", enabled: ["claude_code", "codex"]))
+    #expect(!titles("codex", enabled: ["codex"]))
+    #expect(!titles("all", enabled: ["codex"]))
+}

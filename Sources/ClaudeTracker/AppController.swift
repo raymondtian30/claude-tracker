@@ -39,14 +39,31 @@ final class AppController {
     var rangeOpen = false
     /// A tab to show once the next draw has made it (the Custom range page).
     private var tabToShow: String?
-    /// The open sessions and plugin activity, as the last background search
-    /// found them. Clicks draw this; they never search (see `LiveSnapshot`).
-    var live = LiveSnapshot()
-    private var searchingLive = false
-    private var searchLiveAgain = false
-    /// Counts the changes made to the sessions by hand (Stop, Quit): a search
-    /// that began before one is out of date when it ends.
-    var liveGeneration = 0
+    /// The open sessions and plugin activity, as the last background scan
+    /// found them (see `SessionRegistry`). Clicks draw its snapshot; they
+    /// never scan. A scan covers all four tools, so changing the view only
+    /// changes what is drawn.
+    lazy var registry = SessionRegistry(
+        source: { SessionRegistry.Inputs(processes: try ProcessTable.read(), records: ClaudeRecords.read(),
+                                         now: Date().timeIntervalSince1970) },
+        enrich: { scan, cache, withPlugins in
+            SessionEnrichment.enrich(scan, cache: &cache, withPlugins: withPlugins)
+        },
+        background: { work in DispatchQueue.global(qos: .utility).async { work() } },
+        main: { work in DispatchQueue.main.async { onMain { work() } } },
+        onScan: { [weak self] _, changed in self?.liveScanned(changed: changed) },
+        report: { FileHandle.standardError.write(Data("\($0)\n".utf8)) })
+
+    /// The session diagnostics window (Settings > Scanning).
+    lazy var diagnosticsWindow = DiagnosticsWindow()
+
+    /// What the Live tab shows for the current view: the registry's snapshot,
+    /// cut to the tools this view tracks.
+    var liveView: LiveSnapshot {
+        let view = AppState.currentView(state, detected: Tools.detectTools())
+        let tools = AppState.sessionTools(view.key, enabled: AppState.strings(state["enabled_tools"]))
+        return LiveSnapshot(registry.snapshot, tools: tools)
+    }
     private var renderWaiting = false
     /// Rows whose detail is open, by row id. Not saved: opening the panel or
     /// changing tab closes them all.
@@ -112,11 +129,18 @@ final class AppController {
             self?.openRows = [:]
             self?.projectsExpanded = false  // Projects opens short each time
             self?.closeRangePage()
+            // Usually nothing is left to draw: `prewarmPanel` did it while the
+            // panel was closed. No scan here either: the Live tab scans when it
+            // is picked, and a scan competes with this draw for the CPU.
             self?.renderPanel()
-            self?.searchLive()
         }
+        panel.onHover = { [weak self] in onMain { self?.prewarmPanelOnHover() } }
         renderPanel()
         updateTitle()
+        // SCRATCH-LOOK-TEMPORARY (removed before the work is finished)
+        if ProcessInfo.processInfo.environment["CT_SHOW_PANEL"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in onMain { self?.panel.show() } }
+        }
         // Opening the app again (e.g. from Finder) asks this copy to show its panel.
         showObserver = SingleInstance.observeShowRequests { [weak self] in
             onMain { self?.panel.show() }
@@ -155,12 +179,40 @@ final class AppController {
         fetchClaudeUsage()
         updateTitle()
         runDailyLeaderboardSync()
-        // Only draw what's on screen; the panel draws again when it opens.
         // The sessions are searched for in the background and drawn when found.
         if panel.isShown || settingsWindow.isShown {
             renderPanel()
             searchLive()
+        } else {
+            prewarmPanel(minimumGap: Self.prewarmGap)
         }
+    }
+
+    /// How long a closed panel may go without being brought up to date.
+    static let prewarmGap = 30.0
+    private var lastPrewarm = 0.0
+
+    /// Draws the closed panel's Home tab now, so that opening it has next to
+    /// nothing left to do. Building the views is the expensive part of an
+    /// opening (a few hundred milliseconds of the main thread), and doing it in
+    /// the click's own time makes the opening stutter, worst when the CPU is
+    /// busy. The draw changes nothing when the data is the same as last time.
+    /// Not while the panel is open or moving, and at most once per `minimumGap`.
+    func prewarmPanel(minimumGap: Double = 0) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard !panel.isShown, !panel.isAnimating, now - lastPrewarm >= minimumGap else { return }
+        lastPrewarm = now
+        // What an opening resets anyway.
+        openRows = [:]
+        projectsExpanded = false
+        closeRangePage()
+        panel.goHome()
+        renderPanel()
+    }
+
+    /// The pointer reached the menu bar icon: a click is probably coming.
+    private func prewarmPanelOnHover() {
+        prewarmPanel(minimumGap: 2)
     }
 
     private func startTimer(seconds: Int) {
@@ -238,15 +290,15 @@ final class AppController {
         // The saved search result, never a new search: that takes over half a
         // second, and every click draws. Another tool's? Search again.
         let tools = AppState.sessionTools(view.key, enabled: enabled)
-        let (sessions, plugins) = live.shown(for: tools)
-        if !live.isCurrent(for: tools) {
+        if !registry.snapshot.scanned && !registry.isScanning {
             searchLive()
         }
         let result = PanelModel.buildPanelResult(
-            view, state: state, sessions: sessions, friends: friends,
-            showLeaderboard: PanelModel.leaderboardEnabled(state) && view.key == "claude_code",
-            projectsExpanded: projectsExpanded, plugins: plugins, rangeOpen: rangeOpen,
-            context: PanelContext(open: openRows, measure: TextMeasures.live))
+            view, state: state, sessions: [], friends: friends,
+            showLeaderboard: AppState.showsLeaderboard(view.key, state: state),
+            projectsExpanded: projectsExpanded, plugins: nil, rangeOpen: rangeOpen,
+            context: PanelContext(open: openRows, measure: TextMeasures.live),
+            live: LiveSnapshot(registry.snapshot, tools: tools))
         let tabs = result.tabs
         rowInfo = result.rows
         OpenRows.prune(&openRows, present: Set(result.rows.keys))
@@ -273,6 +325,7 @@ final class AppController {
     /// waits for the next run-loop turn: this runs inside `selectTab`, which
     /// must not be re-entered.
     private func tabChanged(to key: String) {
+        if key == "sessions" { searchLive() }  // the Live tab is never older than its last look
         var changed = !openRows.isEmpty || projectsExpanded
         openRows = [:]
         projectsExpanded = false
@@ -300,41 +353,26 @@ final class AppController {
         RangeDraft.clear()
     }
 
-    /// Looks for open sessions and plugin activity off the main thread, then
-    /// draws them if that changed anything. One search at a time; one asked
-    /// for during another runs right after it.
+    /// Starts a scan for open sessions and plugin activity off the main
+    /// thread (one at a time; one asked for during another runs right after
+    /// it). When it ends, `liveScanned` draws the result.
     func searchLive() {
-        guard !searchingLive else {
-            searchLiveAgain = true
-            return
-        }
-        searchingLive = true
         let view = AppState.currentView(state, detected: Tools.detectTools())
-        let enabled = AppState.strings(state["enabled_tools"])
-        let tools = AppState.sessionTools(view.key, enabled: enabled)
-        let withPlugins = AppState.showsPlugins(view.key, enabled: enabled)
-        let generation = liveGeneration
-        inBackground({
-            LiveSnapshot.find(tools: tools, withPlugins: withPlugins) {
-                FileHandle.standardError.write(Data("\($0)\n".utf8))
-            }
-        }, then: { [weak self] found in
-            guard let self = self else { return }
-            self.searchingLive = false
-            if generation != self.liveGeneration {
-                self.searchLive()  // it began before a Stop or Quit: look again
-                return
-            }
-            let changed = self.live.differs(from: found)
-            self.live = found
-            if self.searchLiveAgain {
-                self.searchLiveAgain = false
-                self.searchLive()
-            }
-            if changed && (self.panel.isShown || self.settingsWindow.isShown) {
-                self.renderPanel()
-            }
-        })
+        registry.withPlugins = AppState.showsPlugins(view.key, enabled: AppState.strings(state["enabled_tools"]))
+        registry.refresh()
+    }
+
+    /// A scan ended. The Live tab is drawn after every scan while it is the
+    /// tab on show, so ages ("idle for 5 min") and subagents stay current even
+    /// when nothing else changed; any other tab is drawn only if the scan
+    /// found something new.
+    private func liveScanned(changed: Bool) {
+        let liveShown = panel.isShown && panel.selected == "sessions"
+        if (changed && (panel.isShown || settingsWindow.isShown)) || liveShown {
+            renderPanel()
+        } else if changed && !panel.isShown {
+            prewarmPanel(minimumGap: 5)  // the closed panel's Live tab is out of date: draw it now, not at the click
+        }
     }
 
     // MARK: - Actions
@@ -428,13 +466,17 @@ final class AppController {
         case .currency(let code):
             state["currency"] = code
             save()
+        case .modelSort(let key):
+            state["model_sort"] = key
+            save()
         case .projectsExpand: projectsExpanded.toggle()
         case .sessionStop(let pid): pauseOrResume(.stop, [pid])
         case .sessionResume(let pid): pauseOrResume(.resume, [pid])
         case .sessionQuit(let pid): quitSessions([pid])
         case .sessionsQuitAll: quitSessions(livePids)
         case .sessionsStopAll: pauseOrResume(.stop, livePids)
-        case .sessionsResumeAll: pauseOrResume(.resume, live.sessions.filter(\.stopped).compactMap(\.pid))
+        case .sessionDiagnostics: showSessionDiagnostics()
+        case .sessionsResumeAll: pauseOrResume(.resume, liveView.controllable.filter(\.stopped).compactMap(\.pid))
         case .aboutView(let showCredits): aboutShowsCredits = showCredits
         case .checkUpdates: checkForUpdates()
         case .openRepo:

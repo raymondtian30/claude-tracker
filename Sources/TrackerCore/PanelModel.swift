@@ -252,10 +252,12 @@ public enum PanelModel {
                                   sessions: [ActiveSessions.Session], friends: [JSONObject],
                                   showLeaderboard: Bool, today: Day? = nil, now: Double? = nil,
                                   projectsExpanded: Bool = false,
-                                  plugins: [Plugins.Row]? = nil, rangeOpen: Bool = false) -> [Tab] {
+                                  plugins: [Plugins.Row]? = nil, rangeOpen: Bool = false,
+                                  live: LiveSnapshot? = nil) -> [Tab] {
         buildPanelResult(view, state: state, sessions: sessions, friends: friends,
                          showLeaderboard: showLeaderboard, today: today, now: now,
-                         projectsExpanded: projectsExpanded, plugins: plugins, rangeOpen: rangeOpen).tabs
+                         projectsExpanded: projectsExpanded, plugins: plugins, rangeOpen: rangeOpen,
+                         live: live).tabs
     }
 
     /// `buildPanel`, plus what the app needs to know about rows by id (their
@@ -266,7 +268,7 @@ public enum PanelModel {
                                         showLeaderboard: Bool, today: Day? = nil, now: Double? = nil,
                                         projectsExpanded: Bool = false,
                                         plugins: [Plugins.Row]? = nil, rangeOpen: Bool = false,
-                                        context: PanelContext = PanelContext())
+                                        context: PanelContext = PanelContext(), live: LiveSnapshot? = nil)
         -> (tabs: [Tab], rows: [String: RowInfo]) {
         let d = PanelData(view, today: today ?? Day.today(), state: state)
         var tabs = [
@@ -284,7 +286,16 @@ public enum PanelModel {
         // A running session can't be tied to one provider, so provider views
         // have no Live tab.
         if Providers.providerNames[view.key] == nil {
-            tabs.append(sessionsTab(view, sessions, plugins: plugins, now: now))
+            if let live = live {
+                // The app passes the whole Live tab's data; `sessions` and
+                // `plugins` are what tests and older callers pass instead.
+                tabs.append(sessionsTab(view, live.sessions, plugins: live.plugins, now: now,
+                                        background: live.background, scanned: live.scanned,
+                                        notCounted: live.notCounted, error: live.error,
+                                        limit: Limits.hitClaudeLimit(state, now: now ?? Date().timeIntervalSince1970)))
+            } else {
+                tabs.append(sessionsTab(view, sessions, plugins: plugins, now: now))
+            }
         }
         if let warning = warning(d) {
             for index in tabs.indices {

@@ -1,69 +1,74 @@
 import Foundation
 
-/// The open sessions and plugin activity the Live tab shows, as the last
-/// background search found them. Finding them runs `ps` and `lsof` and reads
-/// session logs (over half a second), so a click never waits for it: the
-/// panel draws the saved result, and a search refreshes it now and then.
+/// What the Live tab shows, cut from the registry's snapshot for the tools of
+/// the current view. The registry scans all four tools, so changing the view
+/// only filters what is drawn; it never needs a new scan, and it never shows
+/// a count of 0 that is only a missing scan (`scanned` says whether there was
+/// one). The count, the rows and the Stop all / Quit all targets all come
+/// from this one value.
 public struct LiveSnapshot: Equatable {
-    /// The tools it was found for; nil before the first search.
-    public var tools: [String]?
+    /// False until a scan has finished.
+    public var scanned: Bool
+    /// The counted sessions of the view's tools, in the registry's order.
     public var sessions: [ActiveSessions.Session]
+    /// Background agents of the view's tools: listed, not counted.
+    public var background: [ActiveSessions.Session]
+    /// Processes of the view's tools that are neither counted nor listed: a
+    /// server, a helper, or a process with no terminal.
+    public var notCounted: Int
     /// nil when the view has no plugins to show.
     public var plugins: [Plugins.Row]?
+    /// Why the last scan failed, if it did.
+    public var error: String?
 
-    public init(tools: [String]? = nil, sessions: [ActiveSessions.Session] = [], plugins: [Plugins.Row]? = nil) {
-        self.tools = tools
+    public init(scanned: Bool = false, sessions: [ActiveSessions.Session] = [],
+                background: [ActiveSessions.Session] = [], notCounted: Int = 0, plugins: [Plugins.Row]? = nil,
+                error: String? = nil) {
+        self.scanned = scanned
         self.sessions = sessions
+        self.background = background
+        self.notCounted = notCounted
         self.plugins = plugins
+        self.error = error
     }
 
-    /// Whether this is what a search for `tools` found.
-    public func isCurrent(for tools: [String]) -> Bool {
-        self.tools == tools
-    }
-
-    /// What to draw for `tools`: this, or nothing when it was found for other
-    /// tools (another AI's sessions must not show under this one's name).
-    public func shown(for tools: [String]) -> (sessions: [ActiveSessions.Session], plugins: [Plugins.Row]?) {
-        isCurrent(for: tools) ? (sessions, plugins) : ([], nil)
-    }
-
-    /// Whether drawing `new` would look different from drawing this.
-    public func differs(from new: LiveSnapshot) -> Bool {
-        self != new
-    }
-
-    /// What Stop, Resume or Quit did to the sessions with these process ids,
-    /// shown at once; the next search confirms it.
-    public mutating func apply(_ action: SessionControl.Action, to pids: Set<Int32>) {
-        switch action {
-        case .stop, .resume:
-            for index in sessions.indices where sessions[index].pid.map(pids.contains) == true {
-                sessions[index].stopped = action == .stop
+    /// The part of `snapshot` that belongs to `tools`. `home` is for tests.
+    public init(_ snapshot: SessionRegistry.Snapshot, tools: [String], home: String? = nil) {
+        func session(_ entry: SessionRules.Entry) -> ActiveSessions.Session {
+            let details = snapshot.details[entry.pid]
+            let status: String?
+            switch entry.state {
+            case .active: status = "busy"
+            case .idle: status = "idle"
+            case .waiting: status = "waiting"
+            case .unknown: status = nil
             }
-        case .quit, .forceQuit:
-            sessions.removeAll { $0.pid.map(pids.contains) == true }
+            return ActiveSessions.Session(
+                label: entry.folder.map { ActiveSessions.displayName($0, home: home) } ?? "unknown folder",
+                tokens: details?.tokens, cwd: entry.folder, log: details?.log, plugins: details?.plugins,
+                pid: entry.pid, stopped: entry.paused, status: status, since: entry.since,
+                title: details?.title, kind: ActiveSessions.kindLabel(entrypoint: entry.entrypoint),
+                tool: entry.tool, state: entry.state, waitingFor: entry.waitingFor, start: entry.start,
+                subagents: details?.subagents ?? [])
         }
+        let inView = snapshot.scan.entries.filter { tools.contains($0.tool) }
+        self.init(scanned: snapshot.scanned,
+                  sessions: inView.filter(\.counted).map(session),
+                  background: inView.filter { $0.role == .background }.map(session),
+                  notCounted: inView.filter { !$0.counted && $0.role != .background }.count,
+                  plugins: snapshot.pluginRows, error: snapshot.error)
     }
 
-    /// The search itself: Claude Code sessions with their plugins, and the
-    /// running sessions of the other tools. Slow; call it off the main thread.
-    /// A tool that can't be listed is skipped, with `report` told why.
-    public static func find(tools: [String], withPlugins: Bool,
-                            report: (String) -> Void = { _ in }) -> LiveSnapshot {
-        var sessions = [ActiveSessions.Session]()
-        for tool in tools {
-            do {
-                // Claude Code's processes come along, for Stop and Quit.
-                sessions += tool == "claude_code"
-                    ? try ActiveSessions.activeSessions(processes: try ActiveSessions.runningProcesses("claude"))
-                    : try ActiveSessions.runningToolSessions(tool)
-            } catch {
-                report("Couldn't list \(tool) sessions: \(error)")
-            }
-        }
-        // Tags each Claude Code session with the plugins it runs.
-        let plugins = withPlugins ? Plugins.livePlugins(&sessions) : nil
-        return LiveSnapshot(tools: tools, sessions: sessions, plugins: plugins)
+    /// The sessions Stop, Resume and Quit may act on.
+    public var controllable: [ActiveSessions.Session] { sessions.filter(\.isControllable) }
+
+    /// Their process ids.
+    public var controllablePids: [Int32] { controllable.compactMap(\.pid) }
+
+    /// Their start times, which Stop, Resume and Quit check before signalling.
+    public var starts: [Int32: String] {
+        Dictionary(uniqueKeysWithValues: controllable.compactMap { session in
+            session.pid.flatMap { pid in session.start.map { (pid, $0) } }
+        })
     }
 }

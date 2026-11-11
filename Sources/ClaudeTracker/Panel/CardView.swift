@@ -66,8 +66,10 @@ struct ItemView: View {
             ChartItem(values: values, caption: caption, labels: labels)
         case let .bar(label, value, fraction, sub, _):
             BarItem(label: label, value: value, fraction: fraction, sub: sub, width: width)
-        case let .row(label, value, _):
-            RowItem(label: label, value: value, width: width)
+        case let .row(label, value, extras):
+            RowItem(label: label, value: value, dot: extras.dot, width: width)
+        case let .heading(text):
+            LabelText(text: text, size: 12, weight: .semibold, height: 16).padding(.top, 5)
         case let .note(text):
             LabelText(text: text, size: 11, color: .secondaryLabel, height: 14).padding(.top, 1)
         case let .alert(text, showIcon):

@@ -283,8 +283,13 @@ public enum Plugins {
     /// ("tool", "mcp__plugin_..."), ("hook", event, command) or
     /// ("context", event) for text a hook added.
     public static func logEvents(_ path: String) -> [LogEvent] {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return [] }
+        return logEvents(data: data)
+    }
+
+    /// `logEvents` for a log's bytes.
+    static func logEvents(data: Data) -> [LogEvent] {
         var events = [LogEvent]()
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return events }
         for line in textLines(data) {
             guard activityMarkers.contains(where: { line.range(of: $0) != nil }) else { continue }
             // Python reads the log with errors="replace".
@@ -347,23 +352,48 @@ public enum Plugins {
         return lines
     }
 
-    private static var cache = [String: (mtime: Double, size: Int, events: [LogEvent])]()
+    private struct CachedLog {
+        var mtime: Double
+        var size: Int
+        /// Bytes of complete lines already read.
+        var offset: Int
+        var events: [LogEvent]
+    }
+
+    private static var cache = [String: CachedLog]()
     private static let cacheLock = NSLock()
 
-    /// `logEvents`, reread only when the log has changed.
+    /// `logEvents`, reading only what was added since the last call. A busy
+    /// session's log changes on every scan and can be many megabytes, so
+    /// parsing all of it each time cost hundreds of milliseconds of CPU; a
+    /// line is read once, when it is complete. A log that got shorter is read
+    /// again from the start.
     public static func cachedLogEvents(_ path: String) -> [LogEvent] {
         guard let stat = SourceFile.Stat(path) else { return [] }
         cacheLock.lock()
-        let hit = cache[path]
+        let known = cache[path]
         cacheLock.unlock()
-        if let hit = hit, hit.mtime == stat.mtime, hit.size == stat.size {
-            return hit.events
+        if let known = known, known.mtime == stat.mtime, known.size == stat.size {
+            return known.events
         }
-        let events = logEvents(path)
+        var entry = known.flatMap { $0.offset <= stat.size ? $0 : nil }
+            ?? CachedLog(mtime: 0, size: 0, offset: 0, events: [])
+        guard let handle = FileHandle(forReadingAtPath: path) else { return known?.events ?? [] }
+        defer { try? handle.close() }
+        guard (try? handle.seek(toOffset: UInt64(entry.offset))) != nil,
+              let added = try? handle.readToEnd() else { return known?.events ?? [] }
+        // Only up to the last newline: a half-written last line is read next time.
+        if let end = added.lastIndex(of: 0x0A) {
+            let complete = added[added.startIndex...end]
+            entry.events += logEvents(data: Data(complete))
+            entry.offset += complete.count
+        }
+        entry.mtime = stat.mtime
+        entry.size = stat.size
         cacheLock.lock()
-        cache[path] = (stat.mtime, stat.size, events)
+        cache[path] = entry
         cacheLock.unlock()
-        return events
+        return entry.events
     }
 
     /// (plugin, kind, what it did) for one event, among the plugins `running`
@@ -411,8 +441,11 @@ public enum Plugins {
     /// `plugins` list of tags (name, runs in it), in settings order.
     public static func livePlugins(_ sessions: inout [ActiveSessions.Session], claudeDir: URL = claudeDir,
                                    now: Double? = nil) -> [Row] {
+        // Only Claude Code sessions have plugins; a log of another tool's
+        // session (or one filled in by another adapter) is not parsed as one.
         let claudeIndices = sessions.indices.filter {
-            !(sessions[$0].cwd ?? "").isEmpty && !(sessions[$0].log ?? "").isEmpty
+            (sessions[$0].tool ?? "claude_code") == "claude_code"
+                && !(sessions[$0].cwd ?? "").isEmpty && !(sessions[$0].log ?? "").isEmpty
         }
         // Each folder's overrides, folders in first-seen order (Python's dict).
         var cwdOrder = [String]()
