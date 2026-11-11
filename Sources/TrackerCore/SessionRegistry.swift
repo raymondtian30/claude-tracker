@@ -171,6 +171,13 @@ public final class SessionRegistry {
         generation += 1
     }
 
+    /// The snapshot is out of date (the Live tab was just picked): until the
+    /// next scan lands it reads as not scanned yet. Main queue only.
+    public func markStale() {
+        snapshot.scanned = false
+        snapshot.error = nil
+    }
+
     /// Shows what an action did at once. Main queue only.
     public func apply(_ action: SessionControl.Action, to pids: Set<Int32>) {
         snapshot.apply(action, to: pids)
