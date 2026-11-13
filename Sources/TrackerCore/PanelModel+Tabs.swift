@@ -20,9 +20,12 @@ extension PanelModel {
                                                    chartRanges.count + 1)
         }
         let series = UsageStats.rangeSeries(d.daily, from: first, to: last)
-        let hourly: Bool
-        if case .days(1) = range { hourly = true } else { hourly = false }
-        let values = hourly ? UsageStats.hourlySeries(d.daily, day: d.today) : series.map(\.tokens)
+        // 1 and 3 days: a bar per hour (3 days: 72, oldest first).
+        let hourlyDays: Int?
+        if case let .days(days) = range, days <= hourlyChartDays { hourlyDays = days } else { hourlyDays = nil }
+        let hourly = hourlyDays != nil
+        let hourlyTotal = UsageStats.totalInRange(d.daily, first, last)
+        let values = hourly ? UsageStats.hourlySeries(d.daily, from: first, to: last) : series.map(\.tokens)
         let peak = values.max() ?? 0
         let run = (series.first.map { $0.start.days(to: $0.end) } ?? 0) + 1
         var historyItems: [Item] = [
@@ -45,7 +48,8 @@ extension PanelModel {
             ]),
         ])
         var chartItems: [Item] = [
-            .segmented(label: nil, options: chartRanges.map { plural($0, "day") } + ["All", "Custom"],
+            // "1d", "3d", …: seven full words don't fit the card.
+            .segmented(label: nil, options: chartRanges.map { "\($0)d" } + ["All", "Custom"],
                        selected: selectedRange, action: "chart_days"),
         ]
         if case .custom = range {
@@ -54,12 +58,13 @@ extension PanelModel {
         }
         chartItems.append(.chart(
             values: values,
-            caption: peak == 0 ? (hourly && d.todayTotal > 0 ? "Hourly detail unavailable" : "No usage in this range")
+            caption: peak == 0 ? (hourly && hourlyTotal > 0 ? "Hourly detail unavailable" : "No usage in this range")
                 : "Peak \(TokenMath.formatCount(peak))" + (hourly ? " per hour" : run > 1 ? " per \(run) days" : ""),
-            labels: hourly ? (0..<24).map { hourLabel($0) }
+            labels: hourlyDays == 1 ? (0..<24).map { hourLabel($0) }
+                : hourly ? (0..<values.count).map { "\(formatShortDate(first.adding(days: $0 / 24))) \(hourLabel($0 % 24))" }
                 : series.map { $0.start == $0.end ? formatShortDate($0.start)
                     : "\(formatShortDate($0.start)) – \(formatShortDate($0.end))" }))
-        if hourly && values.reduce(0, +) < d.todayTotal {
+        if hourly && values.reduce(0, +) < hourlyTotal {
             chartItems += noteLines("Some earlier usage has no hourly detail.")
         }
         let chart = Card(title: title, items: chartItems)
