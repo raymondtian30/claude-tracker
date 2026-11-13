@@ -85,6 +85,10 @@ struct PopUpControl: NSViewRepresentable {
 
         @objc func changed(_ sender: NSPopUpButton) {
             parent.changed(sender.indexOfSelectedItem)
+            // Show what the state says until the pick is acted on (a run loop
+            // later). A pick that changes nothing, like the Tracking dropdown's
+            // "Show more…", gets no redraw, so it must not stay showing.
+            sender.selectItem(at: parent.selected)
         }
     }
 }

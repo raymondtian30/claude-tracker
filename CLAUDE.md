@@ -9,3 +9,6 @@ Never create a duplicate of this project without asking the owner first. That co
 Do not run `./install.sh`, `./build.sh` into `/Applications`, or use the app's Check for Updates, and do not restart the installed app, unless the owner asks in that message. The owner tests the update path themselves to make sure it updates correctly. Run `./test.sh` and build test copies into a scratch folder instead.
 
 Pushing to `origin` and making GitHub releases is allowed (the owner said so on 2026-11-09). Releases follow the pattern of the earlier ones: bump `Version.swift` and the README's current version, push `master`, tag `vX.Y.Z`, then `gh release create` with notes (New, Fixed, Updating). Push only to `origin`, never to `upstream`.
+
+## Always make a PR For each change
+After finishing a task, make a pr, then push to the pr. Never push to main directly. Then, if the owner tells you to, make a new release

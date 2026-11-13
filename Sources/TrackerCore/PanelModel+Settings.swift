@@ -15,7 +15,7 @@ extension PanelModel {
         return Card(title: "AI tools", items: items)
     }
 
-    /// On/off switches for OpenAI, DeepSeek and Kimi. Their optional API key
+    /// On/off switches for the supported model providers. Their optional API key
     /// lives on each provider's own Home tab, so turning one on asks nothing.
     static func providerItems(_ state: JSONObject) -> [Item] {
         let enabled = strings(state["enabled_providers"])
@@ -67,6 +67,30 @@ extension PanelModel {
             return [(key: "all", name: "All AIs")] + choices
         }
         return choices
+    }
+
+    /// The "Show more…" window: every AI. First the ones in the Tracking
+    /// dropdown (the selected one ticked), then the ones that are off: providers,
+    /// and tools found on this Mac. A click on one (`pick_tool:<key>`) tracks
+    /// it, turning it on first if it's off.
+    public static func trackingWindowTab(_ state: JSONObject, detected: [String], selected: String?) -> Tab {
+        let choices = viewChoices(state, detected: detected)
+        let tracked = choices.map { choice in
+            Item.buttons([Item.Button(choice.name, choice.key == selected ? "checkmark" : nil, "pick_tool:\(choice.key)")])
+        }
+        let shown = Set(choices.map(\.key))
+        let enabledTools = strings(state["enabled_tools"])
+        let enabledProviders = strings(state["enabled_providers"])
+        let off = Tools.tools.filter { detected.contains($0.key) && !enabledTools.contains($0.key) && !shown.contains($0.key) }
+            + Providers.providers.filter { !enabledProviders.contains($0.key) && !shown.contains($0.key) }
+        var cards = [Card(title: "Tracking", items: tracked)]
+        if !off.isEmpty {
+            cards.append(Card(title: "Not turned on", items: off.map {
+                Item.buttons([Item.Button($0.name, "plus", "pick_tool:\($0.key)")])
+            } + [.note("Picking one turns it on in Settings, AI tools.")]))
+        }
+        return Tab(key: "tracking", title: PanelLayout.trackingWindowTitle, short: "AIs", icon: "list.bullet",
+                   cards: cards)
     }
 
     public static func settingsTab(_ state: JSONObject, intervalChoices: [Int], detected: [String],

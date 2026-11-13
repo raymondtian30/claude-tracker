@@ -11,6 +11,9 @@ import Testing
     #expect(AppAction.parse("open_settings", .none) == .openSettings)
     #expect(AppAction.parse("select_tool", .index(2)) == .selectTool(index: 2))
     #expect(AppAction.parse("select_tool", .none) == nil)
+    #expect(AppAction.parse("pick_tool:openai", .none) == .pickTool("openai"))
+    #expect(AppAction.parse("pick_tool:", .none) == nil)
+    #expect(AppAction.parse("pick_tool", .none) == nil)
 }
 
 @Test func buttonsWithoutValues() {

@@ -25,6 +25,12 @@ final class AppController {
         onAction: { [weak self] in self?.handleLater($0, $1) },
         onTabChange: { [weak self] key in self?.tabChanged(to: key) })
     private(set) lazy var settingsWindow = SettingsWindow(onAction: { [weak self] in self?.handleLater($0, $1) })
+    /// The Tracking dropdown's choices and selection as last drawn, so a pick
+    /// is read against the entries the user saw.
+    private var drawnTracking: (choices: [(key: String, name: String)], selected: String?) = ([], nil)
+    /// The Tracking dropdown's "Show more…": every AI.
+    private(set) lazy var trackingWindow = SettingsWindow(title: PanelLayout.trackingWindowTitle,
+                                                          onAction: { [weak self] in self?.handleLater($0, $1) })
     let notifier = Notifier.live(title: Version.appName)
 
     /// Providers with an account fetch in flight.
@@ -179,7 +185,7 @@ final class AppController {
         updateTitle()
         runDailyLeaderboardSync()
         // The sessions are searched for in the background and drawn when found.
-        if panel.isShown || settingsWindow.isShown {
+        if panel.isShown || settingsWindow.isShown || trackingWindow.isShown {
             renderPanel()
             searchLive()
         } else {
@@ -320,9 +326,11 @@ final class AppController {
         rowInfo = result.rows
         OpenRows.prune(&openRows, present: Set(result.rows.keys))
         let firstSeen = state.string("first_seen_at") ?? Day.today().iso
+        let choices = PanelModel.viewChoices(state, detected: detected)
+        drawnTracking = (choices, view.key)
         panel.render(
             tabs: tabs, footer: "Tracking since \(PanelModel.formatLongDate(firstSeen))",
-            toolChoices: PanelModel.viewChoices(state, detected: detected), selectedTool: view.key,
+            toolChoices: choices, selectedTool: view.key,
             welcome: JSON.truthy(state["onboarding_done"]) ? nil
                 : PanelModel.welcomeTab(detected: detected, chosen: welcomeChoice),
             subtitle: view.key == "all" ? "All AIs" : "for \(view.name)",
@@ -340,6 +348,9 @@ final class AppController {
         settingsWindow.render(PanelModel.settingsTab(state, intervalChoices: AppState.scanIntervalChoices,
                                                      detected: detected, updateStatus: updateStatus,
                                                      showCredits: aboutShowsCredits))
+        if trackingWindow.isShown {  // Show more renders it just before it opens
+            trackingWindow.render(PanelModel.trackingWindowTab(state, detected: detected, selected: view.key))
+        }
     }
 
     /// Picking another tab closes every open row, "Show less" the projects
@@ -394,7 +405,7 @@ final class AppController {
     /// found something new.
     private func liveScanned(changed: Bool) {
         let liveShown = panel.isShown && panel.selected == "sessions"
-        if (changed && (panel.isShown || settingsWindow.isShown)) || liveShown {
+        if (changed && (panel.isShown || settingsWindow.isShown || trackingWindow.isShown)) || liveShown {
             renderPanel()
         } else if changed && !panel.isShown {
             prewarmPanel(minimumGap: 5)  // the closed panel's Live tab is out of date: draw it now, not at the click
@@ -513,13 +524,39 @@ final class AppController {
                 NSWorkspace.shared.open(url)
             }
         case .selectTool(let index):
-            let choices = PanelModel.viewChoices(state, detected: Tools.detectTools())
-            if choices.indices.contains(index) {
-                state["selected_tool"] = choices[index].key
-                save()
-                updateTitle()
-                searchLive()  // the new view may show plugins the last scan didn't work out
+            // The list the dropdown was drawn from: worked out again, a scan in
+            // between could shift the entries under the click.
+            let (choices, selected) = drawnTracking
+            switch PanelLayout.trackingPick(index: index, choices: choices, selected: selected) {
+            case .select(let key): selectView(key)
+            case .showMore:
+                panel.close()
+                // Its list now: renderPanel waits while the panel folds up.
+                let detected = Tools.detectTools()
+                trackingWindow.render(PanelModel.trackingWindowTab(
+                    state, detected: detected, selected: AppState.currentView(state, detected: detected).key))
+                trackingWindow.show()
+            case nil: break
             }
+        case .pickTool(let key):
+            // Closed first: turning an AI on scans, which holds up the window.
+            trackingWindow.close()
+            let detected = Tools.detectTools()
+            // An AI that's off is turned on first, as its Settings switch would.
+            if Providers.providerNames[key] != nil,
+               !AppState.strings(state["enabled_providers"]).contains(key) {
+                setProviderEnabled(key, true)
+            } else if Tools.toolNames[key] != nil, detected.contains(key),
+                      !AppState.strings(state["enabled_tools"]).contains(key) {
+                setToolEnabled(key, true)
+            }
+            guard PanelModel.viewChoices(state, detected: detected).contains(where: { $0.key == key }) else { break }
+            selectView(key)
+            // A click in the window while the panel was open started folding it
+            // up; end that first, or show() would see it open and do nothing.
+            panel.close()
+            renderPanel()
+            panel.show()  // opens on Home, as every opening does
         case .welcomeTool(let key, let on):
             welcomeChoice = AppState.welcomeChoice(welcomeChoice, key, on)
         case .welcomeDone: finishWelcome()
@@ -539,6 +576,14 @@ final class AppController {
         scan()
         save()
         updateTitle()
+    }
+
+    /// Track `key` (a key of `PanelModel.viewChoices`).
+    private func selectView(_ key: String) {
+        state["selected_tool"] = key
+        save()
+        updateTitle()
+        searchLive()  // the new view may show plugins the last scan didn't work out
     }
 
     func setToolEnabled(_ key: String, _ on: Bool) {

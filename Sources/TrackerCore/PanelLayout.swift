@@ -193,13 +193,54 @@ public enum PanelLayout {
         pad + cardsHeight(tab.cards) + pad - gap
     }
 
-    /// The tool switcher, shown when there are 2+ tools: a dropdown, so any
-    /// number of them fit. `choices` are (key, name).
+    /// The tool switcher, shown when there are 2+ tools: a dropdown of at
+    /// most `trackingVisibleCount` AIs, then "Show more…" (a window with every
+    /// AI) when there are more. `choices` are (key, name).
     public static func toolPicker(_ choices: [(key: String, name: String)], selected: String?) -> Item? {
         guard choices.count >= 2 else { return nil }
-        let index = choices.firstIndex { $0.key == selected } ?? 0
-        return .popup(label: "Tracking", options: choices.map(\.name), selected: index, action: "select_tool")
+        let entries = trackingEntries(choices, selected: selected)
+        let names = Dictionary(choices.map { ($0.key, $0.name) }, uniquingKeysWith: { first, _ in first })
+        let shown = choices.contains { $0.key == selected } ? selected : choices[0].key
+        let index = entries.firstIndex { $0 == shown } ?? 0
+        return .popup(label: "Tracking", options: entries.map { $0.flatMap { names[$0] } ?? trackingShowMoreTitle },
+                      selected: index, action: "select_tool")
     }
+
+    /// How many AIs the Tracking dropdown lists before "Show more…" ("All AIs" counts as one).
+    public static let trackingVisibleCount = 7
+    public static let trackingShowMoreTitle = "Show more…"
+
+    /// The Tracking dropdown's entries in order: AI keys, and nil for "Show
+    /// more…". Up to 7 choices: all of them. More: the first 7, with the
+    /// selected AI in the 7th place when it comes later (so the dropdown can
+    /// show it), then nil.
+    public static func trackingEntries(_ choices: [(key: String, name: String)], selected: String?) -> [String?] {
+        let keys = choices.map(\.key)
+        guard keys.count > trackingVisibleCount else { return keys }
+        var shown = Array(keys.prefix(trackingVisibleCount))
+        if let selected = selected, keys.contains(selected), !shown.contains(selected) {
+            shown[trackingVisibleCount - 1] = selected
+        }
+        return shown + [nil]
+    }
+
+    /// What a pick of entry `index` in the Tracking dropdown means.
+    public enum TrackingPick: Equatable {
+        case select(String)
+        case showMore
+    }
+
+    /// The meaning of a pick in the dropdown that `toolPicker` built from
+    /// the same `choices` and `selected`; nil for an index it doesn't have.
+    public static func trackingPick(index: Int, choices: [(key: String, name: String)],
+                                    selected: String?) -> TrackingPick? {
+        let entries = trackingEntries(choices, selected: selected)
+        guard entries.indices.contains(index) else { return nil }
+        return entries[index].map(TrackingPick.select) ?? .showMore
+    }
+
+    /// The title of the window that lists every AI.
+    public static let trackingWindowTitle = "Choose an AI"
 
     /// Whether a click in this app's `window` should close the panel: not in
     /// the panel itself, and not on the menu bar icon, whose own click

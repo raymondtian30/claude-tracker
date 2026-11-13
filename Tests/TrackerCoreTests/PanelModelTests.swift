@@ -473,8 +473,7 @@ private func card(_ tabs: [Tab], _ tabKey: String, _ title: String) -> Card {
         if case let .switch(label, _, _) = item { return label }
         return nil
     }
-    #expect(switches == ["Claude Code", "Codex", "OpenAI", "DeepSeek", "Kimi", "Google",
-                         "Anthropic", "xAI", "Mistral", "Qwen", "Z.ai (GLM)", "MiniMax"])
+    #expect(switches == ["Claude Code", "Codex"] + Providers.providers.map(\.name))
 }
 
 // MARK: - Warnings when an AI's usage can't be seen
@@ -651,6 +650,41 @@ private func effortTabs(_ entries: [(model: String, effort: String?, tokens: Int
     #expect(high < labels.firstIndex(of: "Opus 5.5 (Xhigh)")!)
 }
 
+private func barLabels(_ card: Card) -> [String] {
+    card.items.compactMap { item -> String? in
+        if case let .bar(label, _, _, _, _) = item { return label } else { return nil }
+    }
+}
+
+@Test func tokenOrderSortsEffortRowsOnTheirOwn() {
+    // Opus has 100 (High 60, Low 40), Sonnet 50. In token order a model's
+    // efforts are not tied to it: Sonnet sits between Opus's two rows.
+    let models: UsageStats.Models = [
+        "claude-opus-5-5": ["input": 100], "claude-sonnet-5-5": ["input": 50],
+    ]
+    let efforts = ["claude-opus-5-5": ["high": 60, "low": 40]]
+    let card = PanelModel.modelsCard("Today", models, efforts: efforts, order: .tokens)
+    #expect(barLabels(card) == ["Opus 5.5 (High)", "Sonnet 5.5", "Opus 5.5 (Low)"])
+
+    // The leftover plain row takes part too.
+    let leftover = PanelModel.modelsCard("Today", models, efforts: ["claude-opus-5-5": ["high": 30]], order: .tokens)
+    #expect(barLabels(leftover) == ["Opus 5.5 (No effort recorded)", "Sonnet 5.5", "Opus 5.5 (High)"])
+
+    // Equal rows keep model order, then effort order.
+    let tied = PanelModel.modelsCard("Today", ["claude-opus-5-5": ["input": 40], "claude-sonnet-5-5": ["input": 20]],
+                                     efforts: ["claude-opus-5-5": ["high": 20, "low": 20]], order: .tokens)
+    #expect(barLabels(tied) == ["Opus 5.5 (High)", "Opus 5.5 (Low)", "Sonnet 5.5"])
+}
+
+@Test func tierOrderKeepsEffortRowsUnderTheirModel() {
+    let models: UsageStats.Models = [
+        "claude-opus-5-5": ["input": 100], "claude-sonnet-5-5": ["input": 50],
+    ]
+    let efforts = ["claude-opus-5-5": ["high": 60, "low": 40]]
+    let card = PanelModel.modelsCard("Today", models, efforts: efforts, order: .tier)
+    #expect(barLabels(card) == ["Sonnet 5.5", "Opus 5.5 (High)", "Opus 5.5 (Low)"])
+}
+
 @Test func effortSumIsClampedToTheModelTotal() {
     // A merge or backfill can leave more tokens in `efforts` than the model has.
     let tabs = effortTabs([("claude-opus-5-5", "high", 100)]) { bucket in
@@ -669,7 +703,7 @@ private func effortTabs(_ entries: [(model: String, effort: String?, tokens: Int
     let items = itemsOf(tabs["models"]!)
 
     #expect(items.contains(.bar(label: "Opus 5.5 (High)", value: "70 · 70%", fraction: 0.7)))
-    #expect(items.contains(.bar(label: "Opus 5.5", value: "30 · 30%", fraction: 0.3)))
+    #expect(items.contains(.bar(label: "Opus 5.5 (No effort recorded)", value: "30 · 30%", fraction: 0.3)))
 }
 
 @Test func modelsWithoutEffortKeepTheirPlainRowAndCostIsUnchanged() {

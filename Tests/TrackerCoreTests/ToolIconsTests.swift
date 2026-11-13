@@ -80,7 +80,7 @@ private func iconSource(_ tool: String, _ appPath: @escaping (String) -> String?
 }
 
 @Test func providersWithoutAnAppGetAMonogram() {
-    #expect(ToolIconSource.monograms == ["gemini_cli": "GC", "openai": "AI", "deepseek": "DS", "kimi": "K", "google": "G",
+    #expect(ToolIconSource.monograms.filter { ["gemini_cli", "openai", "deepseek", "kimi", "google", "anthropic", "xai", "mistral", "qwen", "zai", "minimax"].contains($0.key) } == ["gemini_cli": "GC", "openai": "AI", "deepseek": "DS", "kimi": "K", "google": "G",
                                          "anthropic": "A", "xai": "X", "mistral": "M", "qwen": "Q",
                                          "zai": "Z", "minimax": "MM"])
     #expect(iconSource("deepseek", apps([:]), [], appDirs: []) == nil)

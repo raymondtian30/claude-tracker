@@ -250,3 +250,63 @@ private func addSessionTotals(_ path: URL, _ sessionId: String, model: String, c
     #expect(limitsItems.contains(.row(label: "Google API key", value: "Active (opencode)")))
     #expect(limitsItems.contains(.row(label: "Gemini 4 Argon", value: "1.0M ctx · 32.8K out")))
 }
+
+@Test func conflictingCatalogAuthorsAndStaleHostAttributionAreCleared() {
+    let tmp = TempDir()
+    let path = makeDB(tmp.url("catalog.db"), [])
+    let db = TestDB(path)
+    db.exec("create table kv (key text primary key, value text)")
+    let body: JSONObject = [
+        "writer": ["models": ["shared-model": ["name": "Writer model"]]],
+        "cohere": ["models": ["shared-model": ["name": "Cohere model"]]],
+        "nvidia": ["models": ["unknown-hosted": ["name": "Unknown"]]],
+        "NousResearch": ["models": ["DeepSeek-R1-Distill-Qwen-32B": ["name": "Derivative"]]],
+    ]
+    db.exec("insert into kv values ('models-dev:v2:catalog', \(literal(jsonText(["body": body]))))")
+    db.close()
+    var daily = JSONObject()
+    for model in ["shared-model", "unknown-hosted", "DeepSeek-R1-Distill-Qwen-32B"] {
+        UsageStats.addUsage(&daily, day: Day(2026, 11, 12), model: model, project: "~/fixture", parts: ["input": 10])
+    }
+    var source: JSONObject = ["byok": ["models": ["unknown-hosted": ["provider": "nvidia"]]]]
+    OpencodeSource.scanBYOK(&source, dbPath: path, daily: daily)
+    #expect(dig(source, "byok", "models", "shared-model", "provider") == nil)
+    #expect(dig(source, "byok", "models", "unknown-hosted", "provider") == nil)
+    #expect(JSON.string(dig(source, "byok", "models", "DeepSeek-R1-Distill-Qwen-32B", "provider")) == "nous")
+}
+
+@Test func catalogVotesOnlyCountWhenAnIntegrationCanPlaceTheModel() {
+    let tmp = TempDir()
+    let path = makeDB(tmp.url("catalog.db"), [])
+    let db = TestDB(path)
+    db.exec("create table kv (key text primary key, value text)")
+    let body: JSONObject = [
+        // One integration knows it, a host can't place it: not a conflict.
+        "google": ["models": ["learnlm-2.0-flash": ["name": "LearnLM"]]],
+        "nvidia": ["models": ["learnlm-2.0-flash": ["name": "LearnLM"]]],
+        // Two authors claim it, but the name says Kimi.
+        "writer": ["models": ["kimi-k2": ["name": "K2"]]],
+        "cohere": ["models": ["kimi-k2": ["name": "K2"]]],
+        // Alibaba hosts others' models too.
+        "alibaba": ["models": ["deepseek-v3": ["name": "DeepSeek V3"]]],
+    ]
+    db.exec("insert into kv values ('models-dev:v2:catalog', \(literal(jsonText(["body": body]))))")
+    db.close()
+    var daily = JSONObject()
+    for model in ["learnlm-2.0-flash", "kimi-k2", "deepseek-v3"] {
+        UsageStats.addUsage(&daily, day: Day(2026, 11, 12), model: model, project: "~/fixture", parts: ["input": 10])
+    }
+    var source: JSONObject = [:]
+    OpencodeSource.scanBYOK(&source, dbPath: path, daily: daily)
+    #expect(JSON.string(dig(source, "byok", "models", "learnlm-2.0-flash", "provider")) == "google")
+    #expect(JSON.truthy(dig(source, "byok", "models", "kimi-k2", "provider_ambiguous")))
+    #expect(JSON.string(dig(source, "byok", "models", "deepseek-v3", "provider")) == "deepseek")
+
+    var state: JSONObject = ["enabled_tools": ["opencode"], "onboarding_done": true,
+                             "sources": ["opencode": ["daily": daily, "byok": source["byok"] as Any]]]
+    for key in ["google", "kimi", "deepseek"] { AppState.setProviderEnabled(&state, key, true) }
+    #expect(Providers.providerView(state, "google").grandTotal == 10)
+    #expect(Providers.providerView(state, "kimi").grandTotal == 10)  // the name decides
+    #expect(Providers.providerView(state, "deepseek").grandTotal == 10)
+    #expect(Providers.providerView(state, "qwen").grandTotal == 0)
+}

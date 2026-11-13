@@ -186,7 +186,9 @@ extension PanelModel {
         let providers = Set(relevantBYOKProviders(d))
         guard !providers.isEmpty else { return [] }
         return d.byokModels.compactMap { id, info -> (id: String, info: JSONObject)? in
-            let p = info.string("provider") ?? Providers.providerOf(id) ?? ""
+            // As in the provider views: a model the integrations disagree on goes by its name.
+            let listed = JSON.truthy(info["provider_ambiguous"]) ? nil : info.string("provider")
+            let p = listed ?? Providers.providerOf(id) ?? ""
             guard providers.contains(p) else { return nil }
             return (id, info)
         }.sorted { a, b in
@@ -268,7 +270,10 @@ extension PanelModel {
     /// tool recorded the effort. A model's effort rows are largest first, and
     /// their sum is clamped to the model's total (merged or backfilled maps can
     /// hold more than the model has); what's left over, when there is any,
-    /// stays a plain model row. So the rows always add up to the model's total.
+    /// is a row "Opus 5.5 (No effort recorded)". So the rows always add up to the model's total.
+    /// In token order every row, effort or plain, is placed by its own tokens,
+    /// so a model's small effort can sit below another model. By tier, a
+    /// model's rows stay together under it, since the tier is the model's.
     static func modelsCard(_ title: String, _ models: UsageStats.Models,
                            efforts: [String: [String: Int]] = [:], order: ModelTiers.Order = .tokens,
                            catalog: [String: JSONObject] = [:]) -> Card {
@@ -277,7 +282,7 @@ extension PanelModel {
         if totals.isEmpty {
             return Card(title: title, items: [.note("No usage yet")])
         }
-        var items = [Item]()
+        var rows = [(label: String, tokens: Int)]()
         for total in totals {
             let name = modelDisplayName(total.name, catalog: catalog)
             var left = total.tokens
@@ -285,15 +290,23 @@ extension PanelModel {
             let known = (efforts[total.name] ?? [:]).sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
             for (effort, tokens) in known where left > 0 {
                 let shown = Swift.min(tokens, left)
-                items.append(shareBar("\(name) (\(effort.prefix(1).uppercased() + effort.dropFirst()))", shown, whole))
+                rows.append(("\(name) (\(effort.prefix(1).uppercased() + effort.dropFirst()))", shown))
                 left -= shown
                 shownAny = true
             }
             if left > 0 || !shownAny {
-                items.append(shareBar(name, left, whole))
+                // Beside its model's effort rows, a plain name would read as the
+                // model's total.
+                rows.append((shownAny ? "\(name) (No effort recorded)" : name, left))
             }
         }
-        return Card(title: title, items: items)
+        if order == .tokens {
+            // Most first; equal rows keep model order, then effort order.
+            rows = rows.enumerated()
+                .sorted { $0.element.tokens != $1.element.tokens ? $0.element.tokens > $1.element.tokens : $0.offset < $1.offset }
+                .map(\.element)
+        }
+        return Card(title: title, items: rows.map { shareBar($0.label, $0.tokens, whole) })
     }
 
     static func modelsTab(_ d: PanelData) -> Tab {

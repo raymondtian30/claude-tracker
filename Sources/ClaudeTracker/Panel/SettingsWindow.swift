@@ -3,7 +3,8 @@ import SwiftUI
 import TrackerCore
 
 /// Settings in a window of their own, drawn with the panel's cards and
-/// controls. Clicks call `onAction(action, value)` like the panel's.
+/// controls. Clicks call `onAction(action, value)` like the panel's. The
+/// "Show more…" window of every AI is one too, with its own title.
 @MainActor
 final class SettingsWindow: NSObject {
     static let title = PanelLayout.settingsWindowTitle
@@ -15,7 +16,7 @@ final class SettingsWindow: NSObject {
     private let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: PanelLayout.width, height: 400))
     private var placed = false
 
-    init(onAction: @escaping ActionHandler) {
+    init(title: String = PanelLayout.settingsWindowTitle, onAction: @escaping ActionHandler) {
         self.onAction = onAction
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: PanelLayout.width, height: 400),
                           styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
@@ -24,7 +25,7 @@ final class SettingsWindow: NSObject {
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
-        window.title = Self.title
+        window.title = title
         window.isReleasedWhenClosed = false
         window.contentView = scroll
     }
