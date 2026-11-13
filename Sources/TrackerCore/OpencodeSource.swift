@@ -14,8 +14,33 @@ public enum OpencodeSource {
     public static let opencodeDB = URL(fileURLWithPath: UsageStats.homeDirectory)
         .appendingPathComponent(".local/share/opencode/opencode.db")
 
+    /// SQL for the value at `path` in the JSON `column` when its JSON type is
+    /// one of `types` (`number` or `text`), else NULL: what the typed getters
+    /// (`int`, `double`, `string`) would read from the parsed object. SQLite
+    /// picks the fields out, so a message's text (most of its `data`, many
+    /// megabytes in all) is never copied into the app.
+    static func typed(_ column: String, _ path: String, _ types: String) -> String {
+        "case when json_type(\(column), '\(path)') in (\(types)) then json_extract(\(column), '\(path)') end"
+    }
+
+    static let number = "'integer', 'real'"
+    static let text = "'text'"
+
+    /// One row per message with tokens: created (ms); input, output,
+    /// reasoning, cache read, cache write; model id, variant, effort; cost;
+    /// folder; session id.
     static let query = """
-        select m.data, s.directory, m.session_id
+        select \(typed("m.data", "$.time.created", number)),
+               \(typed("m.data", "$.tokens.input", number)),
+               \(typed("m.data", "$.tokens.output", number)),
+               \(typed("m.data", "$.tokens.reasoning", number)),
+               \(typed("m.data", "$.tokens.cache.read", number)),
+               \(typed("m.data", "$.tokens.cache.write", number)),
+               \(typed("m.data", "$.model.id", text)),
+               \(typed("m.data", "$.model.variant", text)),
+               \(typed("m.data", "$.model.effort", text)),
+               \(typed("m.data", "$.cost", number)),
+               s.directory, m.session_id
         from session_message m left join session_v2 s on s.id = m.session_id
         where json_extract(m.data, '$.tokens') is not null
     """
@@ -70,25 +95,25 @@ public enum OpencodeSource {
         var daily = JSONObject()
         var counted = [AnyHashable: Counted]()  // session id -> already counted from messages
         for row in rows {
-            let data = try decodeObject(row[0])
-            let parts = self.parts(data.object("tokens") ?? [:])
-            guard let created = data.object("time")?.double("created"), created != 0,
+            let parts = self.parts([
+                "input": row[1], "output": row[2], "reasoning": row[3],
+                "cache": ["read": row[4], "write": row[5]] as JSONObject,
+            ])
+            guard let created = JSON.double(row[0]), created != 0,
                   parts.values.reduce(0, +) != 0
             else { continue }
-            let modelObject = data.object("model")
-            let model = CodexSource.nonEmpty(modelObject?.string("id")) ?? "unknown"
-            let effort = UsageStats.normalizeEffort(modelObject?["variant"])
-                ?? UsageStats.normalizeEffort(modelObject?["effort"])
-            let cost = data.double("cost")
+            let model = CodexSource.nonEmpty(row[6] as? String) ?? "unknown"
+            let effort = UsageStats.normalizeEffort(row[7]) ?? UsageStats.normalizeEffort(row[8])
+            let cost = JSON.double(row[9])
             UsageStats.addUsage(&daily, day: Day(timestamp: created / 1000), model: model,
-                                project: UsageStats.projectLabel(row[1] as? String), parts: parts, cost: cost,
+                                project: UsageStats.projectLabel(row[10] as? String), parts: parts, cost: cost,
                                 effort: effort, at: created / 1000)
-            var seen = counted[hashable(row[2])] ?? Counted()
+            var seen = counted[hashable(row[11])] ?? Counted()
             for (category, count) in parts {
                 seen.parts[category, default: 0] += count
             }
             seen.cost += cost ?? 0.0
-            counted[hashable(row[2])] = seen
+            counted[hashable(row[11])] = seen
         }
 
         for row in sessions {
@@ -147,9 +172,43 @@ public enum OpencodeSource {
         from credential
     """
 
-    static let catalogQuery = """
-        select value from kv where key = 'models-dev:v2:catalog'
+    /// When opencode last wrote its model catalog (fails on older databases
+    /// whose `kv` has no `time_updated`).
+    static let catalogUpdatedQuery = """
+        select time_updated from kv where key = 'models-dev:v2:catalog'
     """
+
+    /// The catalog row, to read its value a piece at a time (see
+    /// `OpencodeCatalog`).
+    static let catalogRowQuery = """
+        select rowid from kv where key = 'models-dev:v2:catalog'
+    """
+
+    /// What the catalog step last ran on, by database path, so it runs again
+    /// only when the catalog or what it is read for changed: reading the
+    /// catalog takes far more memory and time than the rest of a scan.
+    private static var catalogRuns = [String: String]()
+    private static let catalogRunsLock = NSLock()
+
+    private static func lastCatalogRun(_ path: String) -> String? {
+        catalogRunsLock.lock()
+        defer { catalogRunsLock.unlock() }
+        return catalogRuns[path]
+    }
+
+    private static func noteCatalogRun(_ path: String, _ key: String?) {
+        catalogRunsLock.lock()
+        defer { catalogRunsLock.unlock() }
+        catalogRuns[path] = key
+    }
+
+    /// What the catalog step's result depends on; nil (always run) when the
+    /// catalog's update time can't be read.
+    static func catalogRunKey(updated: Int?, providers: [String], usedModels: Set<String>,
+                              knownModels: Int) -> String? {
+        guard let updated = updated else { return nil }
+        return "\(updated)|\(providers.sorted())|\(usedModels.sorted())|\(knownModels)"
+    }
 
     /// Active BYOK API keys configured in opencode (`credential` table in
     /// `opencode.db` and `auth.json` beside it), keyed by canonical provider id.
@@ -220,67 +279,53 @@ public enum OpencodeSource {
         if FileManager.default.fileExists(atPath: dbPath.path),
            let db = try? Database(readOnly: dbPath) {
             defer { db.close() }
-            if let rows = try? db.rows(catalogQuery), let raw = rows.first?.first as? String,
-               let wrapper = JSON.parseObject(Data(raw.utf8)) {
-                let body: JSONObject?
-                if let bodyStr = wrapper.string("body") {
-                    body = JSON.parseObject(Data(bodyStr.utf8))
-                } else {
-                    body = wrapper.object("body")
-                }
-                if let catalog = body {
-                    let wantedProviders = Set(providers)
-                    // Model IDs can collide across integrations. Resolve ownership
-                    // across the entire catalog before filtering to tracked entries.
-                    var owners = [String: Set<String>]()
-                    for (vendor, value) in catalog {
-                        for id in (JSON.object(value)?.object("models") ?? [:]).keys {
-                            // An integration that can't place the ID casts no vote.
-                            if let owner = Providers.catalogProvider(model: id, integration: vendor) {
-                                owners[id, default: []].insert(owner)
-                            }
-                        }
-                    }
-                    for (_, vendorVal) in catalog {
-                        guard let vendorObj = JSON.object(vendorVal),
-                              let vendorModels = vendorObj.object("models")
-                        else { continue }
-                        for (modelId, modelVal) in vendorModels {
-                            let candidates = owners[modelId] ?? []
-                            let inferred = candidates.count == 1 ? candidates.first : nil
-                            let isWantedProvider = inferred.map(wantedProviders.contains) ?? false
-                            guard isWantedProvider || usedModels.contains(modelId),
-                                  let mObj = JSON.object(modelVal)
-                            else { continue }
-                            var entry = models.object(modelId) ?? [:]
-                            if let name = CodexSource.nonEmpty(mObj.string("name")) {
-                                entry["name"] = name
-                            }
-                            entry["provider"] = inferred
-                            entry["provider_ambiguous"] = candidates.count > 1
-                            if let limit = mObj.object("limit") {
-                                let ctx = limit.int("context") ?? limit.int("input") ?? 0
-                                let out = limit.int("output") ?? 0
-                                if ctx > 0 { entry["context"] = ctx }
-                                if out > 0 { entry["output"] = out }
-                            }
-                            if let textCost = mObj.object("cost")?.object("text") {
-                                if let inPrice = textCost.object("input")?.double("price") {
-                                    entry["input_price"] = inPrice
-                                }
-                                if let outPrice = textCost.object("output")?.double("price") {
-                                    entry["output_price"] = outPrice
-                                }
-                                if let cacheRead = textCost.object("input")?.object("cache")?.double("read") {
-                                    entry["cache_read_price"] = cacheRead
-                                }
-                            }
-                            if !entry.isEmpty {
-                                models[modelId] = entry
-                            }
-                        }
+            let updated = (try? db.rows(catalogUpdatedQuery))?.first?.first.flatMap(JSON.int)
+            let before = catalogRunKey(updated: updated, providers: providers, usedModels: usedModels,
+                                       knownModels: models.count)
+            let lastRun = lastCatalogRun(dbPath.path)
+            if before == nil || before != lastRun, let catalog = db.catalogModels() {
+                let wantedProviders = Set(providers)
+                // Model IDs can collide across integrations. Resolve ownership
+                // across the entire catalog before filtering to tracked entries.
+                var owners = [String: Set<String>]()
+                for model in catalog {
+                    // An integration that can't place the ID casts no vote.
+                    if let owner = Providers.catalogProvider(model: model.id, integration: model.vendor) {
+                        owners[model.id, default: []].insert(owner)
                     }
                 }
+                for model in catalog where model.isObject {
+                    let modelId = model.id
+                    let candidates = owners[modelId] ?? []
+                    let inferred = candidates.count == 1 ? candidates.first : nil
+                    let isWantedProvider = inferred.map(wantedProviders.contains) ?? false
+                    guard isWantedProvider || usedModels.contains(modelId) else { continue }
+                    var entry = models.object(modelId) ?? [:]
+                    if let name = CodexSource.nonEmpty(model.name) {
+                        entry["name"] = name
+                    }
+                    entry["provider"] = inferred
+                    entry["provider_ambiguous"] = candidates.count > 1
+                    let ctx = JSON.int(model.context) ?? JSON.int(model.input) ?? 0
+                    let out = JSON.int(model.output) ?? 0
+                    if ctx > 0 { entry["context"] = ctx }
+                    if out > 0 { entry["output"] = out }
+                    if let inPrice = model.inputPrice {
+                        entry["input_price"] = inPrice
+                    }
+                    if let outPrice = model.outputPrice {
+                        entry["output_price"] = outPrice
+                    }
+                    if let cacheRead = model.cacheReadPrice {
+                        entry["cache_read_price"] = cacheRead
+                    }
+                    if !entry.isEmpty {
+                        models[modelId] = entry
+                    }
+                }
+                let after = catalogRunKey(updated: updated, providers: providers, usedModels: usedModels,
+                                          knownModels: models.count)
+                noteCatalogRun(dbPath.path, after)
             }
         }
 
@@ -476,20 +521,6 @@ public enum OpencodeSource {
         return details
     }
 
-    /// A message's `data` column as a JSON object.
-    static func decodeObject(_ value: Any) throws -> JSONObject {
-        let data: Data?
-        if let text = value as? String {
-            data = Data(text.utf8)
-        } else {
-            data = value as? Data
-        }
-        guard let data = data, let object = JSON.parseObject(data) else {
-            throw ReadError(description: "a message's data isn't a JSON object")
-        }
-        return object
-    }
-
     /// A column value as a dictionary key (NULL included, as Python's None).
     static func hashable(_ value: Any) -> AnyHashable {
         (value as? AnyHashable) ?? AnyHashable(NSNull())
@@ -510,6 +541,9 @@ public enum OpencodeSource {
             }
             // Python's sqlite3 waits up to 5 seconds for a lock by default.
             sqlite3_busy_timeout(handle, 5000)
+            // Each scan reads the whole database once: a small page cache
+            // does as well as the default 2 MB-and-growing one, in less memory.
+            sqlite3_exec(handle, "pragma cache_size = -512", nil, nil, nil)
         }
 
         func close() {
@@ -517,6 +551,22 @@ public enum OpencodeSource {
                 sqlite3_close(handle)
             }
             handle = nil
+        }
+
+        /// opencode's model catalog, read a piece at a time (see
+        /// `OpencodeCatalog`): [] when there is none, nil when it can't be
+        /// read or isn't valid JSON.
+        func catalogModels() -> [OpencodeCatalog.Model]? {
+            guard let rows = try? self.rows(catalogRowQuery) else { return nil }
+            guard let rowid = rows.first?.first.flatMap(JSON.int) else { return [] }
+            var blob: OpaquePointer?
+            guard sqlite3_blob_open(handle, "main", "kv", "value", Int64(rowid), 0, &blob) == SQLITE_OK,
+                  let opened = blob
+            else {
+                sqlite3_blob_close(blob)
+                return nil
+            }
+            return OpencodeCatalog.models(BlobSource(opened))
         }
 
         private func error() -> ReadError {
@@ -558,6 +608,39 @@ public enum OpencodeSource {
             default:
                 return NSNull()
             }
+        }
+    }
+
+    /// A database value read 64 KB at a time; closed when released.
+    final class BlobSource: ByteSource {
+        private let blob: OpaquePointer
+        private let size: Int32
+        private var offset: Int32 = 0
+        private var buffer = [UInt8](repeating: 0, count: 1 << 16)
+        private var count = 0
+        private var index = 0
+
+        init(_ blob: OpaquePointer) {
+            self.blob = blob
+            size = sqlite3_blob_bytes(blob)
+        }
+
+        deinit {
+            sqlite3_blob_close(blob)
+        }
+
+        func next() throws -> UInt8? {
+            if index == count {
+                guard offset < size else { return nil }
+                let want = min(Int32(buffer.count), size - offset)
+                let status = buffer.withUnsafeMutableBytes { sqlite3_blob_read(blob, $0.baseAddress, want, offset) }
+                guard status == SQLITE_OK else { throw ReadError(description: "the model catalog couldn't be read") }
+                offset += want
+                count = Int(want)
+                index = 0
+            }
+            defer { index += 1 }
+            return buffer[index]
         }
     }
 }

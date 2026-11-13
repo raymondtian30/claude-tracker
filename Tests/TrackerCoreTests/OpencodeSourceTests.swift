@@ -312,3 +312,103 @@ private func addSessionTotals(_ path: URL, _ sessionId: String, model: String, c
     #expect(Providers.providerView(state, "deepseek").grandTotal == 10)
     #expect(Providers.providerView(state, "qwen").grandTotal == 0)
 }
+
+// MARK: - Reading only the fields that are used (memory)
+
+/// Messages whose fields have unexpected types count exactly as the same
+/// messages written with the values the reader takes from them.
+@Test func messageFieldsOfUnexpectedTypesReadAsBefore() throws {
+    let tmp = TempDir()
+    let odd = makeDB(tmp.url("odd.db"), [
+        message(input: 100, output: 10, reasoning: 5, read: 7, write: 3, cost: 0.5, model: "m-a",
+                extra: ["model": ["id": "m-a", "variant": " High "] as JSONObject]),
+        // A bool is no number, a fraction is cut, text is no number; a model
+        // that's plain text has no id; a cost that's text is no cost.
+        message(extra: ["tokens": ["input": true, "output": 20.9, "reasoning": "5", "cache": 3] as JSONObject,
+                        "model": "m-b", "cost": "1.0"]),
+        // Text for a time: not counted.
+        message(input: 50, extra: ["time": ["created": "123"] as JSONObject]),
+        // No tokens at all: not counted.
+        message(),
+        // An empty id; a variant that's a number gives way to the effort.
+        message(input: 9, extra: ["model": ["id": "", "variant": 5, "effort": "low"] as JSONObject]),
+    ])
+    let plain = makeDB(tmp.url("plain.db"), [
+        message(input: 100, output: 10, reasoning: 5, read: 7, write: 3, cost: 0.5, model: "m-a",
+                extra: ["model": ["id": "m-a", "variant": "high"] as JSONObject]),
+        message(output: 20, model: "unknown"),
+        message(input: 9, model: "unknown", extra: ["model": ["id": "unknown", "effort": "low"] as JSONObject]),
+    ])
+    #expect(jsonEqual(try OpencodeSource.readOpencode(odd), try OpencodeSource.readOpencode(plain)))
+}
+
+/// Catalog entries of unexpected types are skipped or partly read as before.
+@Test func catalogFieldsOfUnexpectedTypesReadAsBefore() {
+    let tmp = TempDir()
+    let path = makeDB(tmp.url("catalog.db"), [])
+    let db = TestDB(path)
+    db.exec("create table kv (key text primary key, value text)")
+    let body: JSONObject = [
+        "google": ["models": [
+            "g-ok": ["name": "G OK", "limit": ["context": 1000.7, "output": true] as JSONObject,
+                     "cost": ["text": ["input": ["price": 2, "cache": ["read": "0.1"]] as JSONObject,
+                                       "output": ["price": false]] as JSONObject] as JSONObject] as JSONObject,
+            "g-input": ["name": 5, "limit": ["input": 500, "output": 64]] as JSONObject,
+            "g-bad": "not an object",
+            "g-limit-arr": ["name": "", "limit": [1, 2], "cost": ["text": "x"]] as JSONObject,
+        ] as JSONObject] as JSONObject,
+        "openai": "a vendor that's text",
+        "anthropic": ["models": ["an array"]] as JSONObject,
+        "xai": ["models": ["grok-x": ["name": "Grok X", "cost": ["text": ["input": ["price": 3.5]]]] as JSONObject]],
+    ]
+    db.exec("insert into kv values ('models-dev:v2:catalog', \(literal(jsonText(["body": jsonText(body)]))))")
+    db.close()
+    var daily = JSONObject()
+    for model in ["g-ok", "g-input", "g-bad", "g-limit-arr", "grok-x"] {
+        UsageStats.addUsage(&daily, day: Day(2026, 11, 12), model: model, project: "~/fixture", parts: ["input": 10])
+    }
+    var source = JSONObject()
+    OpencodeSource.scanBYOK(&source, dbPath: path, daily: daily)
+    let models = JSON.object(dig(source, "byok", "models")) ?? [:]
+    #expect(Set(models.keys) == ["g-ok", "g-input", "g-limit-arr", "grok-x"])
+    #expect(JSON.string(dig(models, "g-ok", "name")) == "G OK")
+    #expect(JSON.int(dig(models, "g-ok", "context")) == 1000)
+    #expect(dig(models, "g-ok", "output") == nil)
+    #expect(JSON.double(dig(models, "g-ok", "input_price")) == 2)
+    #expect(dig(models, "g-ok", "output_price") == nil)
+    #expect(dig(models, "g-ok", "cache_read_price") == nil)
+    #expect(dig(models, "g-input", "name") == nil)
+    #expect(JSON.int(dig(models, "g-input", "context")) == 500)
+    #expect(JSON.int(dig(models, "g-input", "output")) == 64)
+    #expect(Set((JSON.object(dig(models, "g-limit-arr")) ?? [:]).keys).isSubset(of: ["provider", "provider_ambiguous"]))
+    #expect(JSON.string(dig(models, "grok-x", "name")) == "Grok X")
+    #expect(JSON.double(dig(models, "grok-x", "input_price")) == 3.5)
+}
+
+/// The model catalog (megabytes) is read again only when opencode updates it.
+@Test func catalogIsReadAgainOnlyWhenOpencodeUpdatesIt() {
+    let tmp = TempDir()
+    let path = makeDB(tmp.url("catalog.db"), [])
+    func setCatalog(name: String, updated: Int) {
+        let db = TestDB(path)
+        db.exec("create table if not exists kv (key text primary key, value text, time_created int, time_updated int)")
+        let body: JSONObject = ["google": ["models": ["gemini-x": ["name": name]]]]
+        db.exec("insert or replace into kv values ('models-dev:v2:catalog', "
+                + "\(literal(jsonText(["body": body]))), 1, \(updated))")
+        db.close()
+    }
+    var daily = JSONObject()
+    UsageStats.addUsage(&daily, day: Day(2026, 11, 12), model: "gemini-x", project: "~/fixture", parts: ["input": 10])
+    var source = JSONObject()
+    func name() -> String? { JSON.string(dig(source, "byok", "models", "gemini-x", "name")) }
+
+    setCatalog(name: "Old", updated: 1)
+    OpencodeSource.scanBYOK(&source, dbPath: path, daily: daily)
+    #expect(name() == "Old")
+    setCatalog(name: "New", updated: 1)  // same update time: not read again
+    OpencodeSource.scanBYOK(&source, dbPath: path, daily: daily)
+    #expect(name() == "Old")
+    setCatalog(name: "New", updated: 2)
+    OpencodeSource.scanBYOK(&source, dbPath: path, daily: daily)
+    #expect(name() == "New")
+}
