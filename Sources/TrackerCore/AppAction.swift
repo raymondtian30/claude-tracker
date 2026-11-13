@@ -45,6 +45,8 @@ public enum AppAction: Equatable {
     case scanInterval(seconds: Int)
     case login(Bool)
     case projectsExpand
+    /// Settings > AI tools: "Show N more" / "Show less".
+    case toolsExpand
     // Live tab: pause, carry on, or end a Claude Code session's process
     case sessionStop(Int32)
     case sessionResume(Int32)
@@ -120,6 +122,7 @@ public enum AppAction: Equatable {
         case "login": return .login(isOn)
         case "leaderboard_enabled": return .leaderboardEnabled(isOn)
         case "projects_expand": return .projectsExpand
+        case "tools_expand": return .toolsExpand
         case "sessions_stop_all": return .sessionsStopAll
         case "sessions_quit_all": return .sessionsQuitAll
         case "sessions_resume_all": return .sessionsResumeAll

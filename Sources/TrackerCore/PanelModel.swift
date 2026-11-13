@@ -105,6 +105,7 @@ public enum PanelModel {
     public static let tagSpace = 4  // a tag's padding and the gap after it, in characters
 
     public static let projectsShown = 5  // before "Show more"
+    public static let toolsShown = 8  // Settings > AI tools switches before "Show more"
 
     // MARK: - Small helpers
 

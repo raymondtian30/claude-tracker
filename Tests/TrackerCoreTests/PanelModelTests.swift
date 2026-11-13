@@ -433,8 +433,11 @@ private func card(_ tabs: [Tab], _ tabKey: String, _ title: String) -> Card {
     let items = cardTitled(tab, "AI tools")!.items
     #expect(items.contains(.switch(label: "OpenAI", isOn: true, action: "provider:openai")))
     #expect(items.contains(.switch(label: "DeepSeek", isOn: false, action: "provider:deepseek")))
-    // Turning a provider on asks for nothing: no key buttons or notes here.
-    #expect(items.allSatisfy { $0.kind == "switch" })
+    // Turning a provider on asks for nothing: no key buttons or notes here,
+    // only "Show N more" at the end.
+    #expect(items.dropLast().allSatisfy { $0.kind == "switch" })
+    guard case let .buttons(buttons) = items.last else { Issue.record("no Show more"); return }
+    #expect(buttons.map(\.action) == ["tools_expand"])
 }
 
 @Test func longNotesAreSplitIntoLines() {
@@ -466,7 +469,8 @@ private func card(_ tabs: [Tab], _ tabKey: String, _ title: String) -> Card {
 @Test func settingsOnlyPicksWhichAisAreUsed() {
     let state: JSONObject = ["enabled_tools": ["claude_code"], "enabled_providers": ["kimi"]]
 
-    let tab = PanelModel.settingsTab(state, intervalChoices: [15], detected: ["claude_code", "codex"])
+    let tab = PanelModel.settingsTab(state, intervalChoices: [15], detected: ["claude_code", "codex"],
+                                     toolsExpanded: true)
 
     let items = cardTitled(tab, "AI tools")!.items
     let switches = items.compactMap { item -> String? in
