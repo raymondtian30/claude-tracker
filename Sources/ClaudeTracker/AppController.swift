@@ -171,7 +171,12 @@ final class AppController {
     /// Read new usage from every tool being tracked.
     func scan(detected: [String]? = nil) {
         let tools = Providers.toolsToScan(state, detected: detected ?? Tools.detectTools())
-        attempt("scan") { try Tools.scanTools(&state, enabled: tools) }
+        autoreleasepool {
+            attempt("scan") { try Tools.scanTools(&state, enabled: tools) }
+        }
+        // Hand the pages the scan's parsing freed back to the system, so
+        // they stop counting toward the app's memory.
+        malloc_zone_pressure_relief(nil, 0)
     }
 
     /// The scan timer's tick.
