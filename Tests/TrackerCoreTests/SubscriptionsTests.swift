@@ -38,14 +38,30 @@ private func fakeToken(email: String, plan: String, issued: Int) throws -> Strin
     #expect(state.object("subscriptions")?.object("codex")?.isEmpty == true)
 }
 
-@Test func subscriptionCardStoresOnlyFourDigits() {
+@Test func removeCardDetailsDropsTheDigitsAndEmptyEntries() {
+    var state: JSONObject = ["subscription_details": [
+        "codex": ["last_four": "4242", "card_email": "a@example.com"] as JSONObject,
+        "claude_code": ["last_four": "1111", "email": "me@example.com"] as JSONObject,
+    ]]
+    Subscriptions.removeCardDetails(&state)
+    #expect(state.object("subscription_details")?.object("codex") == nil)
+    #expect(state.object("subscription_details")?.object("claude_code")?.string("email") == "me@example.com")
+    #expect(state.object("subscription_details")?.object("claude_code")?.string("last_four") == nil)
+    var empty: JSONObject = ["subscription_details": ["codex": ["last_four": "4242"] as JSONObject]]
+    Subscriptions.removeCardDetails(&empty)
+    #expect(empty["subscription_details"] == nil)
+}
+
+@Test func setDetailNoLongerStoresCardDigits() {
     var state = JSONObject()
     Subscriptions.setDetail(&state, tool: "codex", field: "last_four", value: "4242")
-    #expect(state.object("subscription_details")?.object("codex")?.string("last_four") == "4242")
-    Subscriptions.setDetail(&state, tool: "codex", field: "last_four", value: "4111111111114242")
-    #expect(state.object("subscription_details")?.object("codex")?.string("last_four") == "4242")
-    Subscriptions.setDetail(&state, tool: "codex", field: "last_four", value: nil)
-    #expect(state.object("subscription_details")?.object("codex")?.string("last_four") == nil)
+    #expect(state["subscription_details"] == nil)
+}
+
+@Test func launchDefaultsRemoveSavedCardDigits() {
+    var state: JSONObject = ["subscription_details": ["codex": ["last_four": "4242"] as JSONObject]]
+    AppState.applyLaunchDefaults(&state, freshInstall: false, today: Day(2026, 11, 12))
+    #expect(state["subscription_details"] == nil)
 }
 
 @Test func claudeAccountProfileSuppliesPlanAndEmail() throws {
@@ -62,7 +78,7 @@ private func fakeToken(email: String, plan: String, issued: Int) throws -> Strin
     #expect(found["accountUuid"] == nil)
 }
 
-@Test func subscriptionsTabShowsPlanEmailAndMaskedCard() {
+@Test func subscriptionsTabShowsPlanAndEmailButNoCard() {
     let state: JSONObject = [
         "enabled_tools": ["codex"],
         "subscriptions": ["codex": ["plan": "pro", "email": "user@example.com"]],
@@ -75,25 +91,19 @@ private func fakeToken(email: String, plan: String, issued: Int) throws -> Strin
     #expect(tab?.title == "Subscriptions")
     #expect(card?.items.contains(.row(label: "Plan", value: "ChatGPT Pro")) == true)
     #expect(card?.items.contains(.row(label: "Email", value: "user@example.com")) == true)
-    #expect(card?.items.contains(.row(label: "Card", value: "•••• 4242")) == true)
+    #expect(card?.items.contains { if case let .row(label, _, _) = $0 { return label == "Card" }; return false } == false)
+    let buttons = card?.items.compactMap { item -> [Item.Button]? in
+        if case let .buttons(b) = item { return b }
+        return nil
+    }.flatMap { $0 } ?? []
+    #expect(!buttons.contains { $0.action.hasPrefix("subscription_card") })
+    #expect(buttons.contains { $0.action == "subscription_email:codex" } == false)  // the email came from Codex
 }
 
 @Test func subscriptionActionsAcceptOnlySupportedTools() {
     #expect(AppAction.parse("subscription_email:codex", .none) == .subscriptionEmail("codex"))
-    #expect(AppAction.parse("subscription_card:claude_code", .none) == .subscriptionCard("claude_code"))
-    #expect(AppAction.parse("subscription_card:opencode", .none) == nil)
-    #expect(AppAction.subscriptionCard("codex").opensDialog)
+    #expect(AppAction.parse("subscription_card:claude_code", .none) == nil)
+    #expect(AppAction.parse("subscription_email:opencode", .none) == nil)
+    #expect(AppAction.subscriptionEmail("codex").opensDialog)
 }
 
-@Test func cardEndingDoesNotFollowAnotherAccount() {
-    let state: JSONObject = [
-        "enabled_tools": ["codex"],
-        "subscriptions": ["codex": ["plan": "pro", "email": "new@example.com"]],
-        "subscription_details": ["codex": ["last_four": "4242", "card_email": "old@example.com"]],
-    ]
-    let tab = PanelModel.buildPanel(Tools.toolView(state, "codex"), state: state,
-                                    sessions: [], friends: [], showLeaderboard: false)
-        .first { $0.key == "subscriptions" }
-    let card = tab?.cards.first { $0.title == "Codex" }
-    #expect(card?.items.contains(.row(label: "Card", value: "Unavailable")) == true)
-}

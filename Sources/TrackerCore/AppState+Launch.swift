@@ -118,6 +118,7 @@ extension AppState {
         state["budgets"] = nil  // token budgets, since removed
         state["stats_tab"] = nil  // from the earlier in-menu tabs
         state["panel_tab"] = nil  // the panel always opens on Home now
+        Subscriptions.removeCardDetails(&state)  // the Plans tab's card ending, since removed
         if JSON.isNull(state["first_seen_at"]) {
             state["first_seen_at"] = today.iso
         }

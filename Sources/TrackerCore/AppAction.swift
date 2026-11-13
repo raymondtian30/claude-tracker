@@ -22,7 +22,6 @@ public enum AppAction: Equatable {
     case providerKey(String)
     case providerKeyRemove(String)
     case subscriptionEmail(String)
-    case subscriptionCard(String)
     // Leaderboard
     case leaderboardSetup
     case leaderboardShare
@@ -158,8 +157,6 @@ public enum AppAction: Equatable {
         case "provider_key_remove" where Accounts.keyHelp[argument] != nil: return .providerKeyRemove(argument)
         case "subscription_email" where Subscriptions.supportedTools.contains(argument):
             return .subscriptionEmail(argument)
-        case "subscription_card" where Subscriptions.supportedTools.contains(argument):
-            return .subscriptionCard(argument)
         case "session_stop": return processID(argument).map(AppAction.sessionStop)
         case "session_resume": return processID(argument).map(AppAction.sessionResume)
         case "session_quit": return processID(argument).map(AppAction.sessionQuit)
@@ -192,7 +189,7 @@ public enum AppAction: Equatable {
     public var opensDialog: Bool {
         switch self {
         case .leaderboardSetup, .leaderboardShare, .leaderboardAdd, .providerKey, .providerKeyRemove,
-             .subscriptionEmail, .subscriptionCard, .sessionQuit,
+             .subscriptionEmail, .sessionQuit,
              .sessionsQuitAll:
             return true
         default:

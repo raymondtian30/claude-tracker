@@ -31,6 +31,7 @@ public enum PanelLayout {
         "tags": 22,
         "choices": 52,
         "heading": 22,
+        "readmore": 16,
     ]
     public static let cardTitleHeight: CGFloat = 24
     public static let screenMargin: CGFloat = 40  // keep the panel this far from the bottom of the screen
@@ -136,15 +137,50 @@ public enum PanelLayout {
         measure(text, size, weight) > budget - 1
     }
 
-    /// The width a bar's or row's label may take inside a card (312 wide);
-    /// a chevron or a status dot takes 14 of it. `kind` is "bar" or "row".
-    public static func labelBudget(kind: String, hasChevron: Bool, hasDot: Bool = false) -> CGFloat {
-        let card = inner - 2 * cardPad
-        return card - (kind == "bar" ? 120 : 110) - (hasChevron ? 14 : 0) - (hasDot ? dotWidth : 0)
-    }
-
     /// The room a status dot takes before a row's label.
     public static let dotWidth: CGFloat = 14
+
+    // MARK: - Fitting text
+
+    /// How small a label may shrink to fit its slot before it is cut off
+    /// (and gets a "Read more"): 85% of its size.
+    public static let minTextScale: CGFloat = 0.85
+    /// The width inside a card: what its items span.
+    public static let cardInner: CGFloat = inner - 2 * cardPad
+    /// A row's or bar's value takes the width it needs, up to this; the
+    /// label gets the rest of the line.
+    public static let valueCap: CGFloat = 200
+    /// Space kept between a row's label and its value.
+    public static let valueGap: CGFloat = 8
+    /// Label widths beside controls: a switch (34 wide), a dropdown (140
+    /// wide), or segments (after a 90 pt label).
+    public static let switchLabelWidth: CGFloat = cardInner - 34 - 8
+    public static let popupLabelWidth: CGFloat = cardInner - 140 - 8
+    public static let segmentedLabelWidth: CGFloat = 90 - 4
+    /// A warning line's text, after its icon (16) and the gap (6).
+    public static let alertTextWidth: CGFloat = cardInner - 22
+
+    /// Whether `text` is wider than `width` even shrunk to `minTextScale`
+    /// (the last point is kept as air).
+    public static func isCutEvenShrunk(_ text: String, size: CGFloat, weight: LabelWeight, width: CGFloat,
+                                       measure: TextMeasure) -> Bool {
+        isCutOff(text: text, size: size, weight: weight, budget: width,
+                 measure: { measure($0, $1, $2) * minTextScale })
+    }
+
+    /// The (label, value) widths of a row or bar: the value as wide as it
+    /// needs up to `valueCap`, the label the rest (less a dot, if any).
+    public static func labelValueWidths(label: String, value: String, valueWeight: LabelWeight, hasDot: Bool,
+                                        measure: TextMeasure) -> (label: CGFloat, value: CGFloat) {
+        let value = valueWidth(measured: measure(value, 13, valueWeight))
+        return (cardInner - (hasDot ? dotWidth : 0) - value - valueGap, value)
+    }
+
+    /// The width a value is drawn in, from its measured width: rounded up,
+    /// a point of air, at most `valueCap`. The view and the model both use it.
+    public static func valueWidth(measured: CGFloat) -> CGFloat {
+        Swift.min(measured.rounded(.up) + 1, valueCap)
+    }
 
     /// Tiles are already boxes, so a card holding only tiles (and no title)
     /// is drawn without the card around them.

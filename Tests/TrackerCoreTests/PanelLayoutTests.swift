@@ -205,11 +205,15 @@ private let tab = Tab(key: "overview", title: "Overview", short: "Home", icon: "
     #expect(PanelLayout.height(of: .bar(label: "a", value: "1%", fraction: 0.1, sub: "Resets Nov 20")) == 50)
 }
 
-@Test func labelBudgetPlainAndWithChevron() {
-    #expect(PanelLayout.labelBudget(kind: "bar", hasChevron: false) == 192)
-    #expect(PanelLayout.labelBudget(kind: "bar", hasChevron: true) == 178)
-    #expect(PanelLayout.labelBudget(kind: "row", hasChevron: false) == 202)
-    #expect(PanelLayout.labelBudget(kind: "row", hasChevron: true) == 188)
+@Test func aValueTakesWhatItNeedsUpToItsCapAndTheLabelTheRest() {
+    let measure: TextMeasure = { text, _, _ in CGFloat(text.count) * 7 }
+    let short = PanelLayout.labelValueWidths(label: "x", value: "12%", valueWeight: .regular, hasDot: false,
+                                             measure: measure)
+    #expect(short.value == 22 && short.label == PanelLayout.cardInner - 22 - PanelLayout.valueGap)
+    let long = PanelLayout.labelValueWidths(label: "x", value: String(repeating: "9", count: 40),
+                                            valueWeight: .semibold, hasDot: true, measure: measure)
+    #expect(long.value == PanelLayout.valueCap)
+    #expect(long.label == PanelLayout.cardInner - PanelLayout.dotWidth - PanelLayout.valueCap - PanelLayout.valueGap)
 }
 
 // foldFrame: the panel grows from, and shrinks to, the menu bar icon, with its

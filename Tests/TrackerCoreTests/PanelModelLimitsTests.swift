@@ -8,6 +8,13 @@ import Testing
 
 private let limitsNow = LocalTime.timestamp(2026, 11, 8, 12, 0, 0)
 
+/// `limitsNow` minus `seconds`, as the UTC text Codex writes ("…Z"), so a
+/// fixture's age does not depend on the time zone the tests run in.
+private func codexTime(_ seconds: Double) -> String {
+    let formatter = ISO8601DateFormatter()
+    return formatter.string(from: Date(timeIntervalSince1970: limitsNow - seconds))
+}
+
 private func limitsTab(_ state: JSONObject, _ view: Tools.View, now: Double = limitsNow) -> Tab {
     let tabs = PanelModel.buildPanel(view, state: state, sessions: [], friends: [], showLeaderboard: false,
                                      today: Day(2026, 11, 8), now: now)
@@ -18,8 +25,9 @@ private func limitsTab(_ state: JSONObject, _ view: Tools.View, now: Double = li
 /// window length, the reset time); Swift's value types make that clumsy, so
 /// here those values are parameters instead.
 private func codexLimitsState(_ used: Double, windowMinutes: Int = 300,
-                              resetsAt: Double = LocalTime.timestamp(2026, 11, 8, 15, 30)) -> JSONObject {
-    let limits: JSONObject = ["at": "2026-11-08T11:00:00Z", "rate_limits": [
+                              resetsAt: Double = LocalTime.timestamp(2026, 11, 8, 15, 30),
+                              age: Double = 10 * 60) -> JSONObject {
+    let limits: JSONObject = ["at": codexTime(age), "rate_limits": [
         "primary": ["used_percent": used, "window_minutes": windowMinutes, "resets_at": resetsAt] as JSONObject,
         "secondary": NSNull(),
     ] as JSONObject]
@@ -51,7 +59,7 @@ private func barLabels(_ items: [Item]) -> [String] {
 }
 
 private func planItems(_ tab: Tab) -> [Item] {
-    cardTitled(tab, "Plan limits")!.items
+    cardTitled(tab, "Limits")!.items
 }
 
 @Test func projectsShowsTheTop5ThenAShowMoreButton() {
@@ -116,7 +124,8 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
         ["kind": "five_hour", "window": "five_hour", "label": "5-hour", "percent": 23.0, "resets_at": reset],
         ["kind": "weekly", "window": "weekly", "label": "Weekly", "percent": 41.4, "resets_at": NSNull()],
     ]
-    return ["claude_usage": ["limits": limits ?? defaultLimits, "error": error, "fetched_at": 1] as JSONObject]
+    return ["claude_usage": ["limits": limits ?? defaultLimits, "error": error,
+                             "fetched_at": limitsNow - 60] as JSONObject]
 }
 
 @Test func limitsTabShowsClaudesPercentages() {
@@ -182,7 +191,8 @@ private func claudeUsageState(limits: [JSONObject]? = nil, error: Any = NSNull()
 
     let tab = limitsTab([:], view)
 
-    #expect(tab.cards.compactMap(\.title) == ["Plan limits"])
+    #expect(tab.cards.compactMap(\.title) == ["Limits"])
+    #expect(planItems(tab).first == .row(label: "Limits", value: "No data"))
 }
 
 @Test func settingsHasThePercentagesFromAnthropicSwitchWhenTrackingClaude() {
@@ -303,18 +313,19 @@ private func dotRow(_ label: String, _ value: String, _ dot: LabelExtras.Dot) ->
     let state = codexLimitsState(80.0, windowMinutes: 43200, resetsAt: LocalTime.timestamp(2026, 11, 20, 18, 46))
         .merging(["enabled_tools": ["codex"]]) { a, _ in a }
 
-    for view in [Tools.toolView(state, "codex"), Tools.toolView(state, "all")] {
-        let tab = limitsTab(state, view)
-        #expect(planItems(tab) == [.bar(label: "Codex (Monthly)", value: "80%", fraction: 0.8,
-                                        sub: "Resets Nov 20")])
-    }
+    let own = limitsTab(state, Tools.toolView(state, "codex"))
+    #expect(planItems(own) == [.bar(label: "Codex (Monthly)", value: "80%", fraction: 0.8, sub: "Resets Nov 20")])
+    // In All AIs the heading names the AI, so the bar names only the window.
+    let all = limitsTab(state, Tools.toolView(state, "all"))
+    #expect(planItems(all) == [.heading("Codex"),
+                               .bar(label: "Monthly", value: "80%", fraction: 0.8, sub: "Resets Nov 20")])
 }
 
 @Test func subTextAndNilCases() {
     for resets: Any in [NSNull(), 0.0] {
         let state: JSONObject = ["claude_usage": ["limits": [
             ["kind": "five_hour", "window": "five_hour", "label": "5-hour", "percent": 23.0, "resets_at": resets] as JSONObject,
-        ], "error": NSNull(), "fetched_at": 1] as JSONObject]
+        ], "error": NSNull(), "fetched_at": limitsNow - 60] as JSONObject]
         let tab = limitsTab(state, Tools.toolView(state, "claude_code"))
         #expect(planItems(tab)[0] == .bar(label: "Claude Code (5-hour)", value: "23%", fraction: 0.23, sub: nil))
     }

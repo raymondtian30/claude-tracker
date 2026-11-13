@@ -87,10 +87,6 @@ public enum Subscriptions {
             parts[1].contains(".") && !text.contains(where: { $0.isWhitespace })
     }
 
-    public static func validLastFour(_ text: String) -> Bool {
-        text.utf8.count == 4 && text.utf8.allSatisfy { (48...57).contains($0) }
-    }
-
     public static func displayPlan(_ raw: String) -> String {
         switch raw.lowercased() {
         case "pro": return "ChatGPT Pro"
@@ -103,10 +99,24 @@ public enum Subscriptions {
         }
     }
 
+    /// The Plans tab used to record a payment card's last four digits (and
+    /// the email it was entered for). It no longer shows them, so the saved
+    /// digits are removed, and a tool's entry with nothing left goes too.
+    public static func removeCardDetails(_ state: inout JSONObject) {
+        guard var all = state.object("subscription_details") else { return }
+        for (tool, value) in all {
+            guard var detail = JSON.object(value) else { continue }
+            detail["last_four"] = nil
+            detail["card_email"] = nil
+            all[tool] = detail.isEmpty ? nil : detail
+        }
+        state["subscription_details"] = all.isEmpty ? nil : all
+    }
+
     public static func setDetail(_ state: inout JSONObject, tool: String, field: String, value: String?) {
-        guard supportedTools.contains(tool), ["email", "last_four"].contains(field) else { return }
+        guard supportedTools.contains(tool), field == "email" else { return }
         if let value = value, !value.isEmpty {
-            guard field == "email" ? validEmail(value) : validLastFour(value) else { return }
+            guard validEmail(value) else { return }
         }
         var all = state.object("subscription_details") ?? [:]
         var detail = all.object(tool) ?? [:]

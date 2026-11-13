@@ -141,15 +141,8 @@ public enum Limits {
         let fetched = (usage.array("limits") ?? []).compactMap { JSON.object($0).flatMap(Level.init(json:)) }
         let enabled = state["claude_usage_enabled"].map { JSON.truthy($0) } ?? true
         if enabled, !fetched.isEmpty {
-            return fetched.map { limit in
-                var limit = limit
-                // A reset time of 0 means "not known", the same as none.
-                if let resetsAt = limit.resetsAt, resetsAt > 0, resetsAt <= now {
-                    limit.percent = 0.0
-                    limit.resetsAt = nil
-                }
-                return limit
-            }
+            // A reset time of 0 means "not known", the same as none.
+            return clearingPassedResets(fetched, now: now)
         }
         return reachedClaudeLimits(state.object("claude_limit_hits"), now: now)
     }
@@ -270,6 +263,12 @@ public enum Limits {
     public static func displayName(_ level: Level) -> String {
         let prefix = level.id.firstIndex(of: ":").map { String(level.id[..<$0]) } ?? level.id
         let tool = [level.name, Tools.toolNames[prefix] ?? "", prefix].first { !$0.isEmpty } ?? ""
+        return "\(tool) (\(windowName(level)))"
+    }
+
+    /// The window part of `displayName`: "5-hour", "Weekly, Opus". Used on
+    /// its own under a heading that names the tool.
+    public static func windowName(_ level: Level) -> String {
         var window = windowLabels[level.window] ?? level.label
         // A window the app doesn't know has its limit's name in its label already.
         if windowLabels[level.window] != nil, let kind = level.kind, kind != level.window,
@@ -279,7 +278,7 @@ public enum Limits {
                 window += ", " + words.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
             }
         }
-        return "\(tool) (\(window))"
+        return window
     }
 
     /// The real plan limits recorded for `toolKeys`, as alert levels.
@@ -295,12 +294,7 @@ public enum Limits {
             } else {
                 continue
             }
-            levels += found.map { limit in
-                var level = limit
-                level.id = "\(key):\(limit.kind ?? limit.window)"
-                level.name = Tools.toolNames[key] ?? key
-                return level
-            }
+            levels += named(found, key)
         }
         return levels
     }
@@ -334,6 +328,125 @@ public enum Limits {
     public static func levelsForAlerts(_ state: JSONObject, now: Double) -> [Level] {
         let enabled = (state.array("enabled_tools") ?? []).compactMap(JSON.string)
         return planLevels(state, toolKeys: enabled, now: now)
+    }
+}
+
+// MARK: - What the Limits tab shows
+
+extension Limits {
+    /// The AIs the Limits tab has a section for: in All AIs every tracked
+    /// tool, then every tracked provider (each in the app's own order); in one
+    /// AI's view just that AI.
+    public static func trackedKeys(_ viewKey: String, state: JSONObject) -> [String] {
+        if viewKey == "all" {
+            let tools = Set((state.array("enabled_tools") ?? []).compactMap(JSON.string))
+            let providers = Set((state.array("enabled_providers") ?? []).compactMap(JSON.string))
+            return Tools.tools.map(\.key).filter(tools.contains)
+                + Providers.providers.map(\.key).filter(providers.contains)
+        }
+        return Tools.toolNames[viewKey] != nil || Providers.providerNames[viewKey] != nil ? [viewKey] : []
+    }
+
+    /// Claude's percentages are fetched every 5 minutes: three missed
+    /// fetches make them old.
+    public static let claudeStaleAfter = 3 * ClaudeUsage.refreshSeconds
+    /// Codex writes its numbers only on a turn, so they go old more slowly
+    /// than a fetch would (a note every 15 minutes would mean nothing).
+    public static let codexStaleAfter = 60.0 * 60
+    /// Provider accounts and API keys are fetched every 15 minutes.
+    public static let accountStaleAfter = 3 * Accounts.refreshSeconds
+
+    /// Limits for the Limits tab, with how old they are. `updatedAt` is when
+    /// the numbers were read (nil when not known); `stale` says they may be
+    /// out of date: too old, the latest fetch failed, or a reset time has
+    /// passed since (the 0% shown then is a guess).
+    public struct Shown: Equatable {
+        public var levels: [Level]
+        public var updatedAt: Double?
+        public var stale: Bool
+    }
+
+    /// Whether any of `raw` (as saved, before a passed reset reads 0%)
+    /// reset after `updatedAt` and by `now`.
+    static func resetSince(_ raw: [Level], updatedAt: Double?, now: Double) -> Bool {
+        raw.contains { level in
+            guard let resetsAt = level.resetsAt, resetsAt > 0 else { return false }
+            return resetsAt <= now && resetsAt > (updatedAt ?? 0)
+        }
+    }
+
+    /// A passed reset reads 0% with no reset time (as `claudeLimits` does).
+    static func clearingPassedResets(_ levels: [Level], now: Double) -> [Level] {
+        levels.map { level in
+            var level = level
+            if let resetsAt = level.resetsAt, resetsAt > 0, resetsAt <= now {
+                level.percent = 0.0
+                level.resetsAt = nil
+            }
+            return level
+        }
+    }
+
+    static func named(_ levels: [Level], _ key: String) -> [Level] {
+        levels.map { limit in
+            var level = limit
+            level.id = "\(key):\(limit.kind ?? limit.window)"
+            level.name = Tools.toolNames[key] ?? key
+            return level
+        }
+    }
+
+    /// Claude Code for the Limits tab: Anthropic's latest answer; if that
+    /// failed, its last good answer (stale), with any limit its logs say is
+    /// reached put over it; else the reached limits from its logs.
+    public static func claudeShown(_ state: JSONObject, now: Double) -> Shown {
+        let usage = state.object("claude_usage") ?? [:]
+        let enabled = state["claude_usage_enabled"].map { JSON.truthy($0) } ?? true
+        func parse(_ list: [Any]?) -> [Level] {
+            (list ?? []).compactMap { JSON.object($0).flatMap(Level.init(json:)) }
+        }
+        func time(_ value: Any?) -> Double? {
+            JSON.double(value).flatMap { $0 > 0 ? $0 : nil }
+        }
+        let fetched = parse(usage.array("limits"))
+        if enabled, !fetched.isEmpty {
+            let at = time(usage["fetched_at"])
+            let stale = at.map { now - $0 > claudeStaleAfter } ?? true
+                || resetSince(fetched, updatedAt: at, now: now)
+            return Shown(levels: named(clearingPassedResets(fetched, now: now), "claude_code"),
+                         updatedAt: at, stale: stale)
+        }
+        let reached = reachedClaudeLimits(state.object("claude_limit_hits"), now: now)
+        let lastGood = usage.object("last_good") ?? [:]
+        let old = parse(lastGood.array("limits"))
+        if enabled, !old.isEmpty {
+            var levels = clearingPassedResets(old, now: now)
+            for hit in reached {
+                let key = hit.kind ?? hit.window
+                if let index = levels.firstIndex(where: { ($0.kind ?? $0.window) == key }) {
+                    levels[index] = hit
+                } else {
+                    levels.append(hit)
+                }
+            }
+            return Shown(levels: named(levels, "claude_code"), updatedAt: time(lastGood["fetched_at"]), stale: true)
+        }
+        return Shown(levels: named(reached, "claude_code"), updatedAt: nil, stale: false)
+    }
+
+    /// Codex for the Limits tab: its plan's newest record.
+    public static func codexShown(_ state: JSONObject, now: Double) -> Shown {
+        let codex = state.object("sources")?.object("codex") ?? [:]
+        let rateLimits = CodexSource.codexRateLimits(codex)
+        let levels = codexLimits(rateLimits, now: now)
+        let at = CodexSource.codexRateLimitsAt(codex)
+        let raw = ["primary", "secondary"].compactMap { slot -> Level? in
+            guard let resetsAt = rateLimits?.object(slot)?.double("resets_at") else { return nil }
+            return Level(window: "five_hour", label: "", percent: 0, resetsAt: resetsAt)
+        }
+        let stale = !levels.isEmpty
+            && ((at.map { now - $0 > codexStaleAfter } ?? true) || resetSince(raw, updatedAt: at, now: now))
+        return Shown(levels: named(levels, "codex"), updatedAt: at, stale: stale)
     }
 }
 

@@ -311,7 +311,16 @@ public enum PanelModel {
         if showLeaderboard {
             tabs.append(leaderboardTab(state, friends))
         }
-        return (tabs, [:])
+        // Last, so ids count the warning card too.
+        var rows = [String: RowInfo]()
+        for index in tabs.indices {
+            let fit = fitted(tabs[index], measure: context.measure, open: context.open)
+            tabs[index] = fit.tab
+            for id in fit.ids {
+                rows[id] = RowInfo()
+            }
+        }
+        return (tabs, rows)
     }
 
     /// Why this AI's usage can't be seen, or nil. Shown at the top of every

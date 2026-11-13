@@ -19,30 +19,6 @@ extension AppController {
         save()
     }
 
-    func editSubscriptionCard(_ tool: String) {
-        guard Subscriptions.supportedTools.contains(tool) else { return }
-        guard let entered = Dialogs.ask(title: "\(Tools.toolNames[tool] ?? tool) Card",
-                                        message: "Enter only the last four digits of the card used for this subscription. Leave blank to clear it.",
-                                        ok: "Save", cancel: "Cancel", secure: true) else { return }
-        let digits = entered.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard digits.isEmpty || Subscriptions.validLastFour(digits) else {
-            Dialogs.alert("Invalid Card Digits", "Enter exactly four digits. Full card numbers are not accepted.")
-            return
-        }
-        Subscriptions.setDetail(&state, tool: tool, field: "last_four", value: digits)
-        var details = state.object("subscription_details") ?? [:]
-        var saved = details.object(tool) ?? [:]
-        if !digits.isEmpty, let email = state.object("subscriptions")?.object(tool)?.string("email")
-            ?? saved.string("email") {
-            saved["card_email"] = email
-        } else {
-            saved.removeValue(forKey: "card_email")
-        }
-        details[tool] = saved
-        state["subscription_details"] = details
-        save()
-    }
-
     // MARK: - API keys
 
     func addAPIKey(_ provider: String) {
@@ -147,7 +123,9 @@ extension AppController {
     private func showClaudeUsage(_ result: JSONObject) {
         fetchingClaudeUsage = false
         guard JSON.truthy(state["claude_usage_enabled"]) else { return }  // turned off meanwhile
-        state["claude_usage"] = result
+        state["claude_usage"] = ClaudeUsage.merged(
+            previous: state.object("claude_usage"), fetched: result,
+            account: state.object("subscriptions")?.object("claude_code")?.string("email"))
         save()
         checkAlerts()
         renderPanel()

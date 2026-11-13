@@ -102,6 +102,10 @@ public enum Item: Equatable {
     case choices(label: String?, options: [String], selected: [Int], action: String)
     /// A short semibold line that names what follows (a question in the FAQ).
     case heading(String)
+    /// A small "Read more" link under an item whose text is cut off even
+    /// shrunk; when open, the full text is shown under the item and the link
+    /// reads "Show less". Sends `toggle_row:<id>`. Added by `PanelModel.fitted`.
+    case readMore(id: String, isOpen: Bool)
 
     /// A big number with its label and an optional SF Symbol.
     public struct Tile: Equatable {
@@ -157,6 +161,7 @@ public enum Item: Equatable {
         case .tags: return "tags"
         case .choices: return "choices"
         case .heading: return "heading"
+        case .readMore: return "readmore"
         }
     }
 }

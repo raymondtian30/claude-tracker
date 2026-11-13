@@ -22,13 +22,18 @@ struct ButtonsItem: View {
     }
 }
 
-/// A control's label on the left, 13 pt at y+5.
+/// A control's label on the left, 13 pt at y+5, kept to `width` so it never
+/// runs under its control (the model's fit pass uses the same widths).
 private struct ControlLabel: View {
     let text: String?
+    let width: CGFloat
 
     var body: some View {
         if let text = text {
-            LabelText(text: text).padding(.top, 5)
+            LabelText(text: text)
+                .frame(width: width)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 5)
         }
     }
 }
@@ -43,7 +48,7 @@ struct SegmentedItem: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            ControlLabel(text: label)
+            ControlLabel(text: label, width: PanelLayout.segmentedLabelWidth)
             SegmentedControl(options: options, selected: [selected], multiple: false, small: options.count > 5) { picked in
                 onAction(action, .index(picked.first ?? 0))
             }
@@ -64,7 +69,7 @@ struct ChoicesItem: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            ControlLabel(text: label)
+            ControlLabel(text: label, width: PanelLayout.cardInner)
             // Small, so seven percentages fit across a card without spilling over.
             SegmentedControl(options: options, selected: selected, multiple: true, small: true) { picked in
                 onAction(action, .indices(picked))
@@ -86,7 +91,7 @@ struct PopupItem: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            ControlLabel(text: label)
+            ControlLabel(text: label, width: PanelLayout.popupLabelWidth)
             PopUpControl(options: options, selected: selected) { onAction(action, .index($0)) }
                 .frame(width: 140, height: 26)
                 .padding(.top, 1)
@@ -103,7 +108,7 @@ struct SwitchItem: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            ControlLabel(text: label)
+            ControlLabel(text: label, width: PanelLayout.switchLabelWidth)
             SwitchControl(isOn: isOn) { onAction(action, .bool($0)) }
                 .frame(width: 34, height: 20)
                 .padding(.top, 4)
