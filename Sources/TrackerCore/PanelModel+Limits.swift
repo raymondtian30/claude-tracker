@@ -59,7 +59,13 @@ extension PanelModel {
             }
             let rows = providerLimitItems(d, providers: providers, now: now)
             if rows.isEmpty {
-                return [noData] + noteLines("\(name) doesn't record plan limits on this Mac.")
+                if key == "opencode" && !d.byokProviders.isEmpty {
+                    return noteLines("Its API keys are shown under each provider.")
+                }
+                let why = Providers.providerNames[key] != nil
+                    ? "No API key or account numbers for \(name) yet."
+                    : "\(name) doesn't record plan limits on this Mac."
+                return [noData] + noteLines(why)
             }
             return rows
         }
@@ -100,7 +106,8 @@ extension PanelModel {
         var items = [Item]()
         if !shown.levels.isEmpty {
             items = limitBars(shown, underHeading: underHeading, now: now)
-        } else if percentages && error == nil {
+        } else if percentages && error == nil && !JSON.truthy(usage["fetched_at"]) {
+            // No answer yet; an answer without limits is "No data".
             items = [.row(label: "Limits", value: "Loading…")]
         } else {
             items = [noData]
@@ -171,7 +178,10 @@ extension PanelModel {
             }
             items += found
         }
-        let wanted = Set(providers)
+        // Model token limits only for providers with a key: catalog entries
+        // alone are not limits of anything you have.
+        let keys = Set(d.byokProviders).union(strings(d.state["provider_keys"]))
+        let wanted = Set(providers).intersection(keys)
         let available = d.byokModels.compactMap { id, info -> (id: String, info: JSONObject)? in
             // As in the provider views: a model the integrations disagree on goes by its name.
             let listed = JSON.truthy(info["provider_ambiguous"]) ? nil : info.string("provider")

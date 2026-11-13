@@ -164,15 +164,22 @@ public enum PanelLayout {
     /// (the last point is kept as air).
     public static func isCutEvenShrunk(_ text: String, size: CGFloat, weight: LabelWeight, width: CGFloat,
                                        measure: TextMeasure) -> Bool {
-        measure(text, size, weight) * minTextScale > width - 1
+        isCutOff(text: text, size: size, weight: weight, budget: width,
+                 measure: { measure($0, $1, $2) * minTextScale })
     }
 
     /// The (label, value) widths of a row or bar: the value as wide as it
     /// needs up to `valueCap`, the label the rest (less a dot, if any).
     public static func labelValueWidths(label: String, value: String, valueWeight: LabelWeight, hasDot: Bool,
                                         measure: TextMeasure) -> (label: CGFloat, value: CGFloat) {
-        let value = Swift.min(measure(value, 13, valueWeight), valueCap)
+        let value = valueWidth(measured: measure(value, 13, valueWeight))
         return (cardInner - (hasDot ? dotWidth : 0) - value - valueGap, value)
+    }
+
+    /// The width a value is drawn in, from its measured width: rounded up,
+    /// a point of air, at most `valueCap`. The view and the model both use it.
+    public static func valueWidth(measured: CGFloat) -> CGFloat {
+        Swift.min(measured.rounded(.up) + 1, valueCap)
     }
 
     /// Tiles are already boxes, so a card holding only tiles (and no title)

@@ -209,7 +209,7 @@ private let tab = Tab(key: "overview", title: "Overview", short: "Home", icon: "
     let measure: TextMeasure = { text, _, _ in CGFloat(text.count) * 7 }
     let short = PanelLayout.labelValueWidths(label: "x", value: "12%", valueWeight: .regular, hasDot: false,
                                              measure: measure)
-    #expect(short.value == 21 && short.label == PanelLayout.cardInner - 21 - PanelLayout.valueGap)
+    #expect(short.value == 22 && short.label == PanelLayout.cardInner - 22 - PanelLayout.valueGap)
     let long = PanelLayout.labelValueWidths(label: "x", value: String(repeating: "9", count: 40),
                                             valueWeight: .semibold, hasDot: true, measure: measure)
     #expect(long.value == PanelLayout.valueCap)

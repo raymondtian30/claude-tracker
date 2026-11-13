@@ -485,3 +485,12 @@ private func dailyWith(_ tokensByDay: [(String, Int)]) -> JSONObject {
     }
     #expect(labels == ["FPS Game", "Downloads (folder itself)"])
 }
+
+@Test func theICloudFoldersNeverTakeInTheirProjects() {
+    var daily = JSONObject()
+    let day = Day(2026, 11, 10)
+    UsageStats.addUsage(&daily, day: day, model: "m", project: "~/Library/Mobile Documents", parts: ["input": 1])
+    UsageStats.addUsage(&daily, day: day, model: "m",
+                        project: "~/Library/Mobile Documents/com~apple~CloudDocs/app", parts: ["input": 9])
+    #expect(UsageStats.topProjects(daily, day, day).count == 2)
+}

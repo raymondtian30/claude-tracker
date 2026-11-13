@@ -388,7 +388,8 @@ extension PanelModel {
                 var label = duplicated ? part.parent.map { "\(part.name) · \($0)" } ?? part.name : part.name
                 // Usage in ~/Downloads itself is not a project: say so.
                 if UsageStats.isContainerFolder(project.name) {
-                    label = "\(part.name) (folder itself)"
+                    let name = part.name == "com~apple~CloudDocs" ? "iCloud Drive" : part.name
+                    label = "\(name) (folder itself)"
                 }
                 return shareBar(label, project.tokens, weekTotal, tip: project.name)
             }

@@ -123,7 +123,9 @@ extension AppController {
     private func showClaudeUsage(_ result: JSONObject) {
         fetchingClaudeUsage = false
         guard JSON.truthy(state["claude_usage_enabled"]) else { return }  // turned off meanwhile
-        state["claude_usage"] = ClaudeUsage.merged(previous: state.object("claude_usage"), fetched: result)
+        state["claude_usage"] = ClaudeUsage.merged(
+            previous: state.object("claude_usage"), fetched: result,
+            account: state.object("subscriptions")?.object("claude_code")?.string("email"))
         save()
         checkAlerts()
         renderPanel()

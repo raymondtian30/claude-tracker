@@ -20,8 +20,8 @@ private func tab(_ items: [Item], title: String? = "Card") -> Tab {
 }
 
 @Test func aLabelThatFitsOnceShrunkGetsNoReadMore() {
-    // 40 characters = 280 pt; the label's slot is 312 - 21 - 8 = 283 wide, shrunk 85% it fits.
-    let label = String(repeating: "a", count: 40)
+    // 45 characters = 315 pt; the label's slot is 312 - 22 - 8 = 282 wide: only shrunk to 85% (268) it fits.
+    let label = String(repeating: "a", count: 45)
     let fit = PanelModel.fitted(tab([.row(label: label, value: "12%")]), measure: measure, open: [:])
     #expect(fit.ids.isEmpty)
 }
@@ -63,10 +63,21 @@ private func tab(_ items: [Item], title: String? = "Card") -> Tab {
     #expect(a.ids == b.ids)
 }
 
-@Test func aCardWithoutTitleIsKeyedByPosition() {
+@Test func aCardWithoutTitleIsKeyedByItsFirstLabelElsePosition() {
     let t = Tab(key: "t", title: "T", short: "T", icon: "x",
-                cards: [Card(title: nil, items: []), Card(title: nil, items: [.heading(long)])])
-    #expect(PanelModel.fitted(t, measure: measure, open: [:]).ids == ["fit:t:#1:0"])
+                cards: [Card(title: nil, items: []), Card(title: nil, items: [.heading(long)]),
+                        Card(title: nil, items: [.note("x"), .heading(long)])])
+    #expect(PanelModel.fitted(t, measure: measure, open: [:]).ids == ["fit:t:~\(long):0", "fit:t:#2:1"])
+}
+
+@Test func aCountInACardTitleIsNotPartOfTheIdAndRepeatsAreNumbered() {
+    func ids(_ title: String) -> Set<String> {
+        let t = Tab(key: "t", title: "T", short: "T", icon: "x",
+                    cards: [Card(title: title, items: [.heading(long)]), Card(title: title, items: [.heading(long)])])
+        return PanelModel.fitted(t, measure: measure, open: [:]).ids
+    }
+    #expect(ids("Sessions (2)") == ids("Sessions (3)"))
+    #expect(ids("Sessions (2)") == ["fit:t:Sessions:0", "fit:t:Sessions#2:0"])
 }
 
 @Test func aCutCardTitleGetsReadMoreFirst() {

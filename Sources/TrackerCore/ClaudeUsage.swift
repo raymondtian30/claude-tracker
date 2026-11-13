@@ -261,22 +261,32 @@ public enum ClaudeUsage {
     /// What to save after a fetch: `fetched` as it is, plus `last_good`
     /// ({"limits", "fetched_at"}), the newest answer that had percentages.
     /// A failed fetch keeps the previous `last_good`, so the Limits tab can
-    /// still show those numbers, marked as old. Signing out or an expired
-    /// sign-in drops it: those numbers may be another account's. Alerts and
-    /// the Live tab never read `last_good` (see `Limits.claudeLimits`).
-    public static func merged(previous: JSONObject?, fetched: JSONObject) -> JSONObject {
+    /// still show those numbers, marked as old (an expired sign-in too: it
+    /// expires overnight while Claude Code is closed). Signing out drops it,
+    /// and so does another `account` (Claude Code's email) than the one it
+    /// was fetched for: those numbers would be someone else's. Alerts and the
+    /// Live tab never read `last_good` (see `Limits.claudeLimits`).
+    public static func merged(previous: JSONObject?, fetched: JSONObject, account: String? = nil) -> JSONObject {
         var result = fetched
         if let limits = fetched.array("limits"), !limits.isEmpty {
-            result["last_good"] = ["limits": limits, "fetched_at": fetched["fetched_at"] ?? NSNull()] as JSONObject
+            var lastGood: JSONObject = ["limits": limits, "fetched_at": fetched["fetched_at"] ?? NSNull()]
+            lastGood["account"] = account
+            result["last_good"] = lastGood
             return result
         }
-        let error = fetched.string("error")
-        if error == signedOut || error == expired {
+        if fetched.string("error") == signedOut {
             result["last_good"] = nil
             return result
         }
         if let lastGood = previous?.object("last_good"), !(lastGood.array("limits") ?? []).isEmpty {
+            if let saved = lastGood.string("account"), let account = account, saved != account {
+                result["last_good"] = nil
+                return result
+            }
             result["last_good"] = lastGood
+        } else if let limits = previous?.array("limits"), !limits.isEmpty {
+            // Saved by a version before `last_good`: its answer is the last good one.
+            result["last_good"] = ["limits": limits, "fetched_at": previous?["fetched_at"] ?? NSNull()] as JSONObject
         }
         return result
     }

@@ -418,7 +418,8 @@ public enum UsageStats {
     /// inside it, so they are never parents; their own usage keeps its row.
     public static let containerFolders: Set<String> = [
         "~/Desktop", "~/Documents", "~/Downloads", "~/Library", "~/Movies", "~/Music",
-        "~/Pictures", "~/Public", "~/Applications", "~/Library/Mobile Documents/com~apple~CloudDocs",
+        "~/Pictures", "~/Public", "~/Applications", "~/Library/Mobile Documents",
+        "~/Library/Mobile Documents/com~apple~CloudDocs",
     ]
 
     /// Whether `project` (a label as `projectLabel` gives it) is a container

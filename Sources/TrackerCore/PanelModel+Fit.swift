@@ -16,8 +16,11 @@ extension PanelModel {
     public static func fitted(_ tab: Tab, measure: TextMeasure, open: [String: Bool]) -> (tab: Tab, ids: Set<String>) {
         var ids = Set<String>()
         var out = tab
+        var seenKeys = [String: Int]()
         for (cardIndex, card) in tab.cards.enumerated() {
-            let cardKey = card.title ?? "#\(cardIndex)"
+            let baseKey = cardKey(card) ?? "#\(cardIndex)"
+            seenKeys[baseKey, default: 0] += 1
+            let cardKey = seenKeys[baseKey]! > 1 ? "\(baseKey)#\(seenKeys[baseKey]!)" : baseKey
             var items = [Item]()
             func readMore(_ id: String, _ texts: [String]) {
                 ids.insert(id)
@@ -55,6 +58,25 @@ extension PanelModel {
             out.cards[cardIndex].items = items
         }
         return (out, ids)
+    }
+
+    /// What names a card in an id: its title without a trailing count
+    /// ("Sessions (2)" is "Sessions"), else its first item's label (a Live
+    /// session card), else nil (the card's position is used).
+    static func cardKey(_ card: Card) -> String? {
+        if let title = card.title {
+            if let open = title.range(of: " (", options: .backwards), title.hasSuffix(")"),
+               Int(title[open.upperBound..<title.index(before: title.endIndex)]) != nil {
+                return String(title[..<open.lowerBound])
+            }
+            return title
+        }
+        switch card.items.first {
+        case let .row(label, _, _)?, let .bar(label, _, _, _, _)?, let .heading(label)?:
+            return "~" + label
+        default:
+            return nil
+        }
     }
 
     /// `text` as it is when it fits shrunk, else broken into lines that do.

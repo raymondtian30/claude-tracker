@@ -74,7 +74,7 @@ struct ValueText: View {
             .foregroundColor(color)
             .lineLimit(1)
             .minimumScaleFactor(PanelLayout.minTextScale)
-            .frame(width: Swift.min(measured.rounded(.up) + 1, PanelLayout.valueCap), height: 18, alignment: .trailing)
+            .frame(width: PanelLayout.valueWidth(measured: measured), height: 18, alignment: .trailing)
     }
 }
 

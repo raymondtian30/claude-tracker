@@ -341,3 +341,10 @@ private func efforts(_ daily: JSONObject) -> Any? {
     #expect(UsageStats.hourlySeries(again.object("daily") ?? [:], day: Day(2026, 7, 29))
         .reduce(0, +) == 10)
 }
+
+@Test func aNewerPlanRecordWithoutWindowsWinsOverAnOldOne() {
+    let old: JSONObject = ["at": "2026-10-01T00:00:00Z", "rate_limits": ["limit_id": "codex",
+        "primary": ["used_percent": 80, "window_minutes": 43200] as JSONObject] as JSONObject]
+    let new: JSONObject = ["at": "2026-11-13T00:00:00Z", "rate_limits": ["limit_id": "codex"] as JSONObject]
+    #expect(JSON.isEqual(CodexSource.newestBest([old, new]), new))
+}

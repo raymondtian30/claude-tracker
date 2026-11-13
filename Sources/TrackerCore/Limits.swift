@@ -141,15 +141,8 @@ public enum Limits {
         let fetched = (usage.array("limits") ?? []).compactMap { JSON.object($0).flatMap(Level.init(json:)) }
         let enabled = state["claude_usage_enabled"].map { JSON.truthy($0) } ?? true
         if enabled, !fetched.isEmpty {
-            return fetched.map { limit in
-                var limit = limit
-                // A reset time of 0 means "not known", the same as none.
-                if let resetsAt = limit.resetsAt, resetsAt > 0, resetsAt <= now {
-                    limit.percent = 0.0
-                    limit.resetsAt = nil
-                }
-                return limit
-            }
+            // A reset time of 0 means "not known", the same as none.
+            return clearingPassedResets(fetched, now: now)
         }
         return reachedClaudeLimits(state.object("claude_limit_hits"), now: now)
     }
@@ -301,12 +294,7 @@ public enum Limits {
             } else {
                 continue
             }
-            levels += found.map { limit in
-                var level = limit
-                level.id = "\(key):\(limit.kind ?? limit.window)"
-                level.name = Tools.toolNames[key] ?? key
-                return level
-            }
+            levels += named(found, key)
         }
         return levels
     }

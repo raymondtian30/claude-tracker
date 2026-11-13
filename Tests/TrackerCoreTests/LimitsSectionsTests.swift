@@ -178,3 +178,51 @@ private func claudeUsage(_ percent: Double, fetchedAgo: Double) -> JSONObject {
     #expect(Limits.trackedKeys("kimi", state: state) == ["kimi"])
     #expect(Limits.trackedKeys("nope", state: state) == [])
 }
+
+@Test func aProviderWithOnlyCatalogModelsHasNoData() {
+    let state: JSONObject = [
+        "enabled_providers": ["google"],
+        "sources": ["opencode": ["byok": ["models": ["gemini-x": ["provider": "google", "context": 1000,
+                                                                  "output": 100] as JSONObject] as JSONObject]
+                                 as JSONObject] as JSONObject],
+    ]
+    let items = card(limits(state, "google"))
+    #expect(items.first == .row(label: "Limits", value: "No data"))
+    #expect(notes(items).contains("No API key or account numbers for Google yet."))
+}
+
+@Test func anAnswerWithoutLimitsIsNoDataNotLoading() {
+    let state: JSONObject = ["claude_usage": ["limits": [Any](), "error": NSNull(), "fetched_at": now - 60] as JSONObject]
+    #expect(card(limits(state, "claude_code")).first == .row(label: "Limits", value: "No data"))
+}
+
+@Test func mergedTakesAnOlderVersionsAnswerAsTheLastGoodOne() {
+    let old: JSONObject = claudeUsage(30, fetchedAgo: 600)  // no "last_good": saved before it existed
+    let failed = ClaudeUsage.merged(previous: old, fetched: ["limits": [Any](), "error": ClaudeUsage.offline,
+                                                            "fetched_at": now])
+    #expect((failed.object("last_good")?.array("limits") ?? []).count == 1)
+    #expect(failed.object("last_good")?.double("fetched_at") == now - 600)
+}
+
+@Test func opencodeWhoseKeysAllHaveTheirOwnSectionSaysSo() {
+    let state: JSONObject = [
+        "enabled_tools": ["opencode"], "enabled_providers": ["google"],
+        "sources": ["opencode": ["byok": ["providers": ["google"]] as JSONObject] as JSONObject],
+    ]
+    let items = card(limits(state, "all"))
+    let opencode = items.firstIndex(of: .heading("opencode"))!
+    #expect(items[opencode + 1] == .note("Its API keys are shown under each provider."))
+}
+
+@Test func anExpiredSignInKeepsTheOldNumbersButAnotherAccountDropsThem() {
+    let good = ClaudeUsage.merged(previous: nil, fetched: claudeUsage(20, fetchedAgo: 0), account: "a@example.com")
+    let expired = ClaudeUsage.merged(previous: good, fetched: ["limits": [Any](), "error": ClaudeUsage.expired],
+                                     account: "a@example.com")
+    #expect(expired["last_good"] != nil)
+    let other = ClaudeUsage.merged(previous: good, fetched: ["limits": [Any](), "error": ClaudeUsage.offline],
+                                   account: "b@example.com")
+    #expect(other["last_good"] == nil)
+    let emptyAnswer = ClaudeUsage.merged(previous: good, fetched: ["limits": [Any](), "error": NSNull()],
+                                         account: "a@example.com")
+    #expect(emptyAnswer["last_good"] != nil)
+}

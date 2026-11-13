@@ -65,14 +65,16 @@ public enum CodexSource {
     }
 
     /// How useful a {"at", "rate_limits"} record is: 2 for the plan's own
-    /// meter (`limit_id` missing or "codex") with a window, 1 for another
-    /// meter with a window, 0 for a record without any window.
+    /// meter (`limit_id` missing or "codex"), windows or not, so its newest
+    /// record always wins (a plan without windows shows none); 1 for another
+    /// meter with a window; 0 for another meter without one.
     static func rank(_ record: JSONObject) -> Int {
         let limits = record.object("rate_limits") ?? [:]
-        let hasWindow = ["primary", "secondary"].contains { !(limits.object($0) ?? [:]).isEmpty }
-        guard hasWindow else { return 0 }
         let id = limits.string("limit_id")
-        return id == nil || id == "codex" ? 2 : 1
+        if id == nil || id == "codex" {
+            return 2
+        }
+        return ["primary", "secondary"].contains { !(limits.object($0) ?? [:]).isEmpty } ? 1 : 0
     }
 
     /// The best-ranked record, newest among equals. ISO timestamps sort as
