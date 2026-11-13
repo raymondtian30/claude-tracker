@@ -11,6 +11,8 @@ public enum AppAction: Equatable {
     case quit
     case openSettings
     case selectTool(index: Int)
+    /// Track this AI (a click in the "Show more…" window), turning it on if it's off.
+    case pickTool(String)
     // Welcome picker
     case welcomeTool(key: String, on: Bool)
     case welcomeDone
@@ -165,6 +167,7 @@ public enum AppAction: Equatable {
         case "alert_window": return .alertWindow(window: argument, on: isOn)
         case "toggle_row" where !argument.isEmpty: return .toggleRow(id: argument)
         case "welcome_tool": return .welcomeTool(key: argument, on: isOn)
+        case "pick_tool" where !argument.isEmpty: return .pickTool(argument)
         case "tool": return .tool(key: argument, on: isOn)
         default: return nil
         }

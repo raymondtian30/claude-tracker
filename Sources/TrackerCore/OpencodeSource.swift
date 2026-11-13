@@ -230,13 +230,24 @@ public enum OpencodeSource {
                 }
                 if let catalog = body {
                     let wantedProviders = Set(providers)
-                    for (vendorKey, vendorVal) in catalog {
-                        let provider = Providers.normalizeProvider(vendorKey)
+                    // Model IDs can collide across integrations. Resolve ownership
+                    // across the entire catalog before filtering to tracked entries.
+                    var owners = [String: Set<String>]()
+                    for (vendor, value) in catalog {
+                        for id in (JSON.object(value)?.object("models") ?? [:]).keys {
+                            // An integration that can't place the ID casts no vote.
+                            if let owner = Providers.catalogProvider(model: id, integration: vendor) {
+                                owners[id, default: []].insert(owner)
+                            }
+                        }
+                    }
+                    for (_, vendorVal) in catalog {
                         guard let vendorObj = JSON.object(vendorVal),
                               let vendorModels = vendorObj.object("models")
                         else { continue }
                         for (modelId, modelVal) in vendorModels {
-                            let inferred = provider ?? Providers.providerOf(modelId)
+                            let candidates = owners[modelId] ?? []
+                            let inferred = candidates.count == 1 ? candidates.first : nil
                             let isWantedProvider = inferred.map(wantedProviders.contains) ?? false
                             guard isWantedProvider || usedModels.contains(modelId),
                                   let mObj = JSON.object(modelVal)
@@ -245,9 +256,8 @@ public enum OpencodeSource {
                             if let name = CodexSource.nonEmpty(mObj.string("name")) {
                                 entry["name"] = name
                             }
-                            if let inferred = inferred {
-                                entry["provider"] = inferred
-                            }
+                            entry["provider"] = inferred
+                            entry["provider_ambiguous"] = candidates.count > 1
                             if let limit = mObj.object("limit") {
                                 let ctx = limit.int("context") ?? limit.int("input") ?? 0
                                 let out = limit.int("output") ?? 0

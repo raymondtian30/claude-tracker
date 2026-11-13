@@ -56,7 +56,7 @@ A panel opens with a row of tabs along the top. It always opens on **Overview**;
 
 - **Overview** -- today's and lifetime totals, a chart of today's usage by hour (**1 day**), the last 7, 14 or 30 days, **All** your history, or a **Custom** range (pick it above the chart; long ranges are grouped, for example by week, so they stay readable; move the pointer over the chart to see the hour, day or group's tokens). **Custom** opens a popup with two calendars side by side, **From** and **To**, so both dates are in view; the days between them are tinted in both, and days with no data (before your first usage, or in the future) can't be picked. Nothing changes until you click the big **Apply** button; **Cancel** or `Esc` leaves the range as it was. **Change dates** under the chart opens the popup again, and yesterday / last 7 days / this month / your biggest day
 - **Token Types** -- today's and lifetime tokens split into input, output, cache write and cache read, each with a bar showing its share
-- **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...), split by effort level where the tool records it, for example "Sonnet 5.5 (High)" and "Sonnet 5.5 (Medium)" (history from before this was added shows as a plain model row). A **Show effort** switch at the top turns the split off to see one row per model. **Settings > Models > Sort model token usage by** orders the rows by token usage (the default) or by model, lowest tier first (Claude: Haiku, Sonnet, Opus, Mythos, Fable; models with no known tier come last)
+- **Models** -- today's and lifetime tokens per model (Opus, Sonnet, Haiku...), split by effort level where the tool records it, for example "Sonnet 5.5 (High)" and "Sonnet 5.5 (Medium)" (history from before this was added shows as a plain model row, or as "(No effort recorded)" when that model also has effort rows). A **Show effort** switch at the top turns the split off to see one row per model. **Settings > Models > Sort model token usage by** orders the rows by token usage (the default) or by model, lowest tier first (Claude: Haiku, Sonnet, Opus, Mythos, Fable; models with no known tier come last). By token usage each effort row is placed by its own tokens, so "Opus 5.5 (Low)" can sit below another model; by model, a model's effort rows stay together. A model's tokens with no recorded effort show as "(No effort recorded)" beside its effort rows
 - **Projects** -- every folder you used tokens in over the last 7 days, most first: the top 5, and the rest behind **Show more** (it opens short every time; usage in the home folder itself shows as its own "~" row). Each row shows only the folder's name, with the full path as its tooltip; two folders with the same name also show their parent folder, for example "app · work"
 - **Estimated API Cost** -- what your usage would cost at Anthropic's pay-as-you-go API prices. Just for fun: a Pro or Max subscription is flat-rate, so you aren't billed this. Prices live in `Sources/TrackerCore/Pricing.swift` and will drift over time.
 - **Usage Limits** -- how much of your plan's limits you've used, and when to be notified (see [Usage limits and alerts](#usage-limits-and-alerts))
@@ -70,7 +70,37 @@ At the bottom: the date you started tracking, a **Settings** button that opens a
 
 ### OpenAI, DeepSeek, Kimi and other AI companies
 
-Turn on OpenAI, DeepSeek, Kimi, Google, Anthropic, xAI, Mistral, Qwen, Z.ai (GLM) or MiniMax under **AI tools** in Settings (listed after your coding tools) (all off by default) and each appears in the **Tracking** dropdown. A provider view counts that company's models wherever they ran -- Claude Code, Codex or opencode -- using the tools' own exact token counts, so **no sign-in or key is needed**. The model name decides the company (`gpt-*`, `o3`, `codex-*` → OpenAI; `deepseek-*` → DeepSeek; `kimi-*`, `moonshot-*` → Kimi; `gemini-*`, `gemma-*` → Google; `claude-*` → Anthropic; `grok-*` → xAI; `mistral-*`, `codestral-*`, `devstral-*` → Mistral; `qwen*` → Qwen; `glm-*` → Z.ai; `minimax-*` → MiniMax). API keys are supported for OpenAI, DeepSeek and Kimi only, so e.g. Kimi via OpenRouter still counts as Kimi. While any provider is on, every tool found on your Mac is read (read-only), so Codex counts toward OpenAI even if the Codex view is off. **All AIs** adds up tools only, not provider views on top, so nothing is counted twice. Live Sessions isn't shown for providers, since a running session can't be tied to one company.
+Turn on OpenAI, DeepSeek, Kimi, Google, Anthropic, xAI, Mistral, Qwen, Z.ai (GLM), MiniMax or any of the 25 providers listed below under **AI tools** in Settings (listed after your coding tools) (all off by default) and each appears in the **Tracking** dropdown. The dropdown lists up to 7 AIs (counting **All AIs**, and always including the one you're tracking); with more, its last entry, **Show more…**, opens a window of every AI: the ones you track, then the ones that are off, where a click turns that AI on and tracks it. A provider view counts that company's models wherever they ran -- Claude Code, Codex, Gemini CLI or opencode -- using the tools' own exact token counts, so **no sign-in or key is needed**. The model name decides the company (`gpt-*`, `o3`, `codex-*` → OpenAI; `deepseek-*` → DeepSeek; `kimi-*`, `moonshot-*` → Kimi; `gemini-*`, `gemma-*` → Google; `claude-*` → Anthropic; `grok-*` → xAI; `mistral-*`, `codestral-*`, `devstral-*` → Mistral; `qwen-*`, `qwen3-*`, `qwq-*` → Qwen; `glm-*` → Z.ai; `minimax-*` → MiniMax). Amazon Bedrock IDs (`us.deepseek.r1-v1:0`, `meta.llama3-…`) count for the company before the dot, and Ollama tags (`mistral:7b`, `qwq:32b`) for the family before the colon. API keys are supported for OpenAI, DeepSeek and Kimi only, so e.g. Kimi via OpenRouter still counts as Kimi. While any provider is on, every tool found on your Mac is read (read-only), so Codex counts toward OpenAI even if the Codex view is off. **All AIs** adds up tools only, not provider views on top, so nothing is counted twice. Live Sessions isn't shown for providers, since a running session can't be tied to one company.
+
+**25 additional model providers (35 total).** These are views of recognized model IDs in the four supported tools' local logs, including historical logs. They do not read these companies' websites or add billing APIs. Unknown IDs remain unclassified; when opencode's catalog lists a model under two different companies, the model name decides, and if the name doesn't say, the model is not counted for either. Hosting routes are not separate AIs, and provider totals are never added on top of tool totals. Publisher namespaces identify derivatives; generic hosting integrations do not establish authorship.
+
+| Provider | Example model family / official publisher |
+| --- | --- |
+| Meta | [llama-3.3-70b](https://huggingface.co/meta-llama) |
+| Microsoft | [phi-4](https://huggingface.co/microsoft) |
+| Amazon | [amazon.nova-pro-v1:0](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-pro.html) |
+| NVIDIA | [nemotron-4-340b](https://huggingface.co/nvidia) |
+| IBM | [granite-3.3-8b](https://huggingface.co/ibm-granite) |
+| Cohere | [command-r-plus](https://huggingface.co/coherelabs) |
+| AI21 Labs | [jamba-large-1.6](https://huggingface.co/ai21labs) |
+| Perplexity | [sonar-pro](https://huggingface.co/perplexity-ai) |
+| Allen Institute for AI | [olmo-2-0325-32b](https://huggingface.co/allenai) |
+| Deep Cogito | [cogito-v1-preview-llama-70b](https://huggingface.co/deepcogito) |
+| Nous Research | [hermes-3-llama-3.1-8b](https://huggingface.co/nousresearch) |
+| Arcee AI | [arcee-blitz](https://huggingface.co/arcee-ai) |
+| Liquid AI | [lfm2-1.2b](https://huggingface.co/liquidai) |
+| Reka | [reka-core](https://docs.reka.ai/overview) |
+| Inflection | [inflection_3_pi](https://github.com/Inflection-Ops/inflection-ai-cookbook) |
+| Baidu | [ernie-4.5-21b](https://huggingface.co/baidu) |
+| ByteDance | [seed-oss-36b](https://huggingface.co/bytedance-seed) |
+| Tencent | [hunyuan-a13b](https://huggingface.co/tencent) |
+| Xiaomi | [mimo-7b-rl](https://huggingface.co/xiaomimimo) |
+| StepFun | [step3](https://huggingface.co/stepfun-ai) |
+| Hugging Face | [smollm2-1.7b](https://huggingface.co/huggingfacetb) |
+| Technology Innovation Institute | [falcon3-10b](https://huggingface.co/tiiuae) |
+| Writer | [palmyra-fin-70b](https://huggingface.co/writer) |
+| Upstage | [solar-10.7b](https://huggingface.co/upstage) |
+| LG AI Research | [exaone-3.5-32b](https://huggingface.co/lgai-exaone) |
 
 **Optional API key, for usage from outside this Mac.** Turning a provider on never asks for a key. If you want usage from other computers or the website too, use **Add API Key** in the "Whole account (optional)" card at the bottom of that provider's Home tab; it then shows what the provider's own API reports (and Replace/Remove Key live in that card):
 
@@ -136,7 +166,7 @@ This removes it from starting at login and deletes **Claude Tracker** from your 
 
 ## Version and credits
 
-Current version: **3.8.1**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
+Current version: **3.9.0**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
 
 - Original app by Brody Kretz ([BrodyKretz](https://github.com/BrodyKretz/claude-token-counter))
 - Redesign, new features and the Swift rewrite by Raymond Tian ([raymondtian30](https://github.com/raymondtian30/claude-tracker))
