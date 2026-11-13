@@ -200,10 +200,40 @@ struct RowItem: View {
             }
             HStack(spacing: PanelLayout.valueGap) {
                 LabelText(text: label, truncation: .middle)
-                ValueText(text: value, weight: .semibold)
+                if let dot = dot {
+                    StatusTag(text: value, dot: dot)
+                } else {
+                    ValueText(text: value, weight: .semibold)
+                }
             }
         }
         .padding(.top, 2)
+    }
+}
+
+/// A status row's word as a rounded tag: green working, yellow waiting on
+/// you, red stopped, grey outline when the state isn't known.
+struct StatusTag: View {
+    let text: String
+    let dot: LabelExtras.Dot
+
+    var body: some View {
+        let measured = TextMeasures.live(text, PanelLayout.tagTextSize, .semibold)
+        Text(text)
+            .font(.panel(PanelLayout.tagTextSize, .semibold))
+            .foregroundColor(dot == .hollow ? .secondaryLabel : .white)
+            .lineLimit(1)
+            .minimumScaleFactor(PanelLayout.minTextScale)
+            .frame(width: PanelLayout.tagWidth(measured: measured), height: 18)
+            .background(
+                Group {
+                    if let color = StatusDot.color(dot) {
+                        Capsule().fill(color)
+                    } else {
+                        Capsule().stroke(Color.secondaryLabel, lineWidth: 1)
+                    }
+                })
+            .frame(height: 18)
     }
 }
 
@@ -224,21 +254,31 @@ struct ReadMoreItem: View {
     }
 }
 
-/// The colored dot before a status row: green, yellow, grey, or an outline
+/// The colored dot before a status row: green, yellow, red, grey, or an outline
 /// when the state isn't known.
 struct StatusDot: View {
     let dot: LabelExtras.Dot
 
     var body: some View {
         ZStack {
-            switch dot {
-            case .green: Circle().fill(Color(nsColor: .systemGreen))
-            case .yellow: Circle().fill(Color(nsColor: .systemYellow))
-            case .grey: Circle().fill(Color.faint(0.4))
-            case .hollow: Circle().stroke(Color.secondaryLabel, lineWidth: 1.2).padding(0.6)
+            if let color = StatusDot.color(dot) {
+                Circle().fill(color)
+            } else {
+                Circle().stroke(Color.secondaryLabel, lineWidth: 1.2).padding(0.6)
             }
         }
         .frame(width: 8, height: 8)
+    }
+
+    /// The fill for a dot or tag; nil for the outline (state not known).
+    static func color(_ dot: LabelExtras.Dot) -> Color? {
+        switch dot {
+        case .green: return Color(nsColor: .systemGreen)
+        case .yellow: return Color(nsColor: .systemYellow)
+        case .red: return Color(nsColor: .systemRed)
+        case .grey: return Color.faint(0.4)
+        case .hollow: return nil
+        }
     }
 }
 

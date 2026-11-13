@@ -46,9 +46,11 @@ public struct Card: Equatable {
 /// chevron that opens a detail (`expandID`), a tooltip, and (rows) a status dot.
 public struct LabelExtras: Equatable {
     /// A status dot drawn before a row's label (the Live tab's status list).
+    /// A row with a dot draws its value as a tag of the same color.
     public enum Dot: Equatable {
         case green
         case yellow
+        case red
         case grey
         /// An outline only: the state isn't known.
         case hollow

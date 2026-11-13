@@ -643,17 +643,19 @@ extension PanelModel {
         return state == .active || state == .unknown
     }
 
-    /// The word shown on the right of a session's status row, and its dot.
-    /// A paused session reads "Paused" whatever its record says; one held by a
-    /// plan limit that is hit (`limit`) reads "Limit hit".
+    /// The word shown on the right of a session's status row (as a tag), and
+    /// its color: green working, yellow waiting on a question for you, red
+    /// stopped (Idle, Paused, or held by a limit). A paused session reads
+    /// "Paused" whatever its record says; one held by a plan limit that is
+    /// hit (`limit`) reads "Limit hit".
     static func stateWord(_ session: ActiveSessions.Session,
                           limit: Limits.Level? = nil) -> (word: String, dot: LabelExtras.Dot) {
-        if session.stopped { return ("Paused", .grey) }
-        if limit != nil, isHeldByLimit(session) { return ("Limit hit", .yellow) }
+        if session.stopped { return ("Paused", .red) }
+        if limit != nil, isHeldByLimit(session) { return ("Limit hit", .red) }
         switch effectiveState(session) {
         case .active: return ("Active", .green)
         case .waiting: return ("Waiting", .yellow)
-        case .idle: return ("Idle", .grey)
+        case .idle: return ("Idle", .red)
         case .unknown: return ("Unknown", .hollow)
         }
     }
