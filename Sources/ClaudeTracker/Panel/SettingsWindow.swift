@@ -6,12 +6,15 @@ import TrackerCore
 /// controls. Clicks call `onAction(action, value)` like the panel's. The
 /// "Show more…" window of every AI is one too, with its own title.
 @MainActor
-final class SettingsWindow: NSObject {
+final class SettingsWindow: NSObject, NSWindowDelegate {
     static let title = PanelLayout.settingsWindowTitle
 
     let onAction: ActionHandler
     let window: NSWindow
+    /// The content to show, as last rendered.
     private(set) var settings: Tab?
+    /// The content the window's views were built from; nil while closed.
+    private var built: Tab?
     private let root = FlippedView(frame: NSRect(x: 0, y: 0, width: PanelLayout.width, height: 400))
     private let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: PanelLayout.width, height: 400))
     private var placed = false
@@ -19,7 +22,7 @@ final class SettingsWindow: NSObject {
     init(title: String = PanelLayout.settingsWindowTitle, onAction: @escaping ActionHandler) {
         self.onAction = onAction
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: PanelLayout.width, height: 400),
-                          styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+                          styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: true)
         super.init()
         scroll.documentView = root
         scroll.hasVerticalScroller = true
@@ -28,6 +31,7 @@ final class SettingsWindow: NSObject {
         window.title = title
         window.isReleasedWhenClosed = false
         window.contentView = scroll
+        window.delegate = self
     }
 
     /// Builds the window's content, unless it's what is already built. The
@@ -35,9 +39,20 @@ final class SettingsWindow: NSObject {
     /// view takes about 100 ms, so opening Settings, or scrolling it right
     /// after, used to stutter. It's laid out as soon as it's built, so the
     /// first opening has little left to do.
+    ///
+    /// While the window is closed the content is only remembered: its views
+    /// take several megabytes, so they are built when it opens and let go
+    /// when it closes.
     func render(_ settings: Tab) {
-        guard settings != self.settings else { return }
         self.settings = settings
+        if window.isVisible {
+            build()
+        }
+    }
+
+    private func build() {
+        guard let settings = settings, settings != built else { return }
+        built = settings
         root.subviews.forEach { $0.removeFromSuperview() }
         let height = PanelLayout.settingsHeight(settings)
         let hosting = NSHostingView(rootView: SettingsContentView(settings: settings, onAction: onAction))
@@ -63,6 +78,7 @@ final class SettingsWindow: NSObject {
     }
 
     func show() {
+        build()
         if !placed {
             window.center()
             placed = true
@@ -73,6 +89,22 @@ final class SettingsWindow: NSObject {
 
     func close() {
         window.orderOut(nil)
+        tearDown()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        tearDown()
+    }
+
+    /// Back from the Dock: catch up with what was rendered meanwhile.
+    func windowDidDeminiaturize(_ notification: Notification) {
+        build()
+    }
+
+    /// Lets go of the content's views (see `render`).
+    private func tearDown() {
+        root.subviews.forEach { $0.removeFromSuperview() }
+        built = nil
     }
 
     var isShown: Bool { window.isVisible }
