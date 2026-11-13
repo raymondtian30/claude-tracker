@@ -348,3 +348,20 @@ private func efforts(_ daily: JSONObject) -> Any? {
     let new: JSONObject = ["at": "2026-11-13T00:00:00Z", "rate_limits": ["limit_id": "codex"] as JSONObject]
     #expect(JSON.isEqual(CodexSource.newestBest([old, new]), new))
 }
+
+/// One record anywhere in a file means only records count, even running
+/// totals written before it; without records, the totals' growth counts.
+@Test func aRecordLaterInTheFileStillMeansOnlyRecordsCount() throws {
+    let tmp = TempDir()
+    let mixed = write(tmp.url("mixed.jsonl"), [
+        meta(), turn(), runningTotal(inputTokens: 500), runningTotal(inputTokens: 900),
+        record("r1", inputTokens: 40), record("r1", inputTokens: 40), runningTotal(inputTokens: 1500),
+    ])
+    #expect(sum(dayModels(try CodexSource.readCodexFile(mixed.path)).object("gpt-5.6-luna")) == 40)
+    let totalsOnly = write(tmp.url("totals.jsonl"), [
+        meta(), turn(), runningTotal(inputTokens: 500), runningTotal(inputTokens: 500), runningTotal(inputTokens: 900),
+    ])
+    #expect(sum(dayModels(try CodexSource.readCodexFile(totalsOnly.path)).object("gpt-5.6-luna")) == 900)
+    let notCodex = write(tmp.url("other.jsonl"), [["type": "something_else"]])
+    #expect(throws: UsageStats.SourceFormatError.self) { try CodexSource.readCodexFile(notCodex.path) }
+}

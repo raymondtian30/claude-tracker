@@ -32,13 +32,6 @@ public enum CodexSource {
         ]
     }
 
-    /// Parsed JSON objects for each newline-terminated line. A last line
-    /// still being written (no newline yet) is left for the next scan.
-    static func completeEntries(_ path: String) throws -> [JSONObject] {
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        return TokenMath.completeLines(data).compactMap { line in autoreleasepool { JSON.parseObject(line) } }
-    }
-
     /// This file's per-day buckets. Counts per-response usage records
     /// (de-duplicated by response id); files without any fall back to the growth
     /// of Codex's running total, ignoring repeats.
@@ -46,22 +39,14 @@ public enum CodexSource {
         try readCodex(path).daily
     }
 
-    /// {"at": timestamp, "rate_limits": {...}} from the newest token_count
-    /// event that carries Codex's plan limits, or nil. Codex also writes
-    /// records for other meters (`limit_id` "premium") with no windows; the
-    /// plan's record is preferred (see `rank`), so a newer one of those never
-    /// hides the plan's 5-hour and weekly numbers.
-    static func latestRateLimits(_ entries: [JSONObject]) -> JSONObject? {
-        var records = [JSONObject]()
-        for entry in entries {
-            let payload = entry.object("payload") ?? [:]
-            guard entry.string("type") == "event_msg", payload.string("type") == "token_count",
-                  let rateLimits = payload["rate_limits"], JSON.truthy(rateLimits),
-                  let timestamp = nonEmpty(entry.string("timestamp"))
-            else { continue }
-            records.append(["at": timestamp, "rate_limits": rateLimits])
-        }
-        return newestBest(records)
+    /// {"at", "rate_limits"} from a token_count event that carries limits.
+    static func rateLimitRecord(_ entry: JSONObject) -> JSONObject? {
+        let payload = entry.object("payload") ?? [:]
+        guard entry.string("type") == "event_msg", payload.string("type") == "token_count",
+              let rateLimits = payload["rate_limits"], JSON.truthy(rateLimits),
+              let timestamp = nonEmpty(entry.string("timestamp"))
+        else { return nil }
+        return ["at": timestamp, "rate_limits": rateLimits]
     }
 
     /// How useful a {"at", "rate_limits"} record is: 2 for the plan's own
@@ -97,15 +82,22 @@ public enum CodexSource {
     /// 4: the plan's rate limits preferred over window-less records.
     static let fileVersion = 4
 
+    /// One session file's per-day buckets, and its rate limits:
+    /// {"at": timestamp, "rate_limits": {...}} from the newest token_count
+    /// event that carries Codex's plan limits, or nil. Codex also writes
+    /// records for other meters (`limit_id` "premium") with no windows; the
+    /// plan's record is preferred (see `rank`), so a newer one of those never
+    /// hides the plan's 5-hour and weekly numbers.
+    ///
+    /// The file is read a line at a time (an active session's log runs to
+    /// tens of megabytes). Whether it has usage records is known only at the
+    /// end, so both ways of counting run side by side and one is kept.
     static func readCodex(_ path: String) throws -> (daily: JSONObject, limits: JSONObject?) {
-        let entries = try completeEntries(path)
-        if !entries.isEmpty, !entries.contains(where: { knownTypes.contains($0.string("type") ?? "") }) {
-            let name = URL(fileURLWithPath: path).lastPathComponent
-            throw UsageStats.SourceFormatError("\(name) doesn't look like a Codex session log")
-        }
-
-        let hasRecords = entries.contains { $0.string("type") == "token_usage_record" }
-        var daily = JSONObject()
+        var sawEntry = false
+        var sawKnownType = false
+        var hasRecords = false
+        var fromRecords = JSONObject()
+        var fromTotals = JSONObject()
         var model = "unknown"
         var effort: String?
         var cwd: String?
@@ -113,55 +105,79 @@ public enum CodexSource {
         // Python's None does.
         var seenResponses = Set<AnyHashable>()
         var previousTotal: JSONObject?
+        var limits: JSONObject?
 
-        for entry in entries {
-            let kind = entry.string("type")
-            let payload = entry.object("payload") ?? [:]
-            if kind == "session_meta" || kind == "turn_context" {
-                cwd = nonEmpty(payload.string("cwd")) ?? cwd
-                model = nonEmpty(payload.string("model")) ?? model
-                if kind == "turn_context" {
-                    // The level can change between turns; a turn with none keeps the last.
-                    effort = UsageStats.normalizeEffort(payload["effort"])
-                        ?? UsageStats.normalizeEffort(payload.object("collaboration_mode")?.object("settings")?["reasoning_effort"])
-                        ?? effort
+        try TokenMath.forEachCompleteLine(path, from: 0, upTo: nil) { line in
+            autoreleasepool {
+                guard let entry = JSON.parseObject(line) else { return }
+                sawEntry = true
+                let kind = entry.string("type")
+                if knownTypes.contains(kind ?? "") {
+                    sawKnownType = true
                 }
-                continue
-            }
-            guard let timestamp = nonEmpty(entry.string("timestamp")) else { continue }
+                if let record = rateLimitRecord(entry) {
+                    limits = newestBest([limits, record].compactMap { $0 })
+                }
+                let payload = entry.object("payload") ?? [:]
+                if kind == "session_meta" || kind == "turn_context" {
+                    cwd = nonEmpty(payload.string("cwd")) ?? cwd
+                    model = nonEmpty(payload.string("model")) ?? model
+                    if kind == "turn_context" {
+                        // The level can change between turns; a turn with none keeps the last.
+                        effort = UsageStats.normalizeEffort(payload["effort"])
+                            ?? UsageStats.normalizeEffort(payload.object("collaboration_mode")?.object("settings")?["reasoning_effort"])
+                            ?? effort
+                    }
+                    return
+                }
+                guard let timestamp = nonEmpty(entry.string("timestamp")) else { return }
 
-            let parts: [String: Int]
-            if hasRecords && kind == "token_usage_record" {
-                let responseId = (payload["response_id"] as? AnyHashable) ?? AnyHashable(NSNull())
-                if seenResponses.contains(responseId) {
-                    continue
+                let parts: [String: Int]
+                let counted: Bool  // into `fromRecords`, else `fromTotals`
+                if kind == "token_usage_record" {
+                    hasRecords = true
+                    let responseId = (payload["response_id"] as? AnyHashable) ?? AnyHashable(NSNull())
+                    if seenResponses.contains(responseId) {
+                        return
+                    }
+                    seenResponses.insert(responseId)
+                    parts = self.parts(payload.object("usage") ?? [:])
+                    counted = true
+                } else if kind == "event_msg" && payload.string("type") == "token_count" {
+                    guard let total = payload.object("info")?.object("total_token_usage"), !total.isEmpty,
+                          !JSON.isEqual(total, previousTotal)
+                    else { return }
+                    let before = previousTotal ?? [:]
+                    var growth = JSONObject()
+                    for key in usageKeys {
+                        growth[key] = max((total.int(key) ?? 0) - (before.int(key) ?? 0), 0)
+                    }
+                    previousTotal = total
+                    parts = self.parts(growth)
+                    counted = false
+                } else {
+                    return
                 }
-                seenResponses.insert(responseId)
-                parts = self.parts(payload.object("usage") ?? [:])
-            } else if !hasRecords && kind == "event_msg" && payload.string("type") == "token_count" {
-                guard let total = payload.object("info")?.object("total_token_usage"), !total.isEmpty,
-                      !JSON.isEqual(total, previousTotal)
-                else { continue }
-                let before = previousTotal ?? [:]
-                var growth = JSONObject()
-                for key in usageKeys {
-                    growth[key] = max((total.int(key) ?? 0) - (before.int(key) ?? 0), 0)
-                }
-                previousTotal = total
-                parts = self.parts(growth)
-            } else {
-                continue
-            }
 
-            // A timestamp that can't be read is skipped (Python would stop
-            // with an error there).
-            if parts.values.reduce(0, +) != 0, let at = LocalTime.parseISO(timestamp) {
-                let day = Day(timestamp: at)
-                UsageStats.addUsage(&daily, day: day, model: model, project: UsageStats.projectLabel(cwd),
-                                    parts: parts, effort: effort, at: at)
+                // A timestamp that can't be read is skipped (Python would stop
+                // with an error there).
+                if parts.values.reduce(0, +) != 0, let at = LocalTime.parseISO(timestamp) {
+                    let day = Day(timestamp: at)
+                    if counted {
+                        UsageStats.addUsage(&fromRecords, day: day, model: model, project: UsageStats.projectLabel(cwd),
+                                            parts: parts, effort: effort, at: at)
+                    } else {
+                        UsageStats.addUsage(&fromTotals, day: day, model: model, project: UsageStats.projectLabel(cwd),
+                                            parts: parts, effort: effort, at: at)
+                    }
+                }
             }
         }
-        return (daily, latestRateLimits(entries))
+        if sawEntry && !sawKnownType {
+            let name = URL(fileURLWithPath: path).lastPathComponent
+            throw UsageStats.SourceFormatError("\(name) doesn't look like a Codex session log")
+        }
+        return (hasRecords ? fromRecords : fromTotals, limits)
     }
 
     /// Update `sourceState` from Codex's session logs. Sets
