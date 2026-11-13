@@ -68,6 +68,8 @@ struct ItemView: View {
             BarItem(label: label, value: value, fraction: fraction, sub: sub, width: width)
         case let .row(label, value, extras):
             RowItem(label: label, value: value, dot: extras.dot, width: width)
+        case let .readMore(id, isOpen):
+            ReadMoreItem(id: id, isOpen: isOpen, onAction: onAction)
         case let .heading(text):
             LabelText(text: text, size: 12, weight: .semibold, height: 16).padding(.top, 5)
         case let .note(text):

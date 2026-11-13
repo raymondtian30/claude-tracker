@@ -385,7 +385,11 @@ extension PanelModel {
             items = shown.map { project in
                 let part = rows[project.name] ?? (name: project.name, parent: nil)
                 let duplicated = counts[part.name, default: 0] > 1
-                let label = duplicated ? part.parent.map { "\(part.name) · \($0)" } ?? part.name : part.name
+                var label = duplicated ? part.parent.map { "\(part.name) · \($0)" } ?? part.name : part.name
+                // Usage in ~/Downloads itself is not a project: say so.
+                if UsageStats.isContainerFolder(project.name) {
+                    label = "\(part.name) (folder itself)"
+                }
                 return shareBar(label, project.tokens, weekTotal, tip: project.name)
             }
         }
@@ -464,96 +468,6 @@ extension PanelModel {
 
     // MARK: - Usage limits
 
-    /// What to say under Claude Code's limits when there are no percentages.
-    static func claudeLimitNotes(_ state: JSONObject, _ levels: [Limits.Level], prefix: String) -> [Item] {
-        var notes = [Item]()
-        if flag(state, "claude_usage_enabled", default: true) {
-            let usage = state.object("claude_usage") ?? [:]
-            if let error = usage.string("error"), !error.isEmpty {
-                notes += noteLines(prefix + error)
-            } else if !JSON.truthy(usage["limits"]) {
-                notes += noteLines(prefix + "Getting percentages from Anthropic…")
-            }
-        } else {
-            var text = "Claude Code only records a limit once it's reached."
-            if levels.isEmpty {
-                text += " None is reached right now."
-            }
-            text += " Turn on Percentages from Anthropic in Settings to see how close you are."
-            notes += noteLines(prefix + text)
-        }
-        return notes
-    }
-
-    /// "Free resets remaining": the number when a source reports one, else
-    /// "Unavailable" and why. Never a made-up count.
-    static func freeResetsCard(_ resets: FreeResets, now: Double) -> Card {
-        switch resets {
-        case .available(let count, let renewsAt):
-            var items: [Item] = [.row(label: "Free resets remaining", value: "\(count)")]
-            if let renewsAt = renewsAt, renewsAt != 0 {
-                items.append(.note("Renews \(Limits.formatReset(renewsAt, now: now))"))
-            }
-            return Card(title: nil, items: items)
-        case .unavailable(let reason):
-            return Card(title: nil, items: [.row(label: "Free resets remaining", value: "Unavailable"), .note(reason)])
-        }
-    }
-
-    static func limitsTab(_ d: PanelData, now: Double) -> Tab {
-        let (view, key) = (d.view, d.view.key)
-        let toolKeys: [String]
-        if key == "all" {
-            toolKeys = strings(d.state["enabled_tools"])
-        } else if Tools.toolNames[key] != nil {
-            toolKeys = [key]
-        } else {
-            toolKeys = []
-        }
-
-        var plan = [Item]()
-        let levels = Limits.planLevels(d.state, toolKeys: toolKeys, now: now)
-        for tool in toolKeys {
-            let prefix = key == "all" ? "\(Tools.toolNames[tool] ?? tool): " : ""
-            let found = levels.filter { $0.id.hasPrefix("\(tool):") }
-            for level in found {
-                var sub: String?
-                if let resetsAt = level.resetsAt, resetsAt != 0 {
-                    sub = "Resets \(Limits.formatReset(resetsAt, now: now))"
-                }
-                let value = level.reached ? "Reached" : String(format: "%.0f%%", level.percent)
-                plan.append(.bar(label: Limits.displayName(level), value: value,
-                                 fraction: Swift.min(level.percent / 100, 1.0), sub: sub))
-            }
-            if tool == "claude_code" {
-                plan += claudeLimitNotes(d.state, found, prefix: prefix)
-            } else if tool == "codex" && found.isEmpty {
-                plan += noteLines(prefix + "Codex hasn't recorded its plan limits yet.")
-            }
-        }
-        let byokLimits = byokLimitItems(d)
-        if plan.isEmpty && byokLimits.isEmpty {
-            plan += noteLines("\(view.name) doesn't record plan limits on this Mac.")
-        } else if plan.isEmpty {
-            plan = byokLimits
-        }
-
-        var cards = [Card(title: "Plan limits", items: plan)]
-        if !byokLimits.isEmpty && plan != byokLimits {
-            cards.append(Card(title: "BYOK limits", items: byokLimits))
-        }
-        // Claude Code's limits are the ones with free resets, so the line shows
-        // in its view and in All AIs when it is tracked.
-        if toolKeys.contains("claude_code") {
-            cards.append(freeResetsCard(FreeResets.current(d.state, now: now), now: now))
-        }
-        let windows = Limits.limitWindows(d.state, toolKeys: toolKeys, now: now)
-        if !windows.isEmpty {
-            cards.append(alertsCard(d.state, windows: windows))
-        }
-        return Tab(key: "limits", title: "Usage Limits", short: "Limits", icon: "speedometer", cards: cards)
-    }
-
     static func subscriptionsTab(_ d: PanelData) -> Tab {
         let enabled = strings(d.state["enabled_tools"])
         let auto = d.state.object("subscriptions") ?? [:]
@@ -565,13 +479,9 @@ extension PanelModel {
             let saved = details.object(tool) ?? [:]
             let plan = found.string("plan").map(Subscriptions.displayPlan) ?? "Unavailable"
             let email = found.string("email") ?? saved.string("email") ?? "Unavailable"
-            let boundEmail = saved.string("card_email")
-            let cardMatches = boundEmail == nil || boundEmail == (found.string("email") ?? saved.string("email"))
-            let card = (cardMatches ? saved.string("last_four") : nil).map { "•••• \($0)" } ?? "Unavailable"
             var items: [Item] = [
                 .row(label: "Plan", value: plan),
                 .row(label: "Email", value: email),
-                .row(label: "Card", value: card),
             ]
             if tool == "codex" {
                 items += noteLines("Plan and email come from Codex's local sign-in. Billing details are not included.")
@@ -584,63 +494,15 @@ extension PanelModel {
                 buttons.append(Item.Button(saved.string("email") == nil ? "Set Email" : "Edit Email",
                                            "envelope", "subscription_email:\(tool)"))
             }
-            buttons.append(Item.Button(saved.string("last_four") == nil ? "Set Card" : "Edit Card",
-                                       "creditcard", "subscription_card:\(tool)"))
-            items.append(.buttons(buttons))
+            if !buttons.isEmpty {
+                items.append(.buttons(buttons))
+            }
             cards.append(Card(title: name, items: items))
         }
         if cards.isEmpty {
             cards.append(Card(title: "Subscriptions", items: noteLines("Track Codex or Claude Code to see subscription details.")))
         }
         return Tab(key: "subscriptions", title: "Subscriptions", short: "Plans", icon: "creditcard", cards: cards)
-    }
-
-    /// Limits discovered from BYOK credentials and catalog (balance/rate rows
-    /// and model context/output token limits).
-    static func byokLimitItems(_ d: PanelData) -> [Item] {
-        let providers = relevantBYOKProviders(d)
-        let available = relevantBYOKModels(d)
-        guard !providers.isEmpty || !available.isEmpty else { return [] }
-        var items = [Item]()
-        let fetched = OpencodeSource.byokState(d.state).object("fetched") ?? [:]
-        for provider in providers {
-            let pName = Providers.providerNames[provider] ?? provider
-            items.append(.row(label: "\(pName) API key", value: "Active (opencode)"))
-            if let pFetched = fetched.object(provider) {
-                for row in pFetched.array("rows") ?? [] {
-                    let pair = JSON.array(row) ?? []
-                    guard pair.count == 2, let label = JSON.string(pair[0]), let value = JSON.string(pair[1]) else {
-                        continue
-                    }
-                    items.append(.row(label: "\(pName) · \(label)", value: value))
-                }
-            }
-        }
-        let used = Set(d.lifetimeModels.keys)
-        let withLimits = available.filter { ($0.info.int("context") ?? 0) > 0 || ($0.info.int("output") ?? 0) > 0 }
-        let sorted = withLimits.sorted { a, b in
-            let (aUsed, bUsed) = (used.contains(a.id), used.contains(b.id))
-            if aUsed != bUsed { return aUsed }
-            return modelDisplayName(a.id, catalog: d.byokModels) < modelDisplayName(b.id, catalog: d.byokModels)
-        }
-        let shown = sorted.filter { used.contains($0.id) }.isEmpty
-            ? Array(sorted.prefix(5))
-            : sorted.filter { used.contains($0.id) }
-        for entry in shown {
-            let name = modelDisplayName(entry.id, catalog: d.byokModels)
-            let ctx = entry.info.int("context") ?? 0
-            let out = entry.info.int("output") ?? 0
-            let limitText: String
-            if ctx > 0 && out > 0 {
-                limitText = "\(TokenMath.formatCount(ctx)) ctx · \(TokenMath.formatCount(out)) out"
-            } else if ctx > 0 {
-                limitText = "\(TokenMath.formatCount(ctx)) ctx"
-            } else {
-                limitText = "\(TokenMath.formatCount(out)) out"
-            }
-            items.append(.row(label: name, value: limitText))
-        }
-        return items
     }
 
     /// When to be notified, for the limit `windows` this view has.

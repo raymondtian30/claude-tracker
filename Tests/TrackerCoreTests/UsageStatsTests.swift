@@ -447,3 +447,41 @@ private func dailyWith(_ tokensByDay: [(String, Int)]) -> JSONObject {
             == [RangePoint(Day(2026, 7, 29), Day(2026, 7, 29), 3)])
     #expect(UsageStats.rangeSeries(daily, from: Day(2026, 7, 30), to: Day(2026, 7, 29)).isEmpty)
 }
+
+@Test func topProjectsNeverFoldIntoContainerFolders() {
+    var daily = JSONObject()
+    let day = Day(2026, 11, 10)
+    UsageStats.addUsage(&daily, day: day, model: "m", project: "~/Downloads", parts: ["input": 3])
+    UsageStats.addUsage(&daily, day: day, model: "m", project: "~/Downloads/FPS Game", parts: ["input": 100])
+    UsageStats.addUsage(&daily, day: day, model: "m", project: "~/Downloads/FPS Game/tools", parts: ["input": 7])
+    UsageStats.addUsage(&daily, day: day, model: "m", project: "~/Desktop", parts: ["input": 2])
+    UsageStats.addUsage(&daily, day: day, model: "m", project: "~/Desktop/app", parts: ["input": 50])
+    UsageStats.addUsage(&daily, day: day, model: "m", project: "~/game", parts: ["input": 10])
+    UsageStats.addUsage(&daily, day: day, model: "m", project: "~/game/tools", parts: ["input": 5])
+    #expect(UsageStats.topProjects(daily, day, day) == [
+        NamedTotal("~/Downloads/FPS Game", 107), NamedTotal("~/Desktop/app", 50), NamedTotal("~/game", 15),
+        NamedTotal("~/Downloads", 3), NamedTotal("~/Desktop", 2),
+    ])
+}
+
+@Test func containerFoldersMatchWithOrWithoutTrailingSlash() {
+    #expect(UsageStats.isContainerFolder("~/Downloads"))
+    #expect(UsageStats.isContainerFolder("~/Downloads/"))
+    #expect(!UsageStats.isContainerFolder("~/Downloads/FPS Game"))
+    #expect(!UsageStats.isContainerFolder("~/game"))
+}
+
+@Test func aContainerFoldersOwnRowSaysItIsTheFolderItself() {
+    var daily = JSONObject()
+    let day = Day(2026, 11, 10)
+    UsageStats.addUsage(&daily, day: day, model: "m", project: "~/Downloads/FPS Game", parts: ["input": 100])
+    UsageStats.addUsage(&daily, day: day, model: "m", project: "~/Downloads", parts: ["input": 3])
+    let view = Tools.View(key: "claude_code", name: "Claude Code", daily: daily, grandTotal: 103, error: nil)
+    let tab = PanelModel.buildPanel(view, state: [:], sessions: [], friends: [], showLeaderboard: false, today: day)
+        .first { $0.key == "projects" }!
+    let labels = tab.cards.flatMap(\.items).compactMap { item -> String? in
+        if case let .bar(label, _, _, _, _) = item { return label }
+        return nil
+    }
+    #expect(labels == ["FPS Game", "Downloads (folder itself)"])
+}

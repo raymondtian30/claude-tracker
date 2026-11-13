@@ -245,7 +245,9 @@ private func addSessionTotals(_ path: URL, _ sessionId: String, model: String, c
     let costItems = tabs["cost"]!.cards.flatMap(\.items)
     #expect(!costItems.contains { if case let .note(t) = $0 { return t.contains("unknown models") } else { return false } })
 
-    // Limits tab shows BYOK API key and model context/output limits instead of "doesn't record plan limits"
+    // Limits tab: the BYOK API key and model context/output limits sit in its one "Limits" card
+    #expect(tabs["limits"]!.cards.first?.title == "Limits")
+    #expect(!tabs["limits"]!.cards.contains { $0.title == "BYOK limits" })
     let limitsItems = tabs["limits"]!.cards.flatMap(\.items)
     #expect(limitsItems.contains(.row(label: "Google API key", value: "Active (opencode)")))
     #expect(limitsItems.contains(.row(label: "Gemini 4 Argon", value: "1.0M ctx · 32.8K out")))

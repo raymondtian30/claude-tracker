@@ -189,6 +189,44 @@ private func limitsEvent(_ used: Double, at: String = TS) -> JSONObject {
     #expect(JSON.double(dig(CodexSource.codexRateLimits(state), "primary", "used_percent")) == 83.0)
 }
 
+private func premiumEvent(at: String) -> JSONObject {
+    ["timestamp": at, "type": "event_msg",
+     "payload": ["type": "token_count", "info": NSNull(),
+                 "rate_limits": ["limit_id": "premium", "plan_type": "plus", "primary": NSNull(),
+                                 "secondary": NSNull()] as JSONObject] as JSONObject]
+}
+
+@Test func aNewerWindowlessRecordInTheSameFileDoesNotHideThePlanLimits() {
+    let tmp = TempDir()
+    write(tmp.url("a.jsonl"), [meta(), limitsEvent(78.0, at: "2026-11-13T05:28:54.000Z"),
+                               premiumEvent(at: "2026-11-13T05:30:02.000Z")])
+    var state = JSONObject()
+    CodexSource.scanCodex(&state, sessionsDir: tmp.root)
+    #expect(JSON.double(dig(CodexSource.codexRateLimits(state), "primary", "used_percent")) == 78.0)
+    #expect(CodexSource.codexRateLimitsAt(state) == LocalTime.parseISO("2026-11-13T05:28:54.000Z"))
+}
+
+@Test func aNewerWindowlessFileDoesNotHideThePlanLimits() {
+    let tmp = TempDir()
+    write(tmp.url("a.jsonl"), [meta(), limitsEvent(40.0, at: "2026-11-13T05:00:00.000Z")])
+    write(tmp.url("b.jsonl"), [meta(), premiumEvent(at: "2026-11-13T05:30:00.000Z")])
+    var state = JSONObject()
+    CodexSource.scanCodex(&state, sessionsDir: tmp.root)
+    #expect(JSON.double(dig(CodexSource.codexRateLimits(state), "primary", "used_percent")) == 40.0)
+}
+
+@Test func thePlansOwnMeterBeatsAnotherMetersWindows() {
+    let plan: JSONObject = ["at": "2026-11-13T05:00:00Z", "rate_limits": ["limit_id": "codex",
+        "primary": ["used_percent": 10, "window_minutes": 300] as JSONObject] as JSONObject]
+    let other: JSONObject = ["at": "2026-11-13T05:10:00Z", "rate_limits": ["limit_id": "premium",
+        "primary": ["used_percent": 90, "window_minutes": 300] as JSONObject] as JSONObject]
+    let none: JSONObject = ["at": "2026-11-13T05:20:00Z", "rate_limits": ["limit_id": "premium"] as JSONObject]
+    #expect(JSON.isEqual(CodexSource.newestBest([plan, other, none]), plan))
+    #expect(JSON.isEqual(CodexSource.newestBest([other, none]), other))
+    #expect(JSON.isEqual(CodexSource.newestBest([none]), none))
+    #expect(CodexSource.newestBest([]) == nil)
+}
+
 @Test func noRateLimitsRecorded() {
     #expect(CodexSource.codexRateLimits([:]) == nil)
 }

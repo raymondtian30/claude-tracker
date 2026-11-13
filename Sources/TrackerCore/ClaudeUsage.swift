@@ -240,7 +240,8 @@ public enum ClaudeUsage {
     }
 
     /// {"limits": [...], "error": message or null, "fetched_at": unix time}.
-    /// On an error there are no limits: old percentages could be wrong.
+    /// On an error there are no limits: old percentages could be wrong
+    /// (`merged` keeps them aside, marked as old).
     public static func fetchUsage(get: Get = { try httpGetJSON($0, token: $1) },
                                   run: Subprocess.Runner = Subprocess.run,
                                   now: Double? = nil) -> JSONObject {
@@ -255,6 +256,29 @@ public enum ClaudeUsage {
             }
         }
         return ["limits": limits, "error": error.map { $0 as Any } ?? NSNull(), "fetched_at": now]
+    }
+
+    /// What to save after a fetch: `fetched` as it is, plus `last_good`
+    /// ({"limits", "fetched_at"}), the newest answer that had percentages.
+    /// A failed fetch keeps the previous `last_good`, so the Limits tab can
+    /// still show those numbers, marked as old. Signing out or an expired
+    /// sign-in drops it: those numbers may be another account's. Alerts and
+    /// the Live tab never read `last_good` (see `Limits.claudeLimits`).
+    public static func merged(previous: JSONObject?, fetched: JSONObject) -> JSONObject {
+        var result = fetched
+        if let limits = fetched.array("limits"), !limits.isEmpty {
+            result["last_good"] = ["limits": limits, "fetched_at": fetched["fetched_at"] ?? NSNull()] as JSONObject
+            return result
+        }
+        let error = fetched.string("error")
+        if error == signedOut || error == expired {
+            result["last_good"] = nil
+            return result
+        }
+        if let lastGood = previous?.object("last_good"), !(lastGood.array("limits") ?? []).isEmpty {
+            result["last_good"] = lastGood
+        }
+        return result
     }
 
     public static func usageDue(_ saved: JSONObject?, now: Double? = nil) -> Bool {

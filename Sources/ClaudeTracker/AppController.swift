@@ -71,6 +71,12 @@ final class AppController {
     /// Rows whose detail is open, by row id. Not saved: opening the panel or
     /// changing tab closes them all.
     var openRows: [String: Bool] = [:]
+    /// "Read more" ids open in the Settings and Tracking windows. Kept apart
+    /// from `openRows`, which opening or changing the panel's tab clears:
+    /// those windows stay open meanwhile.
+    var windowOpenRows: [String: Bool] = [:]
+    /// The "Read more" ids the last render drew in those windows.
+    var windowFitIDs = Set<String>()
     /// What the last render knows about each row (its folder).
     var rowInfo: [String: RowInfo] = [:]
     /// Whether Settings > About shows Credits. Not saved: it opens on About.
@@ -324,15 +330,17 @@ final class AppController {
             live: drawnLive)
         let tabs = result.tabs
         rowInfo = result.rows
-        OpenRows.prune(&openRows, present: Set(result.rows.keys))
+        let welcome = JSON.truthy(state["onboarding_done"]) ? nil
+            : PanelModel.fitted(PanelModel.welcomeTab(detected: detected, chosen: welcomeChoice),
+                                measure: TextMeasures.live, open: openRows)
+        OpenRows.prune(&openRows, present: Set(result.rows.keys).union(welcome?.ids ?? []))
         let firstSeen = state.string("first_seen_at") ?? Day.today().iso
         let choices = PanelModel.viewChoices(state, detected: detected)
         drawnTracking = (choices, view.key)
         panel.render(
             tabs: tabs, footer: "Tracking since \(PanelModel.formatLongDate(firstSeen))",
             toolChoices: choices, selectedTool: view.key,
-            welcome: JSON.truthy(state["onboarding_done"]) ? nil
-                : PanelModel.welcomeTab(detected: detected, chosen: welcomeChoice),
+            welcome: welcome?.tab,
             subtitle: view.key == "all" ? "All AIs" : "for \(view.name)",
             // Same rule as the menu bar: the AI's logo, the coin when combined.
             logo: view.key != "all" ? ToolIcons.iconImage(view.key, size: ToolIcons.headerIconSize) : nil)
@@ -345,12 +353,28 @@ final class AppController {
         } else {
             panel.closeRangePopup()
         }
-        settingsWindow.render(PanelModel.settingsTab(state, intervalChoices: AppState.scanIntervalChoices,
-                                                     detected: detected, updateStatus: updateStatus,
-                                                     showCredits: aboutShowsCredits))
+        let settings = PanelModel.fitted(
+            PanelModel.settingsTab(state, intervalChoices: AppState.scanIntervalChoices, detected: detected,
+                                   updateStatus: updateStatus, showCredits: aboutShowsCredits),
+            measure: TextMeasures.live, open: windowOpenRows)
+        settingsWindow.render(settings.tab)
+        var windowIDs = settings.ids
         if trackingWindow.isShown {  // Show more renders it just before it opens
-            trackingWindow.render(PanelModel.trackingWindowTab(state, detected: detected, selected: view.key))
+            windowIDs.formUnion(renderTrackingWindow(detected: detected, selected: view.key))
         }
+        windowFitIDs = windowIDs
+        OpenRows.prune(&windowOpenRows, present: windowIDs)
+    }
+
+    /// Draws the Tracking window (Show more) with its "Read more" links;
+    /// returns their ids.
+    @discardableResult
+    func renderTrackingWindow(detected: [String], selected: String) -> Set<String> {
+        let fit = PanelModel.fitted(PanelModel.trackingWindowTab(state, detected: detected, selected: selected),
+                                    measure: TextMeasures.live, open: windowOpenRows)
+        trackingWindow.render(fit.tab)
+        windowFitIDs.formUnion(fit.ids)
+        return fit.ids
     }
 
     /// Picking another tab closes every open row, "Show less" the projects
@@ -444,7 +468,6 @@ final class AppController {
         case .providerKey(let provider): addAPIKey(provider)
         case .providerKeyRemove(let provider): removeAPIKey(provider)
         case .subscriptionEmail(let tool): editSubscriptionEmail(tool)
-        case .subscriptionCard(let tool): editSubscriptionCard(tool)
         case .provider(let key, let on): setProviderEnabled(key, on)
         case .leaderboardPush: pushLeaderboardUpdate()
         case .leaderboardPull: pullLeaderboardUpdates()
@@ -533,8 +556,8 @@ final class AppController {
                 panel.close()
                 // Its list now: renderPanel waits while the panel folds up.
                 let detected = Tools.detectTools()
-                trackingWindow.render(PanelModel.trackingWindowTab(
-                    state, detected: detected, selected: AppState.currentView(state, detected: detected).key))
+                renderTrackingWindow(detected: detected,
+                                     selected: AppState.currentView(state, detected: detected).key)
                 trackingWindow.show()
             case nil: break
             }
@@ -561,6 +584,8 @@ final class AppController {
             welcomeChoice = AppState.welcomeChoice(welcomeChoice, key, on)
         case .welcomeDone: finishWelcome()
         case .tool(let key, let on): setToolEnabled(key, on)
+        case .toggleRow(let id) where windowFitIDs.contains(id):
+            OpenRows.toggle(&windowOpenRows, id: id, path: nil) { _ in false }
         case .toggleRow(let id):
             let home = UsageStats.homeDirectory
             OpenRows.toggle(&openRows, id: id, path: rowInfo[id]?.path) { path in

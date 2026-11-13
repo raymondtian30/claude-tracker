@@ -412,10 +412,26 @@ public enum UsageStats {
         rows.sorted { $0.tokens != $1.tokens ? $0.tokens > $1.tokens : $0.name < $1.name }
     }
 
+    /// Folders that hold projects rather than being one: macOS's standard
+    /// folders in the home folder and the iCloud Drive root. A session run in
+    /// one of them (say, in ~/Downloads itself) must not swallow the projects
+    /// inside it, so they are never parents; their own usage keeps its row.
+    public static let containerFolders: Set<String> = [
+        "~/Desktop", "~/Documents", "~/Downloads", "~/Library", "~/Movies", "~/Music",
+        "~/Pictures", "~/Public", "~/Applications", "~/Library/Mobile Documents/com~apple~CloudDocs",
+    ]
+
+    /// Whether `project` (a label as `projectLabel` gives it) is a container
+    /// folder, a trailing slash or not.
+    public static func isContainerFolder(_ project: String) -> Bool {
+        containerFolders.contains(trimmingTrailingSlashes(project))
+    }
+
     /// Merge a subfolder's tokens into its parent when the parent is also a
     /// project (e.g. "~/game/tools" into "~/game"). "~" and "/" (and "~/",
     /// which is "~" without its slash) are never parents: they would
-    /// otherwise swallow every other project, and keep their own row.
+    /// otherwise swallow every other project, and keep their own row. The
+    /// same goes for container folders such as "~/Downloads".
     static func foldSubfolders(_ totals: [String: Int]) -> [String: Int] {
         var folded = [String: Int]()
         // Shortest first, so a parent is always in `folded` before its
@@ -424,7 +440,8 @@ public enum UsageStats {
         for project in byLength {
             let parent = folded.keys.first {
                 let trimmed = trimmingTrailingSlashes($0)
-                return !trimmed.isEmpty && trimmed != "~" && project.hasPrefix(trimmed + "/")
+                return !trimmed.isEmpty && trimmed != "~" && !containerFolders.contains(trimmed)
+                    && project.hasPrefix(trimmed + "/")
             }
             folded[parent ?? project, default: 0] += totals[project] ?? 0
         }

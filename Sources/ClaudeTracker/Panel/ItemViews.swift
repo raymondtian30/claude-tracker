@@ -156,11 +156,9 @@ struct BarItem: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 0) {
+            HStack(spacing: PanelLayout.valueGap) {
                 LabelText(text: label, truncation: .middle)
-                    .frame(width: PanelLayout.labelBudget(kind: "bar", hasChevron: false))
-                LabelText(text: value, color: .secondaryLabel, digits: true, alignment: .trailing)
-                    .frame(width: 120)
+                ValueText(text: value, color: .secondaryLabel)
             }
             ShareBar(fraction: fraction).frame(height: 6).padding(.top, 3)  // at y+21
             if let sub {
@@ -200,11 +198,29 @@ struct RowItem: View {
             if let dot = dot {
                 StatusDot(dot: dot).frame(width: PanelLayout.dotWidth, alignment: .leading)
             }
-            LabelText(text: label, truncation: .middle)
-                .frame(width: PanelLayout.labelBudget(kind: "row", hasChevron: false, hasDot: dot != nil))
-            LabelText(text: value, weight: .semibold, digits: true, alignment: .trailing).frame(width: 110)
+            HStack(spacing: PanelLayout.valueGap) {
+                LabelText(text: label, truncation: .middle)
+                ValueText(text: value, weight: .semibold)
+            }
         }
         .padding(.top, 2)
+    }
+}
+
+/// A small "Read more" / "Show less" link under an item whose text is cut.
+struct ReadMoreItem: View {
+    let id: String
+    let isOpen: Bool
+    let onAction: ActionHandler
+
+    var body: some View {
+        Button(action: { onAction("toggle_row:\(id)", .none) }) {
+            Text(isOpen ? "Show less" : "Read more")
+                .font(.panel(11, .medium))
+                .foregroundColor(.accent)
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, minHeight: 16, maxHeight: 16, alignment: .leading)
     }
 }
 

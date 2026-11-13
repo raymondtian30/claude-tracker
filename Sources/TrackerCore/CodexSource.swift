@@ -47,26 +47,53 @@ public enum CodexSource {
     }
 
     /// {"at": timestamp, "rate_limits": {...}} from the newest token_count
-    /// event that carries Codex's plan limits, or nil.
+    /// event that carries Codex's plan limits, or nil. Codex also writes
+    /// records for other meters (`limit_id` "premium") with no windows; the
+    /// plan's record is preferred (see `rank`), so a newer one of those never
+    /// hides the plan's 5-hour and weekly numbers.
     static func latestRateLimits(_ entries: [JSONObject]) -> JSONObject? {
-        var latest: JSONObject?
+        var records = [JSONObject]()
         for entry in entries {
             let payload = entry.object("payload") ?? [:]
             guard entry.string("type") == "event_msg", payload.string("type") == "token_count",
                   let rateLimits = payload["rate_limits"], JSON.truthy(rateLimits),
                   let timestamp = nonEmpty(entry.string("timestamp"))
             else { continue }
-            if latest == nil || timestamp >= (latest?.string("at") ?? "") {
-                latest = ["at": timestamp, "rate_limits": rateLimits]
+            records.append(["at": timestamp, "rate_limits": rateLimits])
+        }
+        return newestBest(records)
+    }
+
+    /// How useful a {"at", "rate_limits"} record is: 2 for the plan's own
+    /// meter (`limit_id` missing or "codex") with a window, 1 for another
+    /// meter with a window, 0 for a record without any window.
+    static func rank(_ record: JSONObject) -> Int {
+        let limits = record.object("rate_limits") ?? [:]
+        let hasWindow = ["primary", "secondary"].contains { !(limits.object($0) ?? [:]).isEmpty }
+        guard hasWindow else { return 0 }
+        let id = limits.string("limit_id")
+        return id == nil || id == "codex" ? 2 : 1
+    }
+
+    /// The best-ranked record, newest among equals. ISO timestamps sort as
+    /// text; of two with the same time, the later one in the list wins.
+    static func newestBest(_ records: [JSONObject]) -> JSONObject? {
+        var best: JSONObject?
+        for record in records {
+            guard let current = best else { best = record; continue }
+            let (r, c) = (rank(record), rank(current))
+            if r > c || (r == c && (record.string("at") ?? "") >= (current.string("at") ?? "")) {
+                best = record
             }
         }
-        return latest
+        return best
     }
 
     /// (per-day buckets, latest rate limits) for one session file.
     /// Bumped when a newer app reads more from a file, so each file saved by
-    /// an older one is read once more. 2: effort level; 3: hourly totals.
-    static let fileVersion = 3
+    /// an older one is read once more. 2: effort level; 3: hourly totals;
+    /// 4: the plan's rate limits preferred over window-less records.
+    static let fileVersion = 4
 
     static func readCodex(_ path: String) throws -> (daily: JSONObject, limits: JSONObject?) {
         let entries = try completeEntries(path)
@@ -162,13 +189,24 @@ public enum CodexSource {
 
     /// Codex's plan limits as last recorded in any session, or nil.
     public static func codexRateLimits(_ sourceState: JSONObject) -> JSONObject? {
-        let records = (sourceState.object("files") ?? [:]).values.compactMap { file -> JSONObject? in
-            guard let limits = JSON.object(file)?.object("limits"), !limits.isEmpty else { return nil }
+        latestRecord(sourceState)?.object("rate_limits")
+    }
+
+    /// When the record `codexRateLimits` reads was written (Unix time), or nil.
+    public static func codexRateLimitsAt(_ sourceState: JSONObject) -> Double? {
+        latestRecord(sourceState)?.string("at").flatMap(LocalTime.parseISO)
+    }
+
+    /// The best {"at", "rate_limits"} record across session files (see
+    /// `newestBest`); files are taken in path order so ties are settled the
+    /// same way every time.
+    static func latestRecord(_ sourceState: JSONObject) -> JSONObject? {
+        let files = sourceState.object("files") ?? [:]
+        let records = files.keys.sorted().compactMap { path -> JSONObject? in
+            guard let limits = JSON.object(files[path])?.object("limits"), !limits.isEmpty else { return nil }
             return limits
         }
-        // ISO timestamps sort as text, as Python's max(key=r["at"]) compares them.
-        let latest = records.max { ($0.string("at") ?? "") < ($1.string("at") ?? "") }
-        return latest?.object("rate_limits")
+        return newestBest(records)
     }
 
     public static func codexDaily(_ sourceState: JSONObject) -> JSONObject {

@@ -34,7 +34,9 @@ extension Font {
     }
 }
 
-/// One line of text in a fixed-height slot, like the panel's labels.
+/// One line of text in a fixed-height slot, like the panel's labels. Text a
+/// little too wide shrinks (to `PanelLayout.minTextScale`) before it is cut
+/// off; the model adds a "Read more" under what is still cut.
 struct LabelText: View {
     let text: String
     var size: CGFloat = 13
@@ -50,8 +52,29 @@ struct LabelText: View {
             .font(.panel(size, weight, digits: digits))
             .foregroundColor(color)
             .lineLimit(1)
+            .minimumScaleFactor(PanelLayout.minTextScale)
             .truncationMode(truncation)
             .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: alignment)
+    }
+}
+
+/// A row's or bar's value: as wide as it needs (measured the way the model
+/// measures it), up to `PanelLayout.valueCap`, right-aligned, shrinking
+/// before it is cut. The label takes the rest of the line, as
+/// `PanelLayout.labelValueWidths` says.
+struct ValueText: View {
+    let text: String
+    var weight: Font.Weight = .regular
+    var color: Color = .label
+
+    var body: some View {
+        let measured = TextMeasures.live(text, 13, weight == .semibold ? .semibold : .regular)
+        Text(text)
+            .font(.panel(13, weight, digits: true))
+            .foregroundColor(color)
+            .lineLimit(1)
+            .minimumScaleFactor(PanelLayout.minTextScale)
+            .frame(width: Swift.min(measured.rounded(.up) + 1, PanelLayout.valueCap), height: 18, alignment: .trailing)
     }
 }
 
