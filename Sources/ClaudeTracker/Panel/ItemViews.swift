@@ -221,7 +221,8 @@ struct StatusTag: View {
         let measured = TextMeasures.live(text, PanelLayout.tagTextSize, .semibold)
         Text(text)
             .font(.panel(PanelLayout.tagTextSize, .semibold))
-            .foregroundColor(dot == .hollow ? .secondaryLabel : .white)
+            // Dark text on yellow, which white can't be read on.
+            .foregroundColor(dot == .hollow ? .secondaryLabel : dot == .yellow ? .black.opacity(0.85) : .white)
             .lineLimit(1)
             .minimumScaleFactor(PanelLayout.minTextScale)
             .frame(width: PanelLayout.tagWidth(measured: measured), height: 18)
