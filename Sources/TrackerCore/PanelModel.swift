@@ -43,10 +43,12 @@ public enum PanelModel {
     public static let leaderboardViews: [(key: String, label: String)] = [
         ("total", "Total"), ("day", "Yesterday"),
     ]
-    public static let chartRanges = [1, 7, 14, 30]
+    public static let chartRanges = [1, 3, 7, 14, 30]
+    /// Ranges this short draw one bar per hour.
+    public static let hourlyChartDays = 3
     public static let defaultChartDays = 14
 
-    /// How many days the Home chart shows: 1, 7, 14 or 30 (anything else reads as 14).
+    /// How many days the Home chart shows: 1, 3, 7, 14 or 30 (anything else reads as 14).
     public static func chartDays(from state: JSONObject) -> Int {
         guard let value = state["chart_days"], JSON.isInteger(value), let days = JSON.int(value),
               chartRanges.contains(days)
@@ -105,6 +107,7 @@ public enum PanelModel {
     public static let tagSpace = 4  // a tag's padding and the gap after it, in characters
 
     public static let projectsShown = 5  // before "Show more"
+    public static let toolsShown = 8  // Settings > AI tools switches before "Show more"
 
     // MARK: - Small helpers
 

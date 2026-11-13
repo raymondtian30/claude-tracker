@@ -139,6 +139,14 @@ public enum PanelLayout {
 
     /// The room a status dot takes before a row's label.
     public static let dotWidth: CGFloat = 14
+    /// A status tag's text inset, each side. Its text is 11 pt semibold.
+    public static let tagPad: CGFloat = 7
+    public static let tagTextSize: CGFloat = 11
+
+    /// The width a status tag is drawn in, from its text's measured width.
+    public static func tagWidth(measured: CGFloat) -> CGFloat {
+        Swift.min(measured.rounded(.up) + 1 + 2 * tagPad, valueCap)
+    }
 
     // MARK: - Fitting text
 
@@ -169,10 +177,12 @@ public enum PanelLayout {
     }
 
     /// The (label, value) widths of a row or bar: the value as wide as it
-    /// needs up to `valueCap`, the label the rest (less a dot, if any).
+    /// needs up to `valueCap`, the label the rest (less a dot, if any). A
+    /// row with a dot draws its value as a status tag.
     public static func labelValueWidths(label: String, value: String, valueWeight: LabelWeight, hasDot: Bool,
                                         measure: TextMeasure) -> (label: CGFloat, value: CGFloat) {
-        let value = valueWidth(measured: measure(value, 13, valueWeight))
+        let value = hasDot ? tagWidth(measured: measure(value, tagTextSize, .semibold))
+            : valueWidth(measured: measure(value, 13, valueWeight))
         return (cardInner - (hasDot ? dotWidth : 0) - value - valueGap, value)
     }
 

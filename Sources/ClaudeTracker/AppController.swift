@@ -40,6 +40,8 @@ final class AppController {
     var updateStatus: String?
     /// The Projects tab's "Show more".
     var projectsExpanded = false
+    /// Settings > AI tools' "Show more". Not saved.
+    var toolsExpanded = false
     /// Whether the Custom range page is open (a tab of its own, after Home).
     /// Not saved: opening the panel or picking another tab closes it.
     var rangeOpen = false
@@ -355,7 +357,8 @@ final class AppController {
         }
         let settings = PanelModel.fitted(
             PanelModel.settingsTab(state, intervalChoices: AppState.scanIntervalChoices, detected: detected,
-                                   updateStatus: updateStatus, showCredits: aboutShowsCredits),
+                                   updateStatus: updateStatus, showCredits: aboutShowsCredits,
+                                   toolsExpanded: toolsExpanded),
             measure: TextMeasures.live, open: windowOpenRows)
         settingsWindow.render(settings.tab)
         var windowIDs = settings.ids
@@ -532,6 +535,7 @@ final class AppController {
             state["model_sort"] = key
             save()
         case .projectsExpand: projectsExpanded.toggle()
+        case .toolsExpand: toolsExpanded.toggle()
         case .sessionStop(let pid): pauseOrResume(.stop, [pid])
         case .sessionResume(let pid): pauseOrResume(.resume, [pid])
         case .sessionQuit(let pid): quitSessions([pid])

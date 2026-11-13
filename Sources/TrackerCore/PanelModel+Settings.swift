@@ -3,24 +3,45 @@ import Foundation
 /// The Settings window's tab, the first-run picker, and which AIs the panel
 /// can show.
 extension PanelModel {
-    static func toolsCard(_ state: JSONObject, detected: [String]) -> Card {
+    /// The AI tools card: a switch for each detected or enabled tool, then
+    /// one for each provider. Collapsed, it shows `toolsShown` switches and
+    /// "Show N more"; a switch that is on always shows, so turning off what
+    /// you use never needs a click first. Expanded, every switch and
+    /// "Show less".
+    static func toolsCard(_ state: JSONObject, detected: [String], expanded: Bool = false) -> Card {
         let enabled = strings(state["enabled_tools"])
         // Enabled tools stay listed even if their data has gone, so they can be
         // turned off.
         let keys = Tools.tools.map(\.key).filter { detected.contains($0) || enabled.contains($0) }
-        var items: [Item] = keys.map { key in
-            .switch(label: Tools.toolNames[key] ?? key, isOn: enabled.contains(key), action: "tool:\(key)")
+        let tools: [(item: Item, isOn: Bool)] = keys.map { key in
+            (.switch(label: Tools.toolNames[key] ?? key, isOn: enabled.contains(key), action: "tool:\(key)"),
+             enabled.contains(key))
         }
-        items += providerItems(state)
-        return Card(title: "AI tools", items: items)
+        let all = tools + providerSwitches(state)
+        guard all.count > toolsShown else { return Card(title: "AI tools", items: all.map(\.item)) }
+        if expanded {
+            return Card(title: "AI tools", items: all.map(\.item)
+                + [.buttons([Item.Button("Show less", "chevron.up", "tools_expand")])])
+        }
+        // Tools, then the providers that are on, then as many that are off
+        // as fit under `toolsShown`.
+        let providers = all.dropFirst(tools.count)
+        let on = providers.filter(\.isOn)
+        let off = providers.filter { !$0.isOn }
+        let shown = tools + on + off.prefix(Swift.max(toolsShown - tools.count - on.count, 0))
+        let hidden = all.count - shown.count
+        guard hidden > 0 else { return Card(title: "AI tools", items: shown.map(\.item)) }
+        return Card(title: "AI tools", items: shown.map(\.item)
+            + [.buttons([Item.Button("Show \(hidden) more", "chevron.down", "tools_expand")])])
     }
 
     /// On/off switches for the supported model providers. Their optional API key
     /// lives on each provider's own Home tab, so turning one on asks nothing.
-    static func providerItems(_ state: JSONObject) -> [Item] {
+    static func providerSwitches(_ state: JSONObject) -> [(item: Item, isOn: Bool)] {
         let enabled = strings(state["enabled_providers"])
         return Providers.providers.map { provider in
-            .switch(label: provider.name, isOn: enabled.contains(provider.key), action: "provider:\(provider.key)")
+            (.switch(label: provider.name, isOn: enabled.contains(provider.key), action: "provider:\(provider.key)"),
+             enabled.contains(provider.key))
         }
     }
 
@@ -95,7 +116,7 @@ extension PanelModel {
 
     public static func settingsTab(_ state: JSONObject, intervalChoices: [Int], detected: [String],
                                    updateStatus: String? = nil,
-                                   showCredits: Bool = false) -> Tab {
+                                   showCredits: Bool = false, toolsExpanded: Bool = false) -> Tab {
         let mode = state["title_mode"] ?? "lifetime"
         let interval = state["scan_interval_seconds"] ?? intervalChoices[0]
         let fontSize = state["menu_bar_font_size"] ?? defaultMenuBarFontSize
@@ -114,7 +135,7 @@ extension PanelModel {
                               action: "currency"), at: 0)
         let about = showCredits ? creditsItems() : aboutItems(updateStatus: updateStatus)
         return Tab(key: "settings", title: "Settings", short: "Settings", icon: "slider.horizontal.3", cards: [
-            toolsCard(state, detected: detected),
+            toolsCard(state, detected: detected, expanded: toolsExpanded),
             appearanceCard(state),
             Card(title: "Models", items: [
                 .popup(label: "Sort model token usage by", options: ModelTiers.choices.map(\.label),

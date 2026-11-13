@@ -467,10 +467,10 @@ private func statusRows(_ items: [Item]) -> [Item] {
     }
     #expect(word(.active) == dotRow("p", "Active", .green))
     #expect(word(.waiting) == dotRow("p", "Waiting", .yellow))
-    #expect(word(.idle) == dotRow("p", "Idle", .grey))
+    #expect(word(.idle) == dotRow("p", "Idle", .red))
     #expect(word(.unknown) == dotRow("p", "Unknown", .hollow))
     #expect(word(nil) == dotRow("p", "Unknown", .hollow))
-    #expect(word(.active, stopped: true) == dotRow("p", "Paused", .grey))
+    #expect(word(.active, stopped: true) == dotRow("p", "Paused", .red))
 }
 
 @Test func theFootnoteSaysHowManyProcessesWereLeftOut() {
@@ -496,7 +496,7 @@ private func statusRows(_ items: [Item]) -> [Item] {
 
     #expect(tab.cards[0].title == "Sessions (0)")
     #expect(tab.cards[1] == Card(title: "Background (1)", items: [.note("Not counted in Sessions"),
-                                                                  dotRow("app", "Idle", .grey)]))
+                                                                  dotRow("app", "Idle", .red)]))
 }
 
 @Test func runningSubagentsAreListedUnderTheirSessionAndCapped() {
@@ -564,7 +564,7 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
         .buttons([button("Stop", "pause.circle", "session_stop:42"), button("Quit", "xmark.circle", "session_quit:42")]),
     ])
     #expect(tab.cards[2].items == [
-        dotRow("app", "Idle", .grey),
+        dotRow("app", "Idle", .red),
         .note("Terminal · idle for 2 hr"),
         .note("process 43 · 500 tokens"),
         .buttons([button("Stop", "pause.circle", "session_stop:43"), button("Quit", "xmark.circle", "session_quit:43")]),
@@ -587,7 +587,7 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
     ])
 
     #expect(tab.cards[1].items == [
-        dotRow("Chart fix", "Paused", .grey),
+        dotRow("Chart fix", "Paused", .red),
         .alert(text: "Paused · click Resume to continue", showIcon: true),
         .note("a · process 5 · 7 tokens"),
         .buttons([button("Resume", "play.circle", "session_resume:5"), button("Quit", "xmark.circle", "session_quit:5")]),
@@ -637,7 +637,7 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
     #expect(tab.cards.count == 4)  // summary card + one card per session
     #expect(tab.cards[1].items.first == dotRow("Claude Code · a", "Unknown", .hollow))
     #expect(tab.cards[2].items == [
-        dotRow("Security checker", "Idle", .grey),
+        dotRow("Security checker", "Idle", .red),
         .note("opencode · Terminal · idle for 5 min"),
         .note("g · process 90 · 1.2K tokens"),
         .buttons([button("Stop", "pause.circle", "session_stop:90"), button("Quit", "xmark.circle", "session_quit:90")]),
@@ -653,7 +653,7 @@ private func button(_ title: String, _ icon: String, _ action: String) -> Item.B
         ActiveSessions.Session(label: "~/c", tokens: nil, cwd: "/c", pid: 4, status: "idle", since: 999_970),
     ])
 
-    #expect(tab.cards[1].items.prefix(3) == [dotRow("c", "Idle", .grey), .note("idle, no messages yet"),
+    #expect(tab.cards[1].items.prefix(3) == [dotRow("c", "Idle", .red), .note("idle, no messages yet"),
                                              .note("process 4")])
 }
 
@@ -708,10 +708,10 @@ private let fiveHourHit: JSONObject = ["claude_usage_enabled": false,
                                      limit: level)
 
     #expect(tab.cards[0].items.first == .note("1 idle · 2 limit hit"))
-    #expect(tab.cards[1].items.prefix(2) == [dotRow("a", "Limit hit", .yellow),
+    #expect(tab.cards[1].items.prefix(2) == [dotRow("a", "Limit hit", .red),
                                              .note("VS Code · paused: 5-hour limit hit, resets 3:30 PM")])
-    #expect(tab.cards[2].items.first == dotRow("b", "Limit hit", .yellow))
-    #expect(tab.cards[3].items.first == dotRow("c", "Idle", .grey))  // not running: the limit changes nothing
+    #expect(tab.cards[2].items.first == dotRow("b", "Limit hit", .red))
+    #expect(tab.cards[3].items.first == dotRow("c", "Idle", .red))  // not running: the limit changes nothing
 }
 
 @Test func aLimitDoesNotTouchOtherToolsOrPausedOrWaitingSessions() {
@@ -744,7 +744,7 @@ private let fiveHourHit: JSONObject = ["claude_usage_enabled": false,
                                       friends: [], showLeaderboard: false, today: Day(2026, 11, 8), now: limitsNow,
                                       live: live)
     let tab = panel.first { $0.key == "sessions" }!
-    #expect(tab.cards.flatMap(\.items).contains(dotRow("a", "Limit hit", .yellow)))
+    #expect(tab.cards.flatMap(\.items).contains(dotRow("a", "Limit hit", .red)))
 }
 
 @Test func aLimitForOneModelDoesNotPauseSessionsOnOthers() {

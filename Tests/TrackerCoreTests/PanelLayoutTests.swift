@@ -216,6 +216,16 @@ private let tab = Tab(key: "overview", title: "Overview", short: "Home", icon: "
     #expect(long.label == PanelLayout.cardInner - PanelLayout.dotWidth - PanelLayout.valueCap - PanelLayout.valueGap)
 }
 
+@Test func aStatusRowsValueIsATagWithPadding() {
+    // Live's status rows draw their word as an 11 pt tag, padded both sides.
+    let measure: TextMeasure = { text, size, _ in CGFloat(text.count) * size / 2 }
+    let row = PanelLayout.labelValueWidths(label: "x", value: "Active", valueWeight: .semibold, hasDot: true,
+                                           measure: measure)
+    #expect(row.value == PanelLayout.tagWidth(measured: 6 * 11 / 2))
+    #expect(PanelLayout.tagWidth(measured: 33) == 34 + 2 * PanelLayout.tagPad)
+    #expect(row.label == PanelLayout.cardInner - PanelLayout.dotWidth - row.value - PanelLayout.valueGap)
+}
+
 // foldFrame: the panel grows from, and shrinks to, the menu bar icon, with its
 // contents scaled by the same factor.
 
