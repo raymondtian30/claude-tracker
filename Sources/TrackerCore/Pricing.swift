@@ -1,10 +1,11 @@
 import Foundation
 
-/// Estimated pay-as-you-go API cost of Claude Code usage.
+/// Estimated pay-as-you-go API cost of Claude Code and Codex usage.
 ///
-/// This is for fun/context only: a Claude Pro or Max subscription is flat-rate,
-/// so none of this is actually billed. Prices are USD per million tokens from
-/// Anthropic's public API pricing and will drift over time.
+/// This is for fun/context only: a Claude Pro or Max subscription (or a
+/// ChatGPT plan for Codex) is flat-rate, so none of this is actually billed.
+/// Prices are USD per million tokens from Anthropic's and OpenAI's public API
+/// pricing and will drift over time.
 public enum Pricing {
     /// USD per 1M tokens.
     public struct Price: Equatable {
@@ -20,7 +21,8 @@ public enum Pricing {
     }
 
     /// prefix -> (input, output, cache_read) USD per 1M tokens.
-    /// Longest matching prefix wins, so "claude-opus-5-5" beats "claude-opus-5".
+    /// Longest matching prefix wins, so "claude-opus-5-5" beats "claude-opus-5"
+    /// and "gpt-5-mini" beats "gpt-5".
     public static let prices: [String: Price] = [
         "claude-fable-5-1": Price(10.00, 50.00, 0.25),
         "claude-fable-5": Price(10.00, 50.00, 1.00),
@@ -39,6 +41,30 @@ public enum Pricing {
         "claude-sonnet-4": Price(3.00, 15.00, 0.30),
         "claude-haiku-5-5": Price(0.10, 0.50, 0.01),
         "claude-haiku-4-5": Price(1.00, 5.00, 0.10),
+
+        // OpenAI models used by Codex: Standard tier, short-context rates
+        // (272K input tokens or fewer), from developers.openai.com/api/docs/pricing
+        // on 2026-11-19. "gpt-5.1" also covers "gpt-5.1-codex" and the like.
+        "gpt-6.2-astra": Price(8.00, 40.00, 0.40),
+        "gpt-6-astra": Price(10.00, 50.00, 1.00),
+        "gpt-6.2-sol": Price(2.00, 10.00, 0.10),
+        "gpt-6.1-sol": Price(2.00, 10.00, 0.10),
+        "gpt-6-sol": Price(2.00, 10.00, 0.20),
+        "gpt-6.1-terra": Price(1.00, 5.00, 0.05),
+        "gpt-6-luna": Price(0.10, 0.50, 0.01),
+        "gpt-5.6-sol": Price(4.00, 20.00, 0.40),
+        "gpt-5.6-terra": Price(2.00, 12.00, 0.20),
+        "gpt-5.6-luna": Price(0.20, 1.20, 0.02),
+        "gpt-5.5": Price(5.00, 30.00, 0.50),
+        "gpt-5.4": Price(2.50, 15.00, 0.25),
+        "gpt-5.4-mini": Price(0.75, 4.50, 0.075),
+        "gpt-5.4-nano": Price(0.20, 1.25, 0.02),
+        "gpt-5.3-codex": Price(1.75, 14.00, 0.175),
+        "gpt-5.2": Price(1.75, 14.00, 0.175),
+        "gpt-5.1": Price(1.25, 10.00, 0.125),
+        "gpt-5": Price(1.25, 10.00, 0.125),
+        "gpt-5-mini": Price(0.25, 2.00, 0.025),
+        "gpt-5-nano": Price(0.05, 0.40, 0.005),
     ]
 
     // Cache writes are billed as a multiple of the model's input price.

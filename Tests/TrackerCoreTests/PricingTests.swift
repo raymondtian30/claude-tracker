@@ -81,3 +81,15 @@ private func approx(_ value: Double, _ expected: Double) -> Bool {
     }
     #expect(Set(Pricing.currencies.map(\.code)).count == Pricing.currencies.count)
 }
+
+@Test func codexModelsArePriced() {
+    #expect(Pricing.priceFor("gpt-6.2-astra") == Price(8.00, 40.00, 0.40))
+    #expect(Pricing.priceFor("gpt-6-sol") == Price(2.00, 10.00, 0.20))
+    #expect(Pricing.priceFor("gpt-5.6-luna") == Price(0.20, 1.20, 0.02))
+    #expect(Pricing.priceFor("gpt-5-mini") == Price(0.25, 2.00, 0.025))
+    #expect(Pricing.priceFor("gpt-5.1-codex-max") == Price(1.25, 10.00, 0.125))
+    #expect(Pricing.priceFor("gpt-6.2") == nil)
+    let cost = Pricing.estimateCost(["gpt-6-sol": ["input": 1_000_000, "output": 1_000_000, "cache_read": 1_000_000]])
+    #expect(approx(cost.dollars, 12.20))
+    #expect(cost.unpriced == 0)
+}
