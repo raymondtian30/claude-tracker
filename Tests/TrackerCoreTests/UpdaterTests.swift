@@ -197,8 +197,13 @@ private let RELEASES: [JSONObject] = [  // as GitHub lists them: newest first
 
     let offline: Updater.Get = { _ in throw HTTP.ConnectionError(reason: "no network") }
 
-    expectUpdateError("Couldn't reach GitHub") {
+    expectUpdateError("Please connect to Wi-Fi before trying again.") {
         _ = try Updater.newerReleases(get: offline)
+    }
+
+    let rateLimited: Updater.Get = { _ in throw HTTP.StatusError(code: 403) }
+    expectUpdateError("Couldn't reach GitHub") {
+        _ = try Updater.newerReleases(get: rateLimited)
     }
 }
 

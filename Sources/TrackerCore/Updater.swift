@@ -85,7 +85,9 @@ public enum Updater {
         let listed: Any
         do {
             listed = try get(releasesURL)
-        } catch {  // offline, rate limited, bad JSON...
+        } catch is HTTP.ConnectionError {  // no network, or no answer in time
+            throw UpdateError("Please connect to Wi-Fi before trying again.")
+        } catch {  // rate limited, bad JSON...
             throw UpdateError("Couldn't reach GitHub to check for updates.")
         }
         guard let list = listed as? [Any] else {
