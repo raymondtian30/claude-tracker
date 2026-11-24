@@ -111,11 +111,6 @@ public enum Pricing {
         return (dollars, unpriced)
     }
 
-    /// "$3.46", or "$12,346" from $1,000 up.
-    public static func formatDollars(_ amount: Double) -> String {
-        formatMoney(amount, currency: "USD")
-    }
-
     /// A currency prices can be shown in.
     public struct Currency {
         public let code: String

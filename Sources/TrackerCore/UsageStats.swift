@@ -563,13 +563,4 @@ public enum UsageStats {
     public static func hourlySeries(_ daily: JSONObject, from: Day, to: Day) -> [Int] {
         stride(from: 0, through: from.days(to: to), by: 1).flatMap { hourlySeries(daily, day: from.adding(days: $0)) }
     }
-
-    /// [(date, tokens)] for each of the `days` days ending on `end`, oldest
-    /// first, with 0 for days that have no usage.
-    public static func dailySeries(_ daily: JSONObject, _ end: Day, _ days: Int) -> [DayTotal] {
-        stride(from: days - 1, through: 0, by: -1).map { offset in
-            let day = end.adding(days: -offset)
-            return DayTotal(day, totalInRange(daily, day, day))
-        }
-    }
 }

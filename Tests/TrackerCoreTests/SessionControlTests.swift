@@ -84,27 +84,6 @@ private func realStart(_ pid: Int32) -> [Int32: String] {
     #expect(reason.hasPrefix("Couldn't"))
 }
 
-@Test func stopAllAndResumeAllReachEveryListedProcess() {
-    let signals = Signals()
-
-    let stopped = SessionControl.sendAll(.stop, among: [10, 11, 12], starts: listed([10, 11, 12]), run: claudeRunner(), kill: signals.kill)
-
-    #expect(stopped == SessionControl.Tally(done: 3, refused: 0))
-    #expect(signals.sent.map(\.pid) == [10, 11, 12] && Set(signals.sent.map(\.signal)) == [SIGSTOP])
-}
-
-@Test func stopAllCountsTheOnesItCouldNotReach() {
-    let signals = Signals()
-    let run: Subprocess.Runner = { arguments, _ in
-        Subprocess.Result(status: 0, stdout: "\(listedStart) " + (arguments[5] == "11" ? "/bin/zsh\n" : "claude\n"))
-    }
-
-    let tally = SessionControl.sendAll(.stop, among: [10, 11, 12], starts: listed([10, 11, 12]), run: run, kill: signals.kill)
-
-    #expect(tally == SessionControl.Tally(done: 2, refused: 1))
-    #expect(signals.sent.map(\.pid) == [10, 12])
-}
-
 // The real thing, on a process of its own: a tiny program named `claude` that
 // only sleeps, so nothing else is ever signalled. (A copy of /bin/sleep won't
 // run: macOS kills copies of its own signed programs.)
@@ -333,17 +312,6 @@ private func identityRunner(_ start: String, comm: String = "/x/native-binary/cl
                                       run: runner, kill: signals.kill, sleep: { _ in })
     #expect(results == [42: .closed])
     #expect(signals.sent.map(\.signal) == [SIGTERM, SIGCONT])  // no SIGKILL
-}
-
-@Test func sendAllPassesTheStartTimesOn() {
-    let signals = Signals()
-    let tally = SessionControl.sendAll(.stop, among: [41, 42], starts: [41: listedStart, 42: listedStart],
-                                       run: { arguments, _ in
-        let pid = arguments[arguments.firstIndex(of: "-p")! + 1]
-        return Subprocess.Result(stdout: (pid == "41" ? listedStart : "Tue Nov 10 19:30:00 2026") + " /x/claude\n")
-    }, kill: signals.kill)
-    #expect(tally == SessionControl.Tally(done: 1, refused: 1))
-    #expect(signals.sent.map(\.pid) == [41])
 }
 
 @Test func aSessionListedWithoutAStartTimeIsNotSignalled() {

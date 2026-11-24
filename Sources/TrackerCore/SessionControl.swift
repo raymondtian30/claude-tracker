@@ -160,24 +160,4 @@ public enum SessionControl {
                     + "Any that don't close within 3 seconds are force-quit.",
                 "Quit All")
     }
-
-    public struct Tally: Equatable {
-        public var done: Int
-        public var refused: Int
-    }
-
-    /// `send` to each of `pids`, all of which must be listed ones.
-    public static func sendAll(_ action: Action, among pids: [Int32], starts: [Int32: String],
-                               run: Subprocess.Runner = Subprocess.run,
-                               kill: Kill = { Darwin.kill($0, $1) }) -> Tally {
-        var tally = Tally(done: 0, refused: 0)
-        for pid in pids {
-            if send(action, to: pid, among: pids, starts: starts, run: run, kill: kill) == .done {
-                tally.done += 1
-            } else {
-                tally.refused += 1
-            }
-        }
-        return tally
-    }
 }

@@ -44,11 +44,6 @@ private func approx(_ value: Double, _ expected: Double) -> Bool {
     #expect(unpriced == 7)
 }
 
-@Test func formatDollars() {
-    #expect(Pricing.formatDollars(3.456) == "$3.46")
-    #expect(Pricing.formatDollars(12345.6) == "$12,346")
-}
-
 @Test func estimateCostUsesRecordedCost() {
     let models: UsageStats.Models = [
         "gemini-4-argon": ["input": 1_000_000],
@@ -70,7 +65,6 @@ private func approx(_ value: Double, _ expected: Double) -> Bool {
     // A currency with no minor unit shows whole numbers.
     #expect(Pricing.formatMoney(1, currency: "JPY") == "¥" + String(format: "%.0f", Pricing.rates["JPY"]!))
     #expect(Pricing.formatMoney(0, currency: "GBP") == "£0.00")
-    #expect(Pricing.formatDollars(3.456) == "$3.46")
 }
 
 @Test func everyCurrencyHasARateASymbolAndAName() {

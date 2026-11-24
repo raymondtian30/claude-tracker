@@ -113,14 +113,6 @@ private typealias RangePoint = UsageStats.RangePoint
                                                               NamedTotal("/x/gamer", 1)])
 }
 
-@Test func dailySeriesFillsMissingDaysWithZero() {
-    var daily = JSONObject()
-    UsageStats.recordEntry(&daily, entry(ts: "2026-07-28T12:00:00.000Z", ["input_tokens": 4]))
-    let series = UsageStats.dailySeries(daily, Day(2026, 7, 29), 3)
-    #expect(series == [DayTotal(Day(2026, 7, 27), 0), DayTotal(Day(2026, 7, 28), 4),
-                       DayTotal(Day(2026, 7, 29), 0)])
-}
-
 private func parts(input: Int = 0, output: Int = 0, cacheWrite5m: Int = 0, cacheWrite1h: Int = 0,
                    cacheRead: Int = 0) -> [String: Int] {
     ["input": input, "output": output, "cache_write_5m": cacheWrite5m, "cache_write_1h": cacheWrite1h,
