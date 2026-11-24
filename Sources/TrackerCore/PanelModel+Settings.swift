@@ -161,7 +161,6 @@ extension PanelModel {
             ]),
             Card(title: "General", items: general),
             Card(title: "About", items: about),
-            Card(title: "FAQ", items: FaqEntries.items()),
         ])
     }
 
