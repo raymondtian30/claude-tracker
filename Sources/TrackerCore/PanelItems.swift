@@ -102,7 +102,7 @@ public enum Item: Equatable {
     case tags([Tag])
     /// A label over a row of segments, any number of them on.
     case choices(label: String?, options: [String], selected: [Int], action: String)
-    /// A short semibold line that names what follows (a question in the FAQ).
+    /// A short semibold line that names what follows.
     case heading(String)
     /// A small "Read more" link under an item whose text is cut off even
     /// shrunk; when open, the full text is shown under the item and the link

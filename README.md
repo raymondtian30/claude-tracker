@@ -68,7 +68,7 @@ A panel opens with a row of tabs along the top. It always opens on **Overview**;
 
 Text that is a little too wide for its place shrinks slightly to fit. A label, value, heading or card title that is still too long is cut off with "…" and gets a small **Read more** link under it (big numbers, tags and button titles only shrink). Clicking it shows the whole text under the item (and the link becomes **Show less**); nothing next to it moves. This works on every tab, in Settings, in the Show more window and on the welcome screen. Notes and warnings wrap onto more lines instead.
 
-At the bottom: the date you started tracking, a **Settings** button that opens a separate Settings window (which AIs you use -- coding tools and providers; **Appearance** -- Auto, Light or Dark, where Auto follows macOS; what the menu bar shows -- lifetime total, today's total, or just the icon -- and its text size; the panel's grow/shrink **Animation** -- Off, Fast, Normal or Slow; how often to scan, and **Session diagnostics**; **Sort model token usage by** (Token usage or Model, low to high); start at login; the **Currency for prices** (US dollar, euro, pound and nine more; the Cost tab converts its dollar estimates at fixed, approximate rates built into the app, which don't follow the market); show the Leaderboard; and **About**, with a small About | Credits switch: About has the version and Check for Updates, Credits lists everyone who made the app; and a short **FAQ** at the end: what Anthropic and Claude Code are, what OpenAI and Codex are) and **Quit**. Click anywhere outside the panel to close it.
+At the bottom: the date you started tracking, a **Settings** button that opens a separate Settings window (which AIs you use -- coding tools and providers; **Appearance** -- Auto, Light or Dark, where Auto follows macOS; what the menu bar shows -- lifetime total, today's total, or just the icon -- and its text size; the panel's grow/shrink **Animation** -- Off, Fast, Normal or Slow; how often to scan, and **Session diagnostics**; **Sort model token usage by** (Token usage or Model, low to high); start at login; the **Currency for prices** (US dollar, euro, pound and nine more; the Cost tab converts its dollar estimates at fixed, approximate rates built into the app, which don't follow the market); show the Leaderboard; and **About**, with a small About | Credits switch: About has the version and Check for Updates, Credits lists everyone who made the app) and **Quit**. Click anywhere outside the panel to close it.
 
 ### OpenAI, DeepSeek, Kimi and other AI companies
 
@@ -171,7 +171,7 @@ This removes it from starting at login and deletes **Claude Tracker** from your 
 
 ## Version and credits
 
-Current version: **3.11.4**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
+Current version: **3.11.5**, following [Semantic Versioning](https://semver.org) (MAJOR.MINOR.PATCH). The version lives in `Sources/TrackerCore/Version.swift` and is shown in Settings.
 
 - Original app by Brody Kretz ([BrodyKretz](https://github.com/BrodyKretz/claude-token-counter))
 - Redesign, new features and the Swift rewrite by Raymond Tian ([raymondtian30](https://github.com/raymondtian30/claude-tracker))
@@ -217,7 +217,6 @@ Sources/TrackerCore/         the app's logic, plain Swift with no AppKit, so it 
   SessionDiagnostics.swift   the text of Settings > Scanning > Session diagnostics
   LiveSnapshot.swift         what the Live tab shows, cut from the registry's snapshot for the current view
   ModelTiers.swift           the model tier table and the models card's sort order
-  FaqEntries.swift           the FAQ card in Settings
   SessionControl.swift       Stop, Resume and Quit (with the force-quit fallback) for a Claude Code process, with the checks before any signal
   MonthGrid.swift            the month calendars and the From/To rules of the Custom range page
   Plugins.swift              enabled Claude Code plugins and what each did in open sessions
