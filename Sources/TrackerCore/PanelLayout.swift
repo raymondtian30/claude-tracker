@@ -224,11 +224,6 @@ public enum PanelLayout {
         cardsHeight(tab.cards) + footerHeight
     }
 
-    /// The panel's full height showing `tab` (before capping to the screen).
-    public static func panelContentHeight(_ tab: Tab, hasToolPicker: Bool) -> CGFloat {
-        contentTop(hasToolPicker: hasToolPicker) + tabContentHeight(tab) + pad
-    }
-
     /// The first-run picker: the header, then a title over the tab's cards.
     public static func welcomeHeight(_ tab: Tab) -> CGFloat {
         pad + headerHeight + welcomeTitleHeight + cardsHeight(tab.cards) + pad

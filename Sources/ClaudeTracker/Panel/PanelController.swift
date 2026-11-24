@@ -158,6 +158,7 @@ final class PanelController: NSObject {
         popover.appearance = NSApp.effectiveAppearance
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         if popover.isShown {
+            followSpaces(root.window)
             startMonitors()
             if animationSeconds > 0 {
                 animate(unfolding: true)
@@ -168,6 +169,14 @@ final class PanelController: NSObject {
                 self?.show(retriesLeft: retriesLeft - 1)
             }
         }
+    }
+
+    /// Keep a pop-over's window on screen when switching desktops (Spaces):
+    /// by default it stays behind on the desktop it opened on, which looks
+    /// like the panel closed. The menu bar icon is on every desktop, so the
+    /// panel follows it.
+    private func followSpaces(_ window: NSWindow?) {
+        window?.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
     }
 
     /// Close the panel; `animated` folds it up first (if the animation is
@@ -435,6 +444,7 @@ final class PanelController: NSObject {
         rangePopover.appearance = NSApp.effectiveAppearance
         if popover.isShown && !rangePopover.isShown {
             rangePopover.show(relativeTo: wrapper.bounds, of: wrapper, preferredEdge: .minX)
+            followSpaces(rangeRoot.window)
         }
     }
 

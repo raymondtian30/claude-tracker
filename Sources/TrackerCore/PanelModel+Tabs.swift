@@ -98,11 +98,6 @@ extension PanelModel {
         ])
     }
 
-    /// The Custom range page (kept for callers that build the tab directly).
-    static func rangeTab(_ d: PanelData) -> Tab {
-        Tab(key: "range", title: "Custom Range", short: "Range", icon: "calendar", cards: [rangeCard(d)])
-    }
-
     /// For a provider view: numbers from the provider's own API, kept apart
     /// from the local counts above (they overlap).
     static func accountCards(_ d: PanelData) -> [Card] {

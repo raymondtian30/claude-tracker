@@ -192,8 +192,7 @@ private let tab = Tab(key: "overview", title: "Overview", short: "Home", icon: "
     // a gap, then the footer (33) and the bottom pad.
     #expect(PanelLayout.contentTop(hasToolPicker: false) == 111)
     #expect(PanelLayout.contentTop(hasToolPicker: true) == 143)
-    let expected: CGFloat = 111 + 40 + 10 + 33 + 12
-    #expect(PanelLayout.panelContentHeight(tab, hasToolPicker: false) == expected)
+    #expect(abs(PanelLayout.tabContentHeight(tab) - (40 + 10 + 33)) < 0.001)
     let tiles = Card(title: nil, items: [.tiles([Item.Tile("Today", "1", nil)])])
     #expect(PanelLayout.cardHeight(tiles) == 58)
     let titled: CGFloat = 24 + 24 + 66
